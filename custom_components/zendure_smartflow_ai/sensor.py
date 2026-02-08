@@ -28,6 +28,11 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+DEVICE_PROFILE_ENUMS = [
+    "SF2400AC",
+    "SF800Pro",
+]
+
 PLANNING_STATUS_ENUMS = [
     "not_checked",
     "sensor_invalid",
