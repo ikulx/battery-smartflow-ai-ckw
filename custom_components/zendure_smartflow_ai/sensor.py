@@ -291,9 +291,10 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
 
         # Debug-Sensoren dürfen niemals None sein,
         # sonst zeigt HA keine Attribute an
-        if val is None and self.entity_description.key in DEBUG_ALWAYS_HAS_STATE:
+        if val is None and self.entity_description.runtime_key in DEBUG_ALWAYS_HAS_STATE:
             return "ok"
-
+        if val is None:
+            return "unknown"
         return val
 
     def _handle_coordinator_update(self) -> None:
