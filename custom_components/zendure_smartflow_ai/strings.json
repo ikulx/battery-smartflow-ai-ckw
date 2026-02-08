@@ -11,7 +11,7 @@
         "description": "Verknüpfe deine Zendure- und Energiesensoren für eine intelligente Akku-Steuerung.",
         "data": {
           "device_profile": {
-            "name": "Geräteprofil",
+            "name": "Aktives Geräteprofil",
             "options": {
               "SF2400AC": "Zendure SF2400AC",
               "SF800Pro": "Zendure SF800Pro"
