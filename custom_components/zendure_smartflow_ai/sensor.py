@@ -303,5 +303,5 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
     def _handle_coordinator_update(self) -> None:
         data = self.coordinator.data or {}
         self._attr_extra_state_attributes = data.get("details") or {}
-        self.async_write_ha_state()
+        super()._handle_coordinator_update()
         
