@@ -39,6 +39,10 @@
     },
 
     "sensor": {
+      "device_profile": {
+        "name": "Profil de l’appareil actif"
+      },
+
       "status": {
         "name": "État du système",
         "state": {
