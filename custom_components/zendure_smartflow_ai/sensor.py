@@ -300,6 +300,10 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
 
         return val
 
+    @property
+    def native_value(self):
+        return "debug"
+        
     def _handle_coordinator_update(self) -> None:
         data = self.coordinator.data or {}
         self._attr_extra_state_attributes = data.get("details") or {}
