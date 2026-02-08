@@ -20,7 +20,7 @@
       }
     }
   },
-  
+
   "entity": {
     "select": {
       "ai_mode": { "name": "Operating mode" },
@@ -39,6 +39,10 @@
     },
 
     "sensor": {
+      "device_profile": {
+        "name": "Active device profile"
+      },
+
       "status": {
         "name": "System status",
         "state": {
@@ -138,7 +142,6 @@
       },
 
       "next_action_time": { "name": "Next action start time" },
-
       "ai_debug": { "name": "AI debug" },
       "house_load": { "name": "House load" },
       "price_now": { "name": "Current electricity price" },
