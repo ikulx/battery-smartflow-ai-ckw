@@ -10,7 +10,7 @@
         "title": "Zendure SmartFlow AI",
         "description": "Verknüpfe deine Zendure- und Energiesensoren für eine intelligente Akku-Steuerung.",
         "data": {
-          "device_profile": "Geräteprofil"
+          "device_profile": "Geräteprofil",
           "soc_entity": "Akkustand (SoC)",
           "pv_entity": "PV-Leistung",
           "price_export_entity": "Strompreis-Export (optional)",
