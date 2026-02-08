@@ -1474,6 +1474,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "next_action_time": next_action_time_state,
                 "next_planned_action_time": next_planned_action_time_state,
                 "next_action_state": next_action_state,
+                "device_profile": self.device_profile_key,
             }
 
         except Exception as err:
