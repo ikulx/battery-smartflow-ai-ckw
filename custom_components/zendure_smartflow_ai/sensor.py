@@ -43,6 +43,12 @@ PLANNING_STATUS_ENUMS = [
     "planning_last_chance",
 ]
 
+DEBUG_ALWAYS_HAS_STATE = {
+    "ai_debug",
+    "decision_reason",
+    "planning_reason",
+}
+
 @dataclass(frozen=True, kw_only=True)
 class ZendureSensorEntityDescription(SensorEntityDescription):
     runtime_key: str
@@ -281,7 +287,14 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
         ):
             return details.get(key)
 
-        return data.get(key)
+        val = data.get(key)
+
+        # Debug-Sensoren dürfen niemals None sein,
+        # sonst zeigt HA keine Attribute an
+        if val is None and self.entity_description.key in DEBUG_ALWAYS_HAS_STATE:
+            return "ok"
+
+        return val
 
     def _handle_coordinator_update(self) -> None:
         data = self.coordinator.data or {}
