@@ -216,8 +216,8 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
         coordinator,
         description: ZendureSensorEntityDescription,
     ) -> None:
-        self.entity_description = description
         super().__init__(coordinator)
+        self.entity_description = description
         self._entry = entry
 
         if not description.key:
