@@ -11,6 +11,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
@@ -206,7 +207,7 @@ async def async_setup_entry(
 
     add_entities(entities)
 
-class ZendureSmartFlowSensor(SensorEntity):
+class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
 
     def __init__(
@@ -216,7 +217,7 @@ class ZendureSmartFlowSensor(SensorEntity):
         description: ZendureSensorEntityDescription,
     ) -> None:
         self.entity_description = description
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self._entry = entry
 
         if not description.key:
@@ -286,8 +287,4 @@ class ZendureSmartFlowSensor(SensorEntity):
         data = self.coordinator.data or {}
         self._attr_extra_state_attributes = data.get("details") or {}
         self.async_write_ha_state()
-
-    async def async_added_to_hass(self) -> None:
-        self.async_on_remove(
-            self.coordinator.async_add_listener(self._handle_coordinator_update)
-        )
+        
