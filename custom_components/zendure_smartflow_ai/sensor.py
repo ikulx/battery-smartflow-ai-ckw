@@ -120,6 +120,14 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         icon="mdi:calendar-clock",
         device_class=SensorDeviceClass.TIMESTAMP,
     ),
+    ZendureSensorEntityDescription(
+        key="device_profile",
+        translation_key="device_profile",
+        runtime_key="device_profile",
+        icon="mdi:battery-outline",
+        device_class=SensorDeviceClass.ENUM,
+        options=DEVICE_PROFILE_ENUMS,
+    ),
 
     # --- Debug / reasoning ---
     ZendureSensorEntityDescription(
