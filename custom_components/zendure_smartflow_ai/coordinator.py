@@ -123,8 +123,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             or DEFAULT_DEVICE_PROFILE
         )
 
-        self._device_profile_cfg = DEVICE_PROFILES[self.device_profile_key]
-
+        self._device_profile_cfg = DEVICE_PROFILES.get(
+            self.device_profile_key,
+            DEVICE_PROFILES[DEFAULT_DEVICE_PROFILE],
+        )
+        
         # runtime settings mirror of entry.options (used by number entities)
         self.runtime_settings: dict[str, float] = dict(entry.options)
 
@@ -574,13 +577,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             if self._persist.get("last_ts") is None:
                 await self._load()
-                
-                # --- STEP 7.3: Migration-Safety Device Profile ---
-                if CONF_DEVICE_PROFILE not in self.entry.options:
-                    self.entry.options = {
-                        **self.entry.options,
-                        CONF_DEVICE_PROFILE: DEFAULT_DEVICE_PROFILE,
-                    }
                     
                 self._persist["last_ts"] = dt_util.utcnow().isoformat()
 
