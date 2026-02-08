@@ -453,6 +453,28 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             result.update(status="planning_peak_detected_insufficient_window", blocked_by="price_data")
             return result
 
+        # --------------------------------------------------
+        # FIX: sofort laden, wenn wir aktuell nahe am Minimum
+        # vor dem Peak sind (nicht erst im letzten Slot!)
+        # --------------------------------------------------
+        min_price = min(p for (_, _, p) in pre_peak)
+
+        # Toleranz: 1 ct oder 3 %, je nachdem was größer ist
+        tolerance = max(0.01, min_price * 0.03)
+
+        if price_now <= min_price + tolerance:
+            target_soc = min(float(soc_max), float(soc) + 30.0)
+
+            result.update(
+                action="charge",
+                watts=max(float(max_charge), 0.0),
+                status="planning_charge_now",
+                next_peak=peak_start.isoformat(),
+                reason="charge_at_daily_low",
+                target_soc=target_soc,
+            )
+            return result
+
         cheap_slots = [
             (s, e, p)
             for (s, e, p) in pre_peak
