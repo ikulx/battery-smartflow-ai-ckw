@@ -1,34 +1,37 @@
-"config": {
-  "error": {
-    "grid_split_missing": "Bei \"Zwei Sensoren\" müssen Bezug und Einspeisung beide ausgewählt werden."
-  },
-  "step": {
-    "user": {
-      "title": "Zendure SmartFlow AI",
-      "description": "Verknüpfe deine Zendure- und Energiesensoren für eine intelligente Akku-Steuerung.",
-      "data": {
-        "device_profile": {
-          "name": "Geräteprofil",
-          "options": {
-            "SF2400AC": "Zendure SF2400AC",
-            "SF800Pro": "Zendure SF800Pro"
-          }
-        },
-        "soc_entity": "Akkustand (SoC)",
-        "pv_entity": "PV-Leistung",
-        "price_export_entity": "Strompreis-Export (optional)",
-        "price_now_entity": "Aktueller Strompreis (optional)",
-        "ac_mode_entity": "Zendure AC-Modus",
-        "input_limit_entity": "Zendure Ladeleistung",
-        "output_limit_entity": "Zendure Entladeleistung",
-        "grid_mode": "Netzsensor-Setup",
-        "grid_power_entity": "Netzleistung (Bezug / Einspeisung)",
-        "grid_import_entity": "Netzbezug",
-        "grid_export_entity": "Netzeinspeisung"
+{
+  "title": "Zendure SmartFlow AI",
+
+  "config": {
+    "error": {
+      "grid_split_missing": "Bei \"Zwei Sensoren\" müssen Bezug und Einspeisung beide ausgewählt werden."
+    },
+    "step": {
+      "user": {
+        "title": "Zendure SmartFlow AI",
+        "description": "Verknüpfe deine Zendure- und Energiesensoren für eine intelligente Akku-Steuerung.",
+        "data": {
+          "device_profile": {
+            "name": "Geräteprofil",
+            "options": {
+              "SF2400AC": "Zendure SF2400AC",
+              "SF800Pro": "Zendure SF800Pro"
+            }
+          },
+          "soc_entity": "Akkustand (SoC)",
+          "pv_entity": "PV-Leistung",
+          "price_export_entity": "Strompreis-Export (optional)",
+          "price_now_entity": "Aktueller Strompreis (optional)",
+          "ac_mode_entity": "Zendure AC-Modus",
+          "input_limit_entity": "Zendure Ladeleistung",
+          "output_limit_entity": "Zendure Entladeleistung",
+          "grid_mode": "Netzsensor-Setup",
+          "grid_power_entity": "Netzleistung (Bezug / Einspeisung)",
+          "grid_import_entity": "Netzbezug",
+          "grid_export_entity": "Netzeinspeisung"
+        }
       }
     }
-  }
-},
+  },
 
   "entity": {
     "select": {
