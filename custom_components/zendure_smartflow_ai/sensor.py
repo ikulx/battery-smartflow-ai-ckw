@@ -285,7 +285,7 @@ class ZendureSmartFlowSensor(SensorEntity):
     @property
     def extra_state_attributes(self):
         data = self.coordinator.data or {}
-        details = data.get("details") or {}
+        return data.get("details", {})
 
         if self.entity_description.key in (
             "status",
