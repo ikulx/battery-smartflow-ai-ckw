@@ -251,54 +251,64 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
 
         from homeassistant.util import dt as dt_util
 
-        # --- TIMESTAMP SENSORS ---
+        # --------------------------------------------------
+        # TIMESTAMP
+        # --------------------------------------------------
         if self.device_class == SensorDeviceClass.TIMESTAMP:
             val = data.get(key)
 
-            if not val:
+            if val is None:
                 return None
 
-            # already datetime
             if hasattr(val, "tzinfo"):
                 return dt_util.as_utc(val)
 
-            # string → datetime
             if isinstance(val, str):
                 dt = dt_util.parse_datetime(val)
-                if dt:
-                    return dt_util.as_utc(dt)
+                return dt_util.as_utc(dt) if dt else None
 
             return None
 
-        # --- Numeric & enum values from details ---
-        if key == "avg_charge_price":
-            val = details.get(key)
-            return float(val) if val is not None else 0.0
+        # --------------------------------------------------
+        # ENUM (MUSS immer gültig sein)
+        # --------------------------------------------------
+        if self.device_class == SensorDeviceClass.ENUM:
+            val = details.get(key, data.get(key))
+            options = self.entity_description.options or []
+
+            if val in options:
+                return val
+
+            # Fallback: IMMER erster Enum-Wert → sonst Sensor invalid
+            return options[0] if options else None
+
+        # --------------------------------------------------
+        # NUMERIC
+        # --------------------------------------------------
         if key in (
             "house_load",
             "price_now",
+            "avg_charge_price",
             "profit_eur",
-            "planning_status",
-            "planning_active",
             "planning_target_soc",
-            "planning_reason",
-            "next_action_state",
-            "next_planned_action",
         ):
-            return details.get(key)
+            val = details.get(key)
+            try:
+                return float(val) if val is not None else None
+            except Exception:
+                return None
 
-        val = data.get(key)
+        # --------------------------------------------------
+        # BOOLEAN / TEXT / DEBUG
+        # --------------------------------------------------
+        val = details.get(key, data.get(key))
 
-        # --- ENUM HARD SAFETY ---
-        if self.device_class == SensorDeviceClass.ENUM:
-            if val not in (self.entity_description.options or []):
-                return self.entity_description.options[0]
-
-        # Debug-Sensoren niemals leer
-        if val is None and self.entity_description.key in DEBUG_ALWAYS_HAS_STATE:
+        # Debug-/Text-Sensoren dürfen NIE None sein
+        if val is None:
             return "ok"
 
         return val
+
         
     def _handle_coordinator_update(self) -> None:
         data = self.coordinator.data or {}
