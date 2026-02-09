@@ -910,7 +910,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 try:
                     latch_dt = dt_util.parse_datetime(str(latch_until))
                     if latch_dt and now < latch_dt:
-                        planning_override = True
+                        planning_override = (
+                            self._persist.get("power_state") == "charging"
+                        )
 
                         # Hold last planning action (anti-flutter)
                         if self._persist.get("power_state") == "charging":
