@@ -903,7 +903,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             planning_override = False
 
             # -------------------------------------------
-            # Anti-flutter: respect planning lach
+            # Anti-flutter: respect planning latch
             #--------------------------------------------
             latch_until = self._persist.get("planning_latch_until")
             if latch_until:
@@ -911,6 +911,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     latch_dt = dt_util.parse_datetime(str(latch_until))
                     if latch_dt and now < latch_dt:
                         planning_override = True
+
+                        # Hold last planning action (anti-flutter)
+                        if self._persist.get("power_state") == "charging":
+                            ac_mode = ZENDURE_MODE_INPUT
+                            in_w = float(max_charge)
+                            out_w = 0.0
+                            recommendation = RECO_CHARGE
+                            decission_reason = "planning_latch_hold"
                 except Exception:
                     self._persist["planning_latch_until"] = None
                     
@@ -980,31 +988,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         ac_mode = ZENDURE_MODE_OUTPUT
                         in_w = 0.0
 
-                        prev_out = float(self._persist.get("discharge_target_w") or 0.0)
-                        out_w = self._delta_discharge_w(
-                            deficit_w=net_grid_w,
-                            prev_out_w=prev_out,
-                            max_discharge=max_discharge,
-                            soc=soc,
-                            soc_min=soc_min,
-                        )
-                        self._persist["discharge_target_w"] = float(out_w)
-
-                        recommendation = RECO_DISCHARGE
-                        decision_reason = "planning_discharge_peak"
-                        self._persist["power_state"] = "discharging"
-                        power_state = "discharging"
-
-                peak_dt = dt_util.parse_datetime(str(planning["next_peak"]))
-                if peak_dt:
-                    secs_to_peak = (peak_dt - now).total_seconds()
-                    if 0 <= secs_to_peak <= 1800 and soc > soc_min:
-                        planning_override = True
-                        self._persist["planning_active"] = True
-
-                        ac_mode = ZENDURE_MODE_OUTPUT
-                        in_w = 0.0
-                        # DELTA controller for planning discharge too
                         prev_out = float(self._persist.get("discharge_target_w") or 0.0)
                         out_w = self._delta_discharge_w(
                             deficit_w=net_grid_w,
@@ -1335,8 +1318,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._persist["power_state"] = "idle"
                     power_state = "idle"
                     self._persist["discharge_target_w"] = 0.0
-                    if not planning_override:
-                        self._persist["planning_latch_until"] = None
+                    self._persist["planning_latch_until"] = None
 
             # Zendure quirk: OUTPUT aktiv aber effektiv 0W → idle erzwingen
             if (
