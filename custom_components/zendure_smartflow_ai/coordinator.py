@@ -195,6 +195,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # planning transparency
             "next_planned_action": None,  # charge | discharge | wait | emergency | none
             "next_planned_action_time": None,  # ISO timestamp / ""
+            # planning latch (anti-flutter)
+            "planning_latch_until": None,  # ISO timestamp
         }
 
         super().__init__(
@@ -917,6 +919,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._persist["power_state"] = "charging"
                 power_state = "charging"
 
+                # --- Anti-flutter latch: hold planning decision ---
+                self._persist["planning_latch_until"] = (
+                    now + timedelta(minutes=10)
+                ).isoformat()
+
             # --------------------------------------------------
             # PRICE BASED DISCHARGE (override everything else)
             # --------------------------------------------------
@@ -1117,6 +1124,18 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 decision_reason = "price_discharge_exit"
                 power_state = "idle"
 
+                # -------------------------------------------
+                # Anti-flutter: respect planning lach
+                #--------------------------------------------
+                latch_until = self._persist.get("planning_latch_until")
+                if latch_until:
+                    try:
+                        latch_dt = dt_util.parse_datetime(str(latch_until))
+                        if latch_dt and now < latch_dt:
+                            planning_override = True
+                    except Exception:
+                        self._persist["planning_latch_until"] = None
+            
             # 3) automatic state machine (only if planning is NOT overriding)
             elif ai_mode != AI_MODE_MANUAL and not planning_override:
                 # State transitions
@@ -1329,6 +1348,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._persist["power_state"] = "idle"
                     power_state = "idle"
                     self._persist["discharge_target_w"] = 0.0
+                    self._persist["planning_latch_until"] = None
 
             # Zendure quirk: OUTPUT aktiv aber effektiv 0W → idle erzwingen
             if (
@@ -1340,10 +1360,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 power_state = "idle"
 
             # NEXT ACTION TIMESTAMP
-            if self._persist.get("power_state") in ("charging", "discharging"):
-                self._persist["next_action_time"] = (
-                    self._persist.get("next_planned_action_time") or dt_util.utcnow().isoformat()
-                )
+            if self._persist.get("next_planned_action_time"):
+                self._persist["next_action_time"] = self._persist["next_planned_action_time"]
+            elif self._persist.get("power_state") in ("charging", "discharging"):
+                self._persist["next_action_time"] = now.isoformat()
             else:
                 self._persist["next_action_time"] = None
 
