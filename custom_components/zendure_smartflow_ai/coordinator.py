@@ -918,7 +918,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             in_w = float(max_charge)
                             out_w = 0.0
                             recommendation = RECO_CHARGE
-                            decission_reason = "planning_latch_hold"
+                            decision_reason = "planning_latch_hold"
                 except Exception:
                     self._persist["planning_latch_until"] = None
                     
@@ -947,7 +947,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # --------------------------------------------------
             # PRICE BASED DISCHARGE (override everything else)
             # --------------------------------------------------
-            elif price_discharge_active:
+            elif price_discharge_active and not planning_override:
                 planning_override = True
                 self._persist["planning_active"] = False
 
