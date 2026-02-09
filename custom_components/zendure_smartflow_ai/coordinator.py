@@ -944,18 +944,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._persist["price_discharge_latched"] = True
 
             # Charge now in cheap window
-            elif (
-                ai_mode == AI_MODE_AUTOMATIC
-                and planning.get("action") == "charge"
-                and planning.get("status") == "planning_charge_now"
-                and soc < float(planning.get("target_soc") or soc_max)
-                and not self._persist.get("emergency_active")
-                and (
-                    self._persist.get("block_planning_charge_until_price") is None
-                    or price_now is None
-                    or price_now < self._persist["block_planning_charge_until_price"]
-                )
-            ):
+            
                 planning_override = True
                 self._persist["planning_active"] = True
 
@@ -1336,13 +1325,15 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 power_state = "discharging"
 
             else:
-                self._persist["power_state"] = "idle"
-                power_state = "idle"
-                self._persist["discharge_target_w"] = 0.0
+                if not planning_override:
+                    self._persist["power_state"] = "idle"
+                    power_state = "idle"
+                    self._persist["discharge_target_w"] = 0.0
 
             # Zendure quirk: OUTPUT aktiv aber effektiv 0W → idle erzwingen
             if (
-                ac_mode == ZENDURE_MODE_OUTPUT
+                not planning_override
+                and ac_mode == ZENDURE_MODE_OUTPUT
                 and float(out_w) == 0.0
             ):
                 self._persist["power_state"] = "idle"
