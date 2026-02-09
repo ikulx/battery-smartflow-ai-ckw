@@ -848,6 +848,23 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ai_mode=ai_mode,
             )
 
+            # --------------------------------------------------
+            # PRICE PLANNING FLAGS (single source of truth)
+            # --------------------------------------------------
+            planning_charge_now = (
+                ai_mode == AI_MODE_AUTOMATIC
+                and planning.get("action") == "charge"
+                and planning.get("status") == "planning_charge_now"
+                and soc < float(planning.get("target_soc") or soc_max)
+                and not self._persist.get("emergency_active")
+            )
+
+            planning_discharge_planned = (
+                ai_mode == AI_MODE_AUTOMATIC
+                and planning.get("action") == "discharge"
+                and planning.get("status") == "planning_discharge_planned"
+            )
+
             self._persist["planning_checked"] = True
             self._persist["planning_status"] = planning.get("status")
             self._persist["planning_blocked_by"] = planning.get("blocked_by")
@@ -884,9 +901,26 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             planning_override = False
             
             # --------------------------------------------------
+            # PRICE PLANNING OVERRIDE (HIGHEST PRIORITY)
+            # --------------------------------------------------
+            if planning_charge_now:
+                planning_override = True
+                self._persist["planning_active"] = True
+
+                ac_mode = ZENDURE_MODE_INPUT
+                in_w = float(max_charge)
+                out_w = 0.0
+
+                recommendation = RECO_CHARGE
+                decision_reason = planning.get("reason") or "planning_charge_now"
+
+                self._persist["power_state"] = "charging"
+                power_state = "charging"
+
+            # --------------------------------------------------
             # PRICE BASED DISCHARGE (override everything else)
             # --------------------------------------------------
-            if price_discharge_active:
+            elif price_discharge_active:
                 planning_override = True
                 self._persist["planning_active"] = False
 
@@ -1150,7 +1184,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     else:
                         decision_reason = "state_idle"
 
-                    if house_load < 120.0:
+                    if not planning_override and house_load < 120.0:
                         power_state = "idle"
                         self._persist["power_state"] = "idle"
 
