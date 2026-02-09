@@ -464,7 +464,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Toleranz: 1 ct oder 3 %, je nachdem was größer ist
         tolerance = max(0.01, min_price * 0.03)
 
-        if price_now <= min_price + tolerance:
+        if now < peak_start and price_now <= min_price + tolerance:
             target_soc = min(float(soc_max), float(soc) + 30.0)
 
             result.update(
