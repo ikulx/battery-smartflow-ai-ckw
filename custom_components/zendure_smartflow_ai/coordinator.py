@@ -901,7 +901,19 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # PRICE PLANNING OVERRIDE
             # --------------------------------------------------
             planning_override = False
-            
+
+            # -------------------------------------------
+            # Anti-flutter: respect planning lach
+            #--------------------------------------------
+            latch_until = self._persist.get("planning_latch_until")
+            if latch_until:
+                try:
+                    latch_dt = dt_util.parse_datetime(str(latch_until))
+                    if latch_dt and now < latch_dt:
+                        planning_override = True
+                except Exception:
+                    self._persist["planning_latch_until"] = None
+                    
             # --------------------------------------------------
             # PRICE PLANNING OVERRIDE (HIGHEST PRIORITY)
             # --------------------------------------------------
@@ -949,19 +961,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._persist["power_state"] = "discharging"
                 power_state = "discharging"
                 self._persist["price_discharge_latched"] = True
-
-            # Charge now in cheap window
-            
-                planning_override = True
-                self._persist["planning_active"] = True
-
-                ac_mode = ZENDURE_MODE_INPUT
-                in_w = float(max_charge)
-                out_w = 0.0
-                recommendation = RECO_CHARGE
-                decision_reason = "planning_charge_before_peak"
-                self._persist["power_state"] = "charging"
-                power_state = "charging"
 
             # Discharge only close to peak (next 30 min)
             elif (
@@ -1123,18 +1122,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 recommendation = RECO_STANDBY
                 decision_reason = "price_discharge_exit"
                 power_state = "idle"
-
-                # -------------------------------------------
-                # Anti-flutter: respect planning lach
-                #--------------------------------------------
-                latch_until = self._persist.get("planning_latch_until")
-                if latch_until:
-                    try:
-                        latch_dt = dt_util.parse_datetime(str(latch_until))
-                        if latch_dt and now < latch_dt:
-                            planning_override = True
-                    except Exception:
-                        self._persist["planning_latch_until"] = None
             
             # 3) automatic state machine (only if planning is NOT overriding)
             elif ai_mode != AI_MODE_MANUAL and not planning_override:
@@ -1348,7 +1335,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._persist["power_state"] = "idle"
                     power_state = "idle"
                     self._persist["discharge_target_w"] = 0.0
-                    self._persist["planning_latch_until"] = None
+                    if not planning_override:
+                        self._persist["planning_latch_until"] = None
 
             # Zendure quirk: OUTPUT aktiv aber effektiv 0W → idle erzwingen
             if (
