@@ -475,11 +475,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             return result
 
-        cheap_slots = [
-            (s, e, p)
-            for (s, e, p) in pre_peak
-            if p <= target_price
-        ]
+        cheap_slots = [(s, e, p) for (s, e, p) in pre_peak if p <= target_price]
         if not cheap_slots:
             result.update(
                 status="planning_waiting_for_cheap_window",
@@ -489,39 +485,69 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             return result
 
-        # letzter günstiger Slot vor dem Peak
-        last_cheap_start, last_cheap_end, last_cheap_price = max(
-            cheap_slots,
-            key=lambda x: x[0]
-        )
+        # --------------------------------------------------
+        # NEU: bestes Preisfenster (Tal) statt "letzter Slot"
+        # --------------------------------------------------
 
-        # --- FIX #4: Zeitfenster-basierte Entscheidung (EPEX & Tibber) ---
-        is_within_cheap_window = (
-            last_cheap_start <= now < last_cheap_end
-        )
+        # 1) "Tal"-Schwelle: nahe am günstigsten Preis unter den cheap_slots
+        min_p = min(p for (_, _, p) in cheap_slots)
 
-        latest_cheap_time, _, _ = max(cheap_slots, key=lambda x: x[0])
+        # Toleranz fürs Tal: 1 ct oder 4% vom Minimum (damit das ganze Nacht-Tal zählt)
+        valley_tol = max(0.01, min_p * 0.04)
+
+        valley_slots = [(s, e, p) for (s, e, p) in cheap_slots if p <= (min_p + valley_tol)]
+
+        # 2) Falls aus irgendeinem Grund leer, fallback auf cheap_slots
+        if not valley_slots:
+            valley_slots = cheap_slots
+
+        # 3) Sortieren nach Zeit
+        valley_slots.sort(key=lambda x: x[0])
+
+        # 4) "Nächstes Valley-Fenster" bestimmen:
+        #    - Wenn wir JETZT in einem Valley-Slot sind => charge_now
+        #    - Sonst: nächster Valley-Slot in der Zukunft
+        is_now_in_valley = any(s <= now < e for (s, e, _) in valley_slots)
+
+        # Ziel-SoC (heuristisch): +30% oder bis soc_max
         target_soc = min(float(soc_max), float(soc) + 30.0)
 
-        if is_within_cheap_window:
-            watts = max(float(max_charge), 0.0)
+        if is_now_in_valley:
             result.update(
                 action="charge",
-                watts=watts,
+                watts=max(float(max_charge), 0.0),
                 status="planning_charge_now",
                 next_peak=peak_start.isoformat(),
-                reason="charge_before_price_peak",
+                reason="charge_in_best_price_valley",
+                latest_start=now.isoformat(),
+                target_soc=target_soc,
+            )
+            return result
+
+        # nächster Valley-Slot in der Zukunft
+        next_valley = next(((s, e, p) for (s, e, p) in valley_slots if e > now), None)
+
+        if not next_valley:
+            # Valley liegt komplett in der Vergangenheit (z.B. du bist nach dem Tal gestartet)
+            # Dann fallback: Last-Chance-Logik, damit nicht gar nichts passiert
+            last_cheap_start, last_cheap_end, _ = max(cheap_slots, key=lambda x: x[0])
+            result.update(
+                action="none",
+                status="planning_waiting_for_cheap_window",
+                next_peak=peak_start.isoformat(),
+                reason="waiting_for_last_chance_window",
                 latest_start=last_cheap_start.isoformat(),
                 target_soc=target_soc,
             )
             return result
 
+        next_start, next_end, _ = next_valley
         result.update(
             action="none",
             status="planning_waiting_for_cheap_window",
             next_peak=peak_start.isoformat(),
-            reason="waiting_for_cheap_price",
-            latest_start=latest_cheap_time.isoformat(),
+            reason="waiting_for_best_price_valley",
+            latest_start=next_start.isoformat(),
             target_soc=target_soc,
         )
         return result
