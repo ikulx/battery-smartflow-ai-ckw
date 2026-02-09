@@ -909,6 +909,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if latch_until:
                 try:
                     latch_dt = dt_util.parse_datetime(str(latch_until))
+
+                    # --- Fix #1a: Latch sfort aufheben, wenn Peak begonnen hat ---
+                    peak_start = planning.get("next_peak")
+                    if peak_start:
+                        peak_dt = dt_util.parse_datetime(str(peak_start))
+                        if peak_dt and now >= peak_dt:
+                            self._persist["planning_latch_until"] = None
+                            planning_override = False
+                            latch_dt = None  # wichtig: verhindert weiteres Halten
+
+                    # -- Fix #1b: Latch nur VOR Ablauf & nur fürs Laden ---
                     if latch_dt and now < latch_dt:
                         planning_override = (
                             self._persist.get("power_state") == "charging"
@@ -921,6 +932,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             out_w = 0.0
                             recommendation = RECO_CHARGE
                             decision_reason = "planning_latch_hold"
+                            
                 except Exception:
                     self._persist["planning_latch_until"] = None
                     
