@@ -182,6 +182,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "last_ts": None,
             # state
             "power_state": "idle",  # idle | discharging | charging
+            "last_charge_reason": None,  # pv | planning | manual | emergency
             "price_discharge_latched": False,
             # transparency
             "next_action_time": None,
@@ -952,6 +953,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                 self._persist["power_state"] = "charging"
                 power_state = "charging"
+                self._persist["last_charge_reason"] = "planning"
 
                 # --- Anti-flutter latch: hold planning decision ---
                 self._persist["planning_latch_until"] = (
@@ -1159,6 +1161,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         and house_load > 150.0
                         and deficit_raw > 80.0
                         and soc > soc_min
+                        and not (
+                            self._persist.get("last_charge_reason") == "pv"
+                            and ai_mode == AI_MODE_AUTOMATIC
+                            and price_now is not None
+                            and price_now < expensive
+                        )
                     ):
                         power_state = "discharging"
                         self._persist["power_state"] = "discharging"
@@ -1171,6 +1179,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     ):
                         power_state = "charging"
                         self._persist["power_state"] = "charging"
+                        self._persist["last_charge_reason"] = "pv"
                         decision_reason = "state_enter_charge"
 
                     else:
