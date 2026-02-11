@@ -1612,7 +1612,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if ai_mode == AI_MODE_SUMMER
                     else "winter"
                     if ai_mode == AI_MODE_WINTER
-                    else self._presist.get("season_mode", "winter")
+                    else self._persist.get("season_mode", "winter")
                 ),
             }
 
