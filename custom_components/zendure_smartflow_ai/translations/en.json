@@ -43,7 +43,7 @@
         "name": "Active device profile"
       },
 
-      "season_mode": {
+      "detected_mode": {
         "name": "Detected season mode",
         "state": {
           "winter": "Winter mode",
