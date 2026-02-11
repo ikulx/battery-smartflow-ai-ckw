@@ -43,6 +43,15 @@
         "name": "Aktives Geräteprofil"
       },
 
+      "season_mode": {
+        "name": "Erkannter Betriebsmodus",
+        "state": {
+          "winter": "Winterbetrieb",
+          "summer": "Sommerbetrieb",
+          "manual": "Manueller Betrieb"
+        }
+      },
+
       "status": {
         "name": "Systemstatus",
         "state": {
