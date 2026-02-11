@@ -198,6 +198,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "next_planned_action_time": None,  # ISO timestamp / ""
             # planning latch (anti-flutter)
             "planning_latch_until": None,  # ISO timestamp
+            # season detection
+            "season_mode": "winter",        # winter | summer
+            "season_counter": 0,            # positive = Richtung Sommer, negativ = Richtung Winter
         }
 
         super().__init__(
@@ -748,6 +751,50 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             surplus = _ema("ema_surplus", surplus_raw)
 
+            # --------------------------------------------------
+            # SEASON DETECTION (slow moving, anti-flip logic)
+            # --------------------------------------------------
+
+            season = self._persist.get("season_mode", "winter")
+            counter = int(self._persist.get("season_counter", 0))
+
+            # Kriterien für echten Sommerbetrieb:
+            # - mehrere Zyklen deutlicher PV-Überschuss
+            # - und kein Netzbezug
+            summer_signal = (
+                pv_w > 800.0
+                and surplus_raw > 300.0
+            )
+
+            # Kriterien für echten Winter:
+            winter_signal = (
+                pv_w < 400.0
+                and surplus_raw < 100.0
+            )
+
+            if summer_signal:
+                counter += 1
+            elif winter_signal:
+                counter -= 1
+            else:
+                # langsam Richtung 0 zurücklaufen
+                if counter > 0:
+                    counter -= 1
+                elif counter < 0:
+                    counter += 1
+
+            # Schwellwert für Saisonwechsel (ca. 30 Zyklen ~ mehrere Minuten)
+            THRESH = 30
+
+            if counter > THRESH:
+                season = "summer"
+            elif counter < -THRESH:
+                season = "winter"
+
+            self._persist["season_mode"] = season
+            self._persist["season_counter"] = counter
+
+
             pv_w = float(pv)
             grid_import = deficit_raw if deficit_raw > 0.0 else 0.0
             grid_export = surplus_raw if surplus_raw > 0.0 else 0.0
@@ -774,14 +821,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 surplus_raw > 80.0
                 and pv_w > surplus_raw + 50.0
                 and self._persist.get("power_state") != "discharging"
-            )
-
-            # Winter detection
-            is_winter_mode = (
-                ai_mode in (AI_MODE_WINTER, AI_MODE_AUTOMATIC)
-                and surplus < 50.0
-                and price_now is not None
-                and price_now < expensive
             )
 
             # PV surplus hysteresis (kept, but will NOT forcibly flip discharge -> charge anymore)
@@ -1155,19 +1194,24 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         power_state = "discharging"
                         self._persist["power_state"] = "discharging"
 
-                if power_state == "idle":
-                    if (
-                        not is_winter_mode
-                        and house_load > 150.0
-                        and deficit_raw > 80.0
-                        and soc > soc_min
-                        and not (
-                            self._persist.get("last_charge_reason") == "pv"
-                            and ai_mode == AI_MODE_AUTOMATIC
-                            and price_now is not None
-                            and price_now < expensive
+                if (
+                    (
+                        ai_mode == AI_MODE_SUMMER
+                        or (
+                            ai_mode == AI_MODE_AUTOMATIC
+                            and self._persist.get("season_mode") == "summer"
                         )
-                    ):
+                    )
+                    and house_load > 150.0
+                    and deficit_raw > 80.0
+                    and soc > soc_min
+                    and not (
+                        self._persist.get("last_charge_reason") == "pv"
+                        and ai_mode == AI_MODE_AUTOMATIC
+                        and price_now is not None
+                        and price_now < expensive
+                    )
+                ):
                         power_state = "discharging"
                         self._persist["power_state"] = "discharging"
                         decision_reason = "state_enter_discharge"
