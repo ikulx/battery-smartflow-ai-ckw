@@ -33,7 +33,7 @@ DEVICE_PROFILE_ENUMS = [
     "SF800Pro",
 ]
 
-DETECTED_MODE_ENUMS = [
+SEASON_MODE_ENUMS = [
     "winter",
     "summer",
     "manual",
@@ -145,7 +145,7 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         runtime_key="season_mode",
         icon="mdi:weather-partly-snowy",
         device_class=SensorDeviceClass.ENUM,
-        options=DETECTED_MODE_ENUMS,
+        options=SEASON_MODE_ENUMS,
     ),
     
     # --- Debug / reasoning ---
