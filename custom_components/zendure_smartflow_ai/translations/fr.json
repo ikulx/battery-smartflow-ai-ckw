@@ -43,6 +43,14 @@
         "name": "Profil de l’appareil actif"
       },
 
+      "season_mode": {
+        "name": "Mode saison détecté",
+        "state": {
+          "winter": "Mode hiver",
+          "summer": "Mode été"
+        }
+      }
+
       "status": {
         "name": "État du système",
         "state": {
