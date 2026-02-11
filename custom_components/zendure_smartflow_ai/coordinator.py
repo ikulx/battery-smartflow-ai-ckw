@@ -199,7 +199,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # planning latch (anti-flutter)
             "planning_latch_until": None,  # ISO timestamp
             # season detection
-            "season_mode": self._persist.get("season_mode"),        # winter | summer
+            "season_mode": "winter",        # winter | summer
             "season_counter": 0,            # positive = Richtung Sommer, negativ = Richtung Winter
         }
 
