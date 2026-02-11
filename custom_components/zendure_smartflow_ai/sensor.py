@@ -33,6 +33,12 @@ DEVICE_PROFILE_ENUMS = [
     "SF800Pro",
 ]
 
+SEASON_MODE_ENUMS = [
+    "winter"
+    "summer"
+    "manual"
+]
+
 PLANNING_STATUS_ENUMS = [
     "not_checked",
     "sensor_invalid",
@@ -133,7 +139,15 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=DEVICE_PROFILE_ENUMS,
     ),
-
+    ZendureSensorEntityDescription(
+        key="season_mode",
+        translation_key="season_mode",
+        runtime_key="season_mode",
+        icon="mdi:weather-partly-snowy",
+        device_class=SensorDeviceClass.ENUM,
+        options=SEASON_MODE_ENUMS,
+    ),
+    
     # --- Debug / reasoning ---
     ZendureSensorEntityDescription(
         key="ai_debug",
@@ -286,7 +300,12 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
         # ENUM (MUSS immer gültig sein)
         # --------------------------------------------------
         if self.device_class == SensorDeviceClass.ENUM:
-            val = details.get(key, data.get(key))
+            # season_mode liegt auf Top-Level
+            if key == "season_mode":
+                val = data.get(key)
+            else:
+                val = details.get(key, data.get(key))
+                
             options = self.entity_description.options or []
 
             if val in options:
