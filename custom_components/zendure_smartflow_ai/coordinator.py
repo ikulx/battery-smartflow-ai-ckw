@@ -1212,26 +1212,26 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         and price_now < expensive
                     )
                 ):
-                        power_state = "discharging"
-                        self._persist["power_state"] = "discharging"
-                        decision_reason = "state_enter_discharge"
+                    power_state = "discharging"
+                    self._persist["power_state"] = "discharging"
+                    decision_reason = "state_enter_discharge"
 
-                    elif (
-                        real_pv_surplus
-                        and soc < soc_max
-                        and float(self._persist.get("discharge_target_w") or 0.0) == 0.0
-                    ):
-                        power_state = "charging"
-                        self._persist["power_state"] = "charging"
-                        self._persist["last_charge_reason"] = "pv"
-                        decision_reason = "state_enter_charge"
+                elif (
+                    real_pv_surplus
+                    and soc < soc_max
+                    and float(self._persist.get("discharge_target_w") or 0.0) == 0.0
+                ):
+                    power_state = "charging"
+                    self._persist["power_state"] = "charging"
+                    self._persist["last_charge_reason"] = "pv"
+                    decision_reason = "state_enter_charge"
 
-                    else:
-                        decision_reason = "state_idle"
+                else:
+                    decision_reason = "state_idle"
 
-                    if not planning_override and house_load < 120.0:
-                        power_state = "idle"
-                        self._persist["power_state"] = "idle"
+                if not planning_override and house_load < 120.0:
+                    power_state = "idle"
+                    self._persist["power_state"] = "idle"
 
                 # Actions
                 if power_state == "discharging":
