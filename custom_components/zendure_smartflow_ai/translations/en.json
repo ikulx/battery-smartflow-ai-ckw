@@ -43,6 +43,14 @@
         "name": "Active device profile"
       },
 
+      "season_mode": {
+        "name": "Detected season mode",
+        "state": {
+          "winter": "Winter mode",
+          "summer": "Summer mode"
+        }
+      }
+
       "status": {
         "name": "System status",
         "state": {
