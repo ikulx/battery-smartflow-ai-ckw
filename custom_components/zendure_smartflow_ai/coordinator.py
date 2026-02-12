@@ -665,6 +665,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             soc = _to_float(self._state(self.entities.soc), None)
             pv = _to_float(self._state(self.entities.pv), None)
 
+            soc_limit = self._get_soc_limit()
+
             # EMA helper
             EMA_TAU_S = 45.0
             now_ts = now.timestamp()
