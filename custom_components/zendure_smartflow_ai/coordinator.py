@@ -1348,6 +1348,28 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         self._persist["power_state"] = "discharging" if out_w > 0 else "idle"
                         power_state = self._persist["power_state"]
 
+            # --------------------------------------------------
+            # HARDWARE SOC LIMIT GUARD (BMS override)
+            # --------------------------------------------------
+            if soc_limit == 1:
+                # Upper SoC limit → no charging allowed
+                if ac_mode == ZENDURE_MODE_INPUT and in_w > 0:
+                    _LOGGER.debug("socLimit=1 → blocking charge (upper limit active)")
+                    in_w = 0.0
+                    recommendation = RECO_STANDBY
+                    decision_reason = "soc_limit_upper"
+                    self._persist["power_state"] = "idle"
+
+            elif soc_limit == 2:
+                # Lower SoC limit → no discharge allowed
+                if ac_mode == ZENDURE_MODE_OUTPUT and out_w > 0:
+                    _LOGGER.debug("socLimit=2 → blocking discharge (lower limit active)")
+                    out_w = 0.0
+                    self._persist["discharge_target_w"] = 0.0
+                    recommendation = RECO_STANDBY
+                    decision_reason = "soc_limit_lower"
+                    self._persist["power_state"] = "idle"
+
             # enforce SoC-min on discharge
             if ac_mode == ZENDURE_MODE_OUTPUT and soc <= soc_min:
                 ac_mode = ZENDURE_MODE_INPUT
@@ -1584,6 +1606,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "device_profile": self.device_profile_key,
                 "profile_max_input_w": profile_max_in,
                 "profile_max_output_w": profile_max_out,
+                "soc_limit": soc_limit,
             }
 
             # --- FINAL SENSOR STATES (Top-Level, never None) ---
