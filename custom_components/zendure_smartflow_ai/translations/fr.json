@@ -6,6 +6,7 @@
         "description": "Sélectionnez les capteurs et entités requis",
         "data": {
           "soc_entity": "Capteur SoC de la batterie",
+          "soc_limit_entity": "Statut limite SoC (optionnel)",
           "pv_entity": "Capteur de puissance PV",
           "price_now_entity": "Prix actuel de l'électricité",
           "price_export_entity": "Prévision des prix (ex. Tibber / EPEX)",
@@ -47,7 +48,18 @@
         "name": "Mode saison détecté",
         "state": {
           "winter": "Mode hiver",
-          "summer": "Mode été"
+          "summer": "Mode été",
+          "manual": "Mode manuel"
+        }
+      },
+
+      "soc_limit_status": {
+        "name": "Statut limite SoC",
+        "state": {
+          "not_configured": "Aucun capteur de limite SoC configuré",
+          "no_limit": "Aucune limite active",
+          "upper_limit_active": "Limite SoC supérieure active (charge bloquée)",
+          "lower_limit_active": "Limite SoC inférieure active (décharge bloquée)"
         }
       },
 
@@ -97,6 +109,8 @@
           "very_expensive_force_discharge": "Décharge forcée (pic de prix)",
           "emergency_latched_charge": "Charge d’urgence active (verrouillée)",
           "soc_min_enforced": "Décharge arrêtée (SoC minimum atteint)",
+          "soc_limit_upper": "Charge bloquée (limite SoC supérieure active)",
+          "soc_limit_lower": "Décharge bloquée (limite SoC inférieure active)",
           "manual_mode": "Mode manuel actif",
           "manual_standby": "Veille manuelle",
           "manual_charge": "Charge manuelle",
