@@ -28,6 +28,7 @@ from .const import (
     CONF_GRID_POWER_ENTITY,
     CONF_GRID_IMPORT_ENTITY,
     CONF_GRID_EXPORT_ENTITY,
+    CONF_SOC_LIMIT_ENTITY,
     GRID_MODE_NONE,
     GRID_MODE_SINGLE,
     GRID_MODE_SPLIT,
@@ -105,6 +106,8 @@ class SelectedEntities:
     input_limit: str
     output_limit: str
 
+    soc_limit: str | None
+
     grid_mode: str
     grid_power: str | None
     grid_import: str | None
@@ -139,6 +142,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ac_mode=str(entry.data[CONF_AC_MODE_ENTITY]),
             input_limit=str(entry.data[CONF_INPUT_LIMIT_ENTITY]),
             output_limit=str(entry.data[CONF_OUTPUT_LIMIT_ENTITY]),
+            soc_limit=entry.data.get(CONF_SOC_LIMIT_ENTITY),
             grid_mode=str(entry.data.get(CONF_GRID_MODE, GRID_MODE_NONE)),
             grid_power=entry.data.get(CONF_GRID_POWER_ENTITY),
             grid_import=entry.data.get(CONF_GRID_IMPORT_ENTITY),
@@ -332,6 +336,22 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if p is not None:
                 return float(p)
         return None
+
+    def _get_soc_limit(self) -> int | None:
+        """Returns socLimit value (0/1/2) or None if not available."""
+        if not self.entities.soc_limit:
+            return None
+
+        raw = self._state(self.entities.soc_limit)
+        val = _to_float(raw, None)
+
+        if val is None:
+            return None
+
+        try:
+            return int(val)
+        except Exception:
+            return None
 
     def _evaluate_price_planning(
         self,
