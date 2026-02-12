@@ -1,10 +1,48 @@
 {
   "config": {
     "step": {
+      "reconfigure": {
+        "title": "Reconfigure Zendure SmartFlow AI",
+        "description": "Adjust the selected sensors and entities",
+        "data": {
+          "device_profile": "Device profile",
+          "soc_entity": "Battery SoC sensor",
+          "soc_limit_entity": "SoC limit status (optional)",
+          "pv_entity": "PV power sensor",
+          "price_now_entity": "Current electricity price",
+          "price_export_entity": "Electricity price forecast (e.g. Tibber / EPEX)",
+          "grid_mode": "Grid measurement mode",
+          "grid_power_entity": "Grid power (single)",
+          "grid_import_entity": "Grid import (split)",
+          "grid_export_entity": "Grid export (split)",
+          "ac_mode_entity": "Zendure AC mode",
+          "input_limit_entity": "Zendure charge power",
+          "output_limit_entity": "Zendure discharge power"
+        }
+      },
+      "reconfigure_grid": {
+        "title": "Configure grid measurement",
+        "description": "Select grid sensors according to the selected mode",
+        "data": {
+          "grid_power_entity": "Grid power (single)",
+          "grid_import_entity": "Grid import (split)",
+          "grid_export_entity": "Grid export (split)"
+        }
+      },
+      "grid": {
+        "title": "Configure grid measurement",
+        "description": "Select grid sensors according to the selected mode",
+        "data": {
+          "grid_power_entity": "Grid power (single)",
+          "grid_import_entity": "Grid import (split)",
+          "grid_export_entity": "Grid export (split)"
+        }
+      }
       "user": {
         "title": "Set up Zendure SmartFlow AI",
         "description": "Select the required sensors and entities",
         "data": {
+          "device_profile": "Device profile",
           "soc_entity": "Battery SoC sensor",
           "soc_limit_entity": "SoC limit status (optional)",
           "pv_entity": "PV power sensor",
