@@ -6,6 +6,7 @@
         "description": "Wähle die benötigten Sensoren aus",
         "data": {
           "soc_entity": "Batterie-SoC Sensor",
+          "soc_limit_entity": "SoC-Limit Status (optional)",
           "pv_entity": "PV-Leistung Sensor",
           "price_now_entity": "Aktueller Strompreis",
           "price_export_entity": "Preisverlauf (z. B. Tibber / EPEX)",
@@ -49,6 +50,16 @@
           "winter": "Winterbetrieb",
           "summer": "Sommerbetrieb",
           "manual": "Manueller Betrieb"
+        }
+      },
+
+      "soc_limit_status": {
+        "name": "SoC-Limit Status",
+        "state": {
+          "not_configured": "Kein SoC-Limit Sensor konfiguriert",
+          "no_limit": "Kein Limit aktiv",
+          "upper_limit_active": "Oberes SoC-Limit aktiv (Laden gesperrt)",
+          "lower_limit_active": "Unteres SoC-Limit aktiv (Entladen gesperrt)"
         }
       },
 
@@ -98,6 +109,8 @@
           "very_expensive_force_discharge": "Zwangsentladung wegen extremer Preisspitze",
           "emergency_latched_charge": "Notladung aktiv (verriegelt)",
           "soc_min_enforced": "Entladung gestoppt (SoC-Minimum erreicht)",
+          "soc_limit_upper": "Laden blockiert (oberes SoC-Limit aktiv)",
+          "soc_limit_lower": "Entladen blockiert (unteres SoC-Limit aktiv)",
           "manual_mode": "Manueller Modus aktiv",
           "manual_standby": "Manueller Standby",
           "manual_charge": "Manuelles Laden",
@@ -153,6 +166,7 @@
       "next_action_time": {
         "name": "Startzeit nächste Aktion"
       },
+
       "ai_debug": { "name": "KI-Debug" },
       "house_load": { "name": "Hauslast" },
       "price_now": { "name": "Aktueller Strompreis" },
