@@ -24,6 +24,8 @@ PLATFORMS: list[Platform] = [
 CONF_SOC_ENTITY = "soc_entity"
 CONF_PV_ENTITY = "pv_entity"
 
+CONF_SOC_LIMIT_ENTITY = "soc_limit_entity"
+
 # Preis ist optional (Sommer/PV-only Nutzer)
 CONF_PRICE_EXPORT_ENTITY = "price_export_entity"  # Tibber Export (attributes.data)
 CONF_PRICE_NOW_ENTITY = "price_now_entity"        # direkter Preis-Sensor (€/kWh)
