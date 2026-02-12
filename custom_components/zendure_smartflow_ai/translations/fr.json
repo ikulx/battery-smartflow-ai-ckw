@@ -1,10 +1,48 @@
 {
   "config": {
     "step": {
+      "reconfigure": {
+        "title": "Reconfigurer Zendure SmartFlow AI",
+        "description": "Ajustez les capteurs et entités sélectionnés",
+        "data": {
+          "device_profile": "Profil de l’appareil",
+          "soc_entity": "Capteur SoC de la batterie",
+          "soc_limit_entity": "Statut limite SoC (optionnel)",
+          "pv_entity": "Capteur de puissance PV",
+          "price_now_entity": "Prix actuel de l'électricité",
+          "price_export_entity": "Prévision des prix (ex. Tibber / EPEX)",
+          "grid_mode": "Mode de mesure du réseau",
+          "grid_power_entity": "Puissance réseau (simple)",
+          "grid_import_entity": "Import réseau (séparé)",
+          "grid_export_entity": "Export réseau (séparé)",
+          "ac_mode_entity": "Mode AC Zendure",
+          "input_limit_entity": "Puissance de charge Zendure",
+          "output_limit_entity": "Puissance de décharge Zendure"
+        }
+      },
+      "reconfigure_grid": {
+        "title": "Configurer la mesure réseau",
+        "description": "Sélectionnez les capteurs réseau selon le mode choisi",
+        "data": {
+          "grid_power_entity": "Puissance réseau (simple)",
+          "grid_import_entity": "Import réseau (séparé)",
+          "grid_export_entity": "Export réseau (séparé)"
+        }
+      },
+      "grid": {
+        "title": "Configurer la mesure réseau",
+        "description": "Sélectionnez les capteurs réseau selon le mode choisi",
+        "data": {
+          "grid_power_entity": "Puissance réseau (simple)",
+          "grid_import_entity": "Import réseau (séparé)",
+          "grid_export_entity": "Export réseau (séparé)"
+        }
+      },
       "user": {
         "title": "Configurer Zendure SmartFlow AI",
         "description": "Sélectionnez les capteurs et entités requis",
         "data": {
+          "device_profile": "Profil de l’appareil",
           "soc_entity": "Capteur SoC de la batterie",
           "soc_limit_entity": "Statut limite SoC (optionnel)",
           "pv_entity": "Capteur de puissance PV",
