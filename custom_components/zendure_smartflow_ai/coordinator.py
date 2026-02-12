@@ -1607,6 +1607,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "profile_max_input_w": profile_max_in,
                 "profile_max_output_w": profile_max_out,
                 "soc_limit": soc_limit,
+                "soc_limit_status": (
+                    "not_configured"
+                    if soc_limit is None
+                    else "no_limit"
+                    if soc_limit == 0
+                    else "upper_limit_active"
+                    if soc_limit == 1
+                    else "lower_limit_active"
+                    if soc_limit == 2
+                    else "no_limit"
+                ),
             }
 
             # --- FINAL SENSOR STATES (Top-Level, never None) ---
