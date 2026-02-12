@@ -6,6 +6,7 @@
         "description": "Select the required sensors and entities",
         "data": {
           "soc_entity": "Battery SoC sensor",
+          "soc_limit_entity": "SoC limit status (optional)",
           "pv_entity": "PV power sensor",
           "price_now_entity": "Current electricity price",
           "price_export_entity": "Electricity price forecast (e.g. Tibber / EPEX)",
@@ -47,7 +48,18 @@
         "name": "Detected season mode",
         "state": {
           "winter": "Winter mode",
-          "summer": "Summer mode"
+          "summer": "Summer mode",
+          "manual": "Manual mode"
+        }
+      },
+
+      "soc_limit_status": {
+        "name": "SoC limit status",
+        "state": {
+          "not_configured": "No SoC limit sensor configured",
+          "no_limit": "No limit active",
+          "upper_limit_active": "Upper SoC limit active (charging blocked)",
+          "lower_limit_active": "Lower SoC limit active (discharging blocked)"
         }
       },
 
@@ -97,6 +109,8 @@
           "very_expensive_force_discharge": "Forced discharge due to extreme price spike",
           "emergency_latched_charge": "Emergency charge active (latched)",
           "soc_min_enforced": "Discharge stopped (SoC minimum reached)",
+          "soc_limit_upper": "Charging blocked (upper SoC limit active)",
+          "soc_limit_lower": "Discharging blocked (lower SoC limit active)",
           "manual_mode": "Manual mode active",
           "manual_standby": "Manual standby",
           "manual_charge": "Manual charge",
