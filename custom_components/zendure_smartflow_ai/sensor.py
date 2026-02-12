@@ -39,6 +39,13 @@ SEASON_MODE_ENUMS = [
     "manual",
 ]
 
+SOC_LIMIT_ENUMS = [
+    "not_configured",
+    "no_limit",
+    "upper_limit_active",
+    "lower_limit_active",
+]
+
 PLANNING_STATUS_ENUMS = [
     "not_checked",
     "sensor_invalid",
@@ -146,6 +153,15 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         icon="mdi:weather-partly-snowy",
         device_class=SensorDeviceClass.ENUM,
         options=SEASON_MODE_ENUMS,
+    ),
+
+    ZendureSensorEntityDescription(
+        key="soc_limit_status",
+        translation_key="soc_limit_status",
+        runtime_key="soc_limit_status",
+        icon="mdi:shield-alert-outline",
+        device_class=SensorDeviceClass.ENUM,
+        options=SOC_LIMIT_ENUMS,
     ),
     
     # --- Debug / reasoning ---
