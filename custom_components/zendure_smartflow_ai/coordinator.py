@@ -1628,7 +1628,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if soc_limit == 2
                     else "no_limit"
                 ),
-                "soc_limit_raw": soc_limit,
             }
 
             # --- FINAL SENSOR STATES (Top-Level, never None) ---
@@ -1672,7 +1671,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "next_planned_action_time": next_planned_action_time_state,
                 "next_action_state": next_action_state,
                 "device_profile": self.device_profile_key,
-                "soc_limit_raw": self._persist.get("soc_limit_raw", 0),
                 "season_mode": (
                     "manual"
                     if ai_mode == AI_MODE_MANUAL
