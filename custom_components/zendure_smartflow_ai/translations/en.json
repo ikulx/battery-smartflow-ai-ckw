@@ -101,6 +101,10 @@
         }
       },
 
+      "soc_limit_raw": {
+        "name": "SoC limit (raw)"
+      },
+
       "status": {
         "name": "System status",
         "state": {
