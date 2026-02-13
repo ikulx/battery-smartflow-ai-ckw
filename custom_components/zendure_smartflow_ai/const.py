@@ -152,12 +152,6 @@ RECO_ENUMS = [
     RECO_EMERGENCY,
 ]
 
-SOC_LIMIT_ENUMS = [
-    "normal",
-    "upper_limit",
-    "lower_limit",
-]
-
 # ==================================================
 # Planning enums (V1.4.0)
 # ==================================================
