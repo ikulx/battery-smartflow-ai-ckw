@@ -1,4 +1,4 @@
-# Zendure SmartFlow AI
+# Battery SmartFlow AI
 
 **Intelligente, preis-, PV- und lastbasierte Steuerung für Zendure SolarFlow Systeme in Home Assistant**
 
@@ -8,7 +8,7 @@
 
 ## Überblick
 
-**Zendure SmartFlow AI** ist eine Home-Assistant-Integration zur **stabilen, wirtschaftlichen und transparenten** Steuerung von **Zendure SolarFlow** Batteriesystemen.
+**Battery SmartFlow AI** ist eine Home-Assistant-Integration zur **stabilen, wirtschaftlichen und transparenten** Steuerung von **Zendure SolarFlow** Batteriesystemen.
 
 Ab **Version 1.4.x** kombiniert die Integration:
 
