@@ -46,6 +46,12 @@ SOC_LIMIT_ENUMS = [
     "lower_limit_active",
 ]
 
+FAULT_LEVEL_ENUMS = [
+    "normal",
+    "warning",
+    "error",
+]
+
 PLANNING_STATUS_ENUMS = [
     "not_checked",
     "sensor_invalid",
@@ -103,6 +109,14 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         icon="mdi:lightbulb-outline",
         device_class=SensorDeviceClass.ENUM,
         options=RECO_ENUMS,
+    ),
+    ZendureSensorEntityDescription(
+        key="fault_level_status",
+        translation_key="fault_level_status",
+        runtime_key="fault_level_status",
+        icon="mdi:alert-circle-outline",
+        device_class=SensorDeviceClass.ENUM,
+        options=FAULT_LEVEL_ENUMS,
     ),
 
     # --- NEXT ACTION (V1.3.x) ---
