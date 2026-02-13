@@ -101,6 +101,10 @@
         }
       },
 
+      "soc_limit_raw": {
+        "name": "Limite SoC (valeur brute)"
+      },
+
       "status": {
         "name": "État du système",
         "state": {
