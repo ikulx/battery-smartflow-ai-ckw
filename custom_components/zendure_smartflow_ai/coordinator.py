@@ -912,6 +912,16 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ai_mode=ai_mode,
             )
 
+            # Prevent discharge planning while planning-charge still active
+            if (
+                self._persist.get("power_state") == "charging"
+                and self._persist.get("last_charge_reason") == "planning"
+                and soc < float(planning.get("target_soc") or soc_max)
+                and planning.get("action") == "discharge"
+            ):
+                planning["action"] = "none"
+                planning["status"] = "planning_charge_locked"
+
             # --------------------------------------------------
             # PRICE PLANNING FLAGS (single source of truth)
             # --------------------------------------------------
