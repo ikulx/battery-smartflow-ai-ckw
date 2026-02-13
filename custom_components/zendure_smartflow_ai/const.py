@@ -10,7 +10,7 @@ DOMAIN = "zendure_smartflow_ai"
 INTEGRATION_NAME = "Zendure SmartFlow AI"
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "1.5.0-Beta4"
+INTEGRATION_VERSION = "1.5.0-Beta5"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -150,6 +150,12 @@ RECO_ENUMS = [
     RECO_CHARGE,
     RECO_DISCHARGE,
     RECO_EMERGENCY,
+]
+
+SOC_LIMIT_ENUMS = [
+    "normal",
+    "upper_limit",
+    "lower_limit",
 ]
 
 # ==================================================
