@@ -101,8 +101,13 @@
         }
       },
 
-      "soc_limit_raw": {
-        "name": "SoC Limit (Rohwert)"
+      "fault_level_status": {
+        "name": "Fehlerstatus",
+        "state": {
+          "normal": "Kein Fehler / alles normal",
+          "warning": "Warnung (Gerät läuft weiter)",
+          "error": "Fehler / Schutz aktiv"
+        }
       },
 
       "status": {
