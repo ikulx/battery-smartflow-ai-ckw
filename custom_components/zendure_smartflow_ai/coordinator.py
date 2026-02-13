@@ -1627,8 +1627,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     else "lower_limit_active"
                     if soc_limit == 2
                     else "no_limit"
-                "soc_limit_raw": soc_limit,
                 ),
+                "soc_limit_raw": soc_limit,
             }
 
             # --- FINAL SENSOR STATES (Top-Level, never None) ---
