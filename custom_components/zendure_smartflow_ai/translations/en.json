@@ -101,8 +101,13 @@
         }
       },
 
-      "soc_limit_raw": {
-        "name": "SoC limit (raw)"
+      "fault_level_status": {
+        "name": "Fault status",
+        "state": {
+          "normal": "No fault / normal operation",
+          "warning": "Warning (device continues running)",
+          "error": "Error / protection active"
+        }
       },
 
       "status": {
