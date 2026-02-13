@@ -101,6 +101,10 @@
         }
       },
 
+      "soc_limit_raw": {
+        "name": "SoC Limit (Rohwert)"
+      }
+
       "status": {
         "name": "Systemstatus",
         "state": {
