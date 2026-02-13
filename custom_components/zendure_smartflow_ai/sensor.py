@@ -352,6 +352,13 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
             except Exception:
                 return None
 
+        if key == "soc_limit_raw":
+            val = details.get(key)
+            try:
+                return int(val) if val is not None else 0
+            except Exception:
+                return 0
+
         # --------------------------------------------------
         # BOOLEAN / TEXT / DEBUG
         # --------------------------------------------------
