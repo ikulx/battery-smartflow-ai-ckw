@@ -101,8 +101,13 @@
         }
       },
 
-      "soc_limit_raw": {
-        "name": "Limite SoC (valeur brute)"
+      "fault_level_status": {
+        "name": "Statut d’erreur",
+        "state": {
+          "normal": "Aucune erreur / fonctionnement normal",
+          "warning": "Avertissement (appareil continue de fonctionner)",
+          "error": "Erreur / protection active"
+        }
       },
 
       "status": {
