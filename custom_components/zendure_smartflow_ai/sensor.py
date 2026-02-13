@@ -206,6 +206,12 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         runtime_key="planning_reason",
         icon="mdi:text-long",
     ),
+    ZendureSensorEntityDescription(
+        key="soc_limit_raw",
+        translation_key="soc_limit_raw",
+        runtime_key="soc_limit_raw",
+        icon="mdi:battery-lock",
+    ),
 
     # --- Numeric sensors ---
     ZendureSensorEntityDescription(
