@@ -353,6 +353,20 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception:
             return None
 
+    def _get_fault_level(self) -> int | None:
+        """Returns faultLevel value (0/1/2) or None if not available."""
+        entity_id = "sensor.DEIN_FAULTLEVEL_SENSOR"  # <-- anpassen!
+        raw = self._state(entity_id)
+        val = _to_float(raw, None)
+
+        if val is None:
+            return None
+
+        try:
+            return int(val)
+        except Exception:
+            return None
+
     def _evaluate_price_planning(
         self,
         soc: float,
@@ -666,6 +680,15 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             pv = _to_float(self._state(self.entities.pv), None)
 
             soc_limit = self._get_soc_limit()
+
+            fault_raw = self._get_fault_level()
+
+            if fault_raw == 1:
+                fault_status = "warning"
+            elif fault_raw == 2:
+                fault_status = "error"
+            else:
+                fault_status = "normal"
 
             # EMA helper
             EMA_TAU_S = 45.0
@@ -1628,6 +1651,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if soc_limit == 2
                     else "no_limit"
                 ),
+                "fault_level_raw": fault_raw,
+                "fault_level_status": fault_status,
             }
 
             # --- FINAL SENSOR STATES (Top-Level, never None) ---
@@ -1680,6 +1705,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if ai_mode == AI_MODE_WINTER
                     else self._persist.get("season_mode", "winter")
                 ),
+                "fault_level_status": fault_status,
             }
 
         except Exception as err:
