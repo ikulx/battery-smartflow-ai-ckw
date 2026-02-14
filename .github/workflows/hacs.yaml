@@ -11,5 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: HACS validation
+      - name: Battery SmartFlow AI
+        category: integration
         uses: hacs/action@main
