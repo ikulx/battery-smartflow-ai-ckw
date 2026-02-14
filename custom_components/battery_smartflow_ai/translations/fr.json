@@ -62,8 +62,23 @@
 
   "entity": {
     "select": {
-      "ai_mode": { "name": "Mode de fonctionnement" },
-      "manual_action": { "name": "Action manuelle" }
+      "ai_mode": {
+        "name": "Mode de fonctionnement",
+        "state": {
+          "automatic": "Automatique",
+          "summer": "Été",
+          "winter": "Hiver",
+          "manual": "Manuel"
+        }
+      },
+      "manual_action": {
+        "name": "Action manuelle",
+        "state": {
+          "standby": "Veille",
+          "charge": "Charger",
+          "discharge": "Décharger"
+        }
+      }
     },
 
     "number": {
@@ -78,9 +93,7 @@
     },
 
     "sensor": {
-      "device_profile": {
-        "name": "Profil de l’appareil actif"
-      },
+      "device_profile": { "name": "Profil de l’appareil actif" },
 
       "season_mode": {
         "name": "Mode saison détecté",
@@ -110,127 +123,22 @@
         }
       },
 
-      "status": {
-        "name": "État du système",
-        "state": {
-          "init": "Initialisation",
-          "ok": "OK",
-          "sensor_invalid": "Données capteur invalides",
-          "price_invalid": "Données de prix invalides"
-        }
-      },
-
-      "ai_status": {
-        "name": "Statut IA",
-        "state": {
-          "standby": "Veille",
-          "charge_surplus": "Charge (surplus PV)",
-          "cover_deficit": "Décharge (charge maison)",
-          "expensive_discharge": "Décharge (prix élevé)",
-          "very_expensive_force": "Décharge forcée (prix extrêmes)",
-          "emergency_charge": "Charge d’urgence active",
-          "manual": "Mode manuel"
-        }
-      },
-
-      "recommendation": {
-        "name": "Recommandation IA",
-        "state": {
-          "standby": "Aucune action",
-          "charge": "Charger",
-          "discharge": "Décharger",
-          "emergency": "Charge d’urgence"
-        }
-      },
-
-      "decision_reason": {
-        "name": "Raison de décision",
-        "state": {
-          "standby": "Veille",
-          "state_idle": "Aucun besoin détecté",
-          "state_enter_discharge": "Décharge démarrée (besoin détecté)",
-          "state_discharging": "Décharge active (charge maison)",
-          "state_enter_charge": "Charge démarrée (surplus détecté)",
-          "state_charging": "Charge active",
-          "expensive_discharge": "Décharge due à un prix élevé",
-          "very_expensive_force_discharge": "Décharge forcée (pic de prix)",
-          "emergency_latched_charge": "Charge d’urgence active (verrouillée)",
-          "soc_min_enforced": "Décharge arrêtée (SoC minimum atteint)",
-          "soc_limit_upper": "Charge bloquée (limite SoC supérieure active)",
-          "soc_limit_lower": "Décharge bloquée (limite SoC inférieure active)",
-          "manual_mode": "Mode manuel actif",
-          "manual_standby": "Veille manuelle",
-          "manual_charge": "Charge manuelle",
-          "manual_discharge": "Décharge manuelle"
-        }
-      },
-
-      "planning_status": {
-        "name": "Statut de planification des prix",
-        "state": {
-          "not_checked": "Non vérifié",
-          "planning_inactive_mode": "Planification désactivée (mode)",
-          "planning_blocked_soc_full": "Batterie pleine – planification bloquée",
-          "planning_no_price_now": "Pas de prix actuel",
-          "planning_no_price_data": "Aucune donnée de prix",
-          "planning_no_peak_detected": "Aucun pic de prix détecté",
-          "planning_waiting_for_cheap_window": "En attente d’une fenêtre bon marché",
-          "planning_charge_now": "Planification : charge autorisée",
-          "planning_last_chance": "Dernière chance avant le pic",
-          "planning_peak_detected_insufficient_window": "Pic détecté, fenêtre trop courte"
-        }
-      },
-
+      "status": { "name": "État du système" },
+      "ai_status": { "name": "Statut IA" },
+      "recommendation": { "name": "Recommandation IA" },
+      "decision_reason": { "name": "Raison de décision" },
+      "planning_status": { "name": "Statut de planification des prix" },
       "planning_active": { "name": "Planification active" },
       "planning_target_soc": { "name": "SoC cible (planification)" },
       "planning_reason": { "name": "Raison de la planification" },
-
-      "next_action_state": {
-        "name": "Prochaine action",
-        "state": {
-          "none": "Aucune action prévue",
-          "planned_charge": "Charge planifiée",
-          "planned_discharge": "Décharge planifiée",
-          "charging_active": "Charge active",
-          "discharging_active": "Décharge active",
-          "manual_charge": "Charge manuelle",
-          "manual_discharge": "Décharge manuelle",
-          "emergency_charge": "Charge d’urgence"
-        }
-      },
-
-      "next_planned_action": {
-        "name": "Action planifiée suivante",
-        "state": {
-          "none": "Aucune action prévue",
-          "charge": "Charge planifiée",
-          "discharge": "Décharge planifiée",
-          "wait": "Attente",
-          "emergency": "Charge d’urgence"
-        }
-      },
-
+      "next_action_state": { "name": "Prochaine action" },
+      "next_planned_action": { "name": "Action planifiée suivante" },
       "next_action_time": { "name": "Heure de la prochaine action" },
-
       "ai_debug": { "name": "Débogage IA" },
       "house_load": { "name": "Charge de la maison" },
       "price_now": { "name": "Prix actuel de l’électricité" },
       "avg_charge_price": { "name": "Prix moyen de charge" },
       "profit_eur": { "name": "Économies / profit (total)" }
-    }
-  },
-
-  "state": {
-    "ai_mode": {
-      "automatic": "Automatique",
-      "summer": "Été",
-      "winter": "Hiver",
-      "manual": "Manuel"
-    },
-    "manual_action": {
-      "standby": "Veille",
-      "charge": "Charger",
-      "discharge": "Décharger"
     }
   }
 }
