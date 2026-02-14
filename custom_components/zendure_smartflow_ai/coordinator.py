@@ -471,7 +471,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             result.update(status="planning_no_peak_detected", blocked_by=None)
             return result
 
-        if peak_price >= float(very_expensive) and soc > soc_min:
+        # --------------------------------------------------
+        # FIX: Very-expensive peak only triggers discharge
+        # if sufficient SoC buffer is available
+        # --------------------------------------------------
+
+        VERY_EXPENSIVE_DISCHARGE_MIN_SOC = float(soc_min) + 20.0  # 20% Reserve
+
+        if (
+            peak_price >= float(very_expensive)
+            and soc >= VERY_EXPENSIVE_DISCHARGE_MIN_SOC
+        ):
             result.update(
                 action="discharge",
                 status="planning_discharge_planned",
