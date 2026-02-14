@@ -1,4 +1,5 @@
 {
   "name": "Battery SmartFlow AI",
-  "category": "integration"
+  "category": "integration",
+  "default_branch": "master"
 }
