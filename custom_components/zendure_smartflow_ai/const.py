@@ -5,12 +5,12 @@ from homeassistant.const import Platform
 # ==================================================
 # Integration meta
 # ==================================================
-DOMAIN = "zendure_smartflow_ai"
+DOMAIN = "battery_smartflow_ai"
 
 INTEGRATION_NAME = "Battery SmartFlow AI"
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "1.5.0-Beta5"
+INTEGRATION_VERSION = "1.5.0-Beta6"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
