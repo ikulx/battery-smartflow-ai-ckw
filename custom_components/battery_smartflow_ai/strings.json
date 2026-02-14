@@ -1,5 +1,5 @@
 {
-  "title": "Zendure SmartFlow AI",
+  "title": "Battery SmartFlow AI",
 
   "config": {
     "error": {
@@ -7,7 +7,7 @@
     },
     "step": {
       "user": {
-        "title": "Zendure SmartFlow AI",
+        "title": "Battery SmartFlow AI",
         "description": "Verknüpfe deine Zendure- und Energiesensoren für eine intelligente Akku-Steuerung.",
         "data": {
           "device_profile": {
