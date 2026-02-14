@@ -221,13 +221,13 @@
   },
 
   "state": {
-    "battery_smartflow_ai__ai_mode": {
+    "ai_mode": {
       "automatic": "Automatique",
       "summer": "Été",
       "winter": "Hiver",
       "manual": "Manuel"
     },
-    "battery_smartflow_ai__manual_action": {
+    "manual_action": {
       "standby": "Veille",
       "charge": "Charger",
       "discharge": "Décharger"
