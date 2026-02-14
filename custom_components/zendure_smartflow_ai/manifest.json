@@ -1,5 +1,5 @@
 {
-  "domain": "zendure_smartflow_ai",
+  "domain": "battery_smartflow_ai",
   "name": "Battery SmartFlow AI",
   "codeowners": ["@PalmManiac"],
   "config_flow": true,
