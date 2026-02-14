@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "reconfigure": {
-        "title": "Reconfigurer Zendure SmartFlow AI",
+        "title": "Reconfigurer Battery SmartFlow AI",
         "description": "Ajustez les capteurs et entités sélectionnés",
         "data": {
           "device_profile": "Profil de l’appareil",
@@ -39,7 +39,7 @@
         }
       },
       "user": {
-        "title": "Configurer Zendure SmartFlow AI",
+        "title": "Configurer Battery SmartFlow AI",
         "description": "Sélectionnez les capteurs et entités requis",
         "data": {
           "device_profile": "Profil de l’appareil",
@@ -221,13 +221,13 @@
   },
 
   "state": {
-    "zendure_smartflow_ai__ai_mode": {
+    "battery_smartflow_ai_mode": {
       "automatic": "Automatique",
       "summer": "Été",
       "winter": "Hiver",
       "manual": "Manuel"
     },
-    "zendure_smartflow_ai__manual_action": {
+    "battery_smartflow_ai__manual_action": {
       "standby": "Veille",
       "charge": "Charger",
       "discharge": "Décharger"
