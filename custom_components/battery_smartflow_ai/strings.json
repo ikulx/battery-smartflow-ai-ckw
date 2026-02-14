@@ -10,13 +10,7 @@
         "title": "Battery SmartFlow AI",
         "description": "Verknüpfe deine Zendure- und Energiesensoren für eine intelligente Akku-Steuerung.",
         "data": {
-          "device_profile": {
-            "name": "Aktives Geräteprofil",
-            "options": {
-              "SF2400AC": "Zendure SF2400AC",
-              "SF800Pro": "Zendure SF800Pro"
-            }
-          },
+          "device_profile": "Aktives Geräteprofil",
           "soc_entity": "Akkustand (SoC)",
           "pv_entity": "PV-Leistung",
           "price_export_entity": "Strompreis-Export (optional)",
