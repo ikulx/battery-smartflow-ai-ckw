@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "reconfigure": {
-        "title": "Zendure SmartFlow AI neu konfigurieren",
+        "title": "Battery SmartFlow AI neu konfigurieren",
         "description": "Passe die ausgewählten Sensoren an",
         "data": {
           "device_profile": "Geräteprofil",
@@ -39,7 +39,7 @@
         }
       },
       "user": {
-        "title": "Zendure SmartFlow AI einrichten",
+        "title": "Battery SmartFlow AI einrichten",
         "description": "Wähle die benötigten Sensoren aus",
         "data": {
           "device_profile": "Geräteprofil",
@@ -223,13 +223,13 @@
   },
 
   "state": {
-    "zendure_smartflow_ai__ai_mode": {
+    "battery_smartflow_ai_mode": {
       "automatic": "Automatik",
       "summer": "Sommer",
       "winter": "Winter",
       "manual": "Manuell"
     },
-    "zendure_smartflow_ai__manual_action": {
+    "battery_smartflow_ai_manual_action": {
       "standby": "Standby",
       "charge": "Laden",
       "discharge": "Entladen"
