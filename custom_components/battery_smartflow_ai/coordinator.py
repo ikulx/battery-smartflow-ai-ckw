@@ -481,6 +481,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if (
             peak_price >= float(very_expensive)
             and soc >= VERY_EXPENSIVE_DISCHARGE_MIN_SOC
+            and now >= peak_start - timedelta(hours=1)  # z.B. 1h vor Peak
         ):
             result.update(
                 action="discharge",
