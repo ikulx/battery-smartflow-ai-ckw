@@ -472,25 +472,26 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return result
 
         # --------------------------------------------------
-        # FIX: Very-expensive peak only triggers discharge
-        # if sufficient SoC buffer is available
+        # Very-expensive peak discharge planning
+        # Only relevant close to peak – does NOT limit charging
         # --------------------------------------------------
 
         VERY_EXPENSIVE_DISCHARGE_MIN_SOC = float(soc_min) + 20.0  # 20% Reserve
 
         if (
             peak_price >= float(very_expensive)
-            and soc >= VERY_EXPENSIVE_DISCHARGE_MIN_SOC
             and now >= peak_start - timedelta(hours=1)  # z.B. 1h vor Peak
         ):
-            result.update(
-                action="discharge",
-                status="planning_discharge_planned",
-                next_peak=peak_start.isoformat(),
-                reason="discharge_during_price_peak",
-                target_soc=soc_min,
-            )
-            return result
+            # discharge nur, wenn genug Reserve vorhanden
+            if soc >= VERY_EXPENSIVE_DISCHARGE_MIN_SOC:
+                result.update(
+                    action="discharge",
+                    status="planning_discharge_planned",
+                    next_peak=peak_start.isoformat(),
+                    reason="discharge_during_price_peak",
+                    target_soc=soc_min,
+                )
+                return result
 
         margin = max(float(profit_margin_pct or 0.0), 0.0) / 100.0
         target_price = float(peak_price) * (1.0 - margin)
