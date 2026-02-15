@@ -1338,10 +1338,32 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 elif power_state == "charging":
                     ac_mode = ZENDURE_MODE_INPUT
                     recommendation = RECO_CHARGE
-                    in_w = min(float(max_charge), max(float(pv_w - house_load), 0.0))
+
+                    # --- NEW: grid-following charge control ---
+                    prev_in = float(self._persist.get("last_set_input_w") or 0.0)
+
+                    # net_grid_w: +import, -export
+                    TARGET_EXPORT_W = -10.0
+                    err = net_grid_w - TARGET_EXPORT_W
+
+                    # proportional step
+                    KP_CHARGE = 0.6
+                    MAX_STEP = 250.0
+
+                    step = max(-MAX_STEP, min(MAX_STEP, KP_CHARGE * (-err)))
+
+                    in_w = prev_in + step
+
+                    # clamp
+                    in_w = max(0.0, min(float(max_charge), in_w))
+
                     out_w = 0.0
                     self._persist["discharge_target_w"] = 0.0
-                    decision_reason = decision_reason if decision_reason.startswith("state_enter") else "state_charging"
+
+                    decision_reason = (
+                        decision_reason if decision_reason.startswith("state_enter")
+                        else "state_charging_grid_follow"
+                    )
 
                 else:
                     ac_mode = ZENDURE_MODE_INPUT
