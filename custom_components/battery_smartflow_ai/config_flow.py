@@ -31,7 +31,7 @@ from .const import (
 from .device_profiles import DEVICE_PROFILES
 
 class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Config flow for Zendure SmartFlow AI."""
+    """Config flow for Battery SmartFlow AI."""
 
     VERSION = 1
 
