@@ -40,7 +40,28 @@ SF2400AC_PROFILE = {
 }
 
 
+SF1600AC_PROFILE = {
+    # --- UI ---
+    "label": "Zendure SF1600AC+",
+
+    # --- Discharge controller tuning ---
+    "TARGET_IMPORT_W": 35.0,
+    "DEADBAND_W": 40.0,
+    "EXPORT_GUARD_W": 45.0,
+    "KP_UP": 0.55,
+    "KP_DOWN": 0.95,
+    "MAX_STEP_UP": 450.0,
+    "MAX_STEP_DOWN": 900.0,
+    "KEEPALIVE_MIN_DEFICIT_W": 15.0,
+    "KEEPALIVE_MIN_OUTPUT_W": 60.0,
+
+    # --- Hardware limits (safety clamp) ---
+    "MAX_INPUT_W": 1600.0,
+    "MAX_OUTPUT_W": 1600.0,
+}
+
 DEVICE_PROFILES = {
     "SF800Pro": SF800PRO_PROFILE,
     "SF2400AC": SF2400AC_PROFILE,
+    "SF1600AC": SF1600AC_PROFILE,
 }
