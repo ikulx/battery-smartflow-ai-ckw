@@ -134,7 +134,7 @@
       },
 
       "ai_status": {
-        "name": "KI-Status"
+        "name": "KI-Status",
         "state": {
           "standby": "Bereitschaft",
           "charge_surplus": "Laden (PV-Überschuss)",
@@ -147,7 +147,7 @@
       },
 
       "recommendation": {
-        "name": "KI-Empfehlung"
+        "name": "KI-Empfehlung",
         "state": {
           "standby": "Keine Aktion",
           "charge": "Laden",
@@ -157,7 +157,7 @@
       },
 
       "decision_reason": {
-        "name": "Entscheidungsgrund"
+        "name": "Entscheidungsgrund",
         "state": {
           "standby": "Bereitschaft",
           "state_idle": "Kein Bedarf erkannt",
@@ -179,7 +179,7 @@
       },
 
       "planning_status": {
-        "name": "Preisplanung Status"
+        "name": "Preisplanung Status",
         "state": {
           "not_checked": "Noch nicht geprüft",
           "planning_inactive_mode": "Planung deaktiviert (Modus)",
@@ -199,7 +199,7 @@
       "planning_reason": { "name": "Planungsbegründung" },
 
       "next_action_state": {
-        "name": "Nächste Aktion"
+        "name": "Nächste Aktion",
         "state": {
           "none": "Keine Aktion geplant",
           "planned_charge": "Geplantes Laden",
@@ -213,7 +213,7 @@
       },
       
       "next_planned_action": {
-        "name": "Geplante nächste Aktion"
+        "name": "Geplante nächste Aktion",
         "state": {
           "none": "Keine Aktion geplant",
           "charge": "Geplantes Laden",
