@@ -3,15 +3,15 @@
     "step": {
       "reconfigure": {
         "title": "Reconfigure Battery SmartFlow AI",
-        "description": "Adjust the selected sensors and entities",
+        "description": "Adjust the selected sensors",
         "data": {
           "device_profile": "Device profile",
           "soc_entity": "Battery SoC sensor",
           "soc_limit_entity": "SoC limit status (optional)",
           "pv_entity": "PV power sensor",
           "price_now_entity": "Current electricity price",
-          "price_export_entity": "Electricity price forecast (e.g. Tibber / EPEX)",
-          "grid_mode": "Grid measurement mode",
+          "price_export_entity": "Price forecast (e.g. Tibber / EPEX)",
+          "grid_mode": "Grid measurement",
           "grid_power_entity": "Grid power (single)",
           "grid_import_entity": "Grid import (split)",
           "grid_export_entity": "Grid export (split)",
@@ -22,7 +22,7 @@
       },
       "reconfigure_grid": {
         "title": "Configure grid measurement",
-        "description": "Select grid sensors according to the selected mode",
+        "description": "Select grid sensors according to the mode",
         "data": {
           "grid_power_entity": "Grid power (single)",
           "grid_import_entity": "Grid import (split)",
@@ -31,7 +31,7 @@
       },
       "grid": {
         "title": "Configure grid measurement",
-        "description": "Select grid sensors according to the selected mode",
+        "description": "Select grid sensors according to the mode",
         "data": {
           "grid_power_entity": "Grid power (single)",
           "grid_import_entity": "Grid import (split)",
@@ -40,15 +40,15 @@
       },
       "user": {
         "title": "Set up Battery SmartFlow AI",
-        "description": "Select the required sensors and entities",
+        "description": "Select the required sensors",
         "data": {
           "device_profile": "Device profile",
           "soc_entity": "Battery SoC sensor",
           "soc_limit_entity": "SoC limit status (optional)",
           "pv_entity": "PV power sensor",
           "price_now_entity": "Current electricity price",
-          "price_export_entity": "Electricity price forecast (e.g. Tibber / EPEX)",
-          "grid_mode": "Grid measurement mode",
+          "price_export_entity": "Price forecast (e.g. Tibber / EPEX)",
+          "grid_mode": "Grid measurement",
           "grid_power_entity": "Grid power (single)",
           "grid_import_entity": "Grid import (split)",
           "grid_export_entity": "Grid export (split)",
@@ -84,8 +84,8 @@
     "number": {
       "soc_min": { "name": "SoC minimum" },
       "soc_max": { "name": "SoC maximum" },
-      "max_charge": { "name": "Max charging power" },
-      "max_discharge": { "name": "Max discharging power" },
+      "max_charge": { "name": "Max charge power" },
+      "max_discharge": { "name": "Max discharge power" },
       "emergency_charge": { "name": "Emergency charge power" },
       "emergency_soc": { "name": "Emergency charge below SoC" },
       "very_expensive_threshold": { "name": "Very expensive threshold" },
@@ -96,7 +96,7 @@
       "device_profile": { "name": "Active device profile" },
 
       "season_mode": {
-        "name": "Detected season mode",
+        "name": "Detected operating mode",
         "state": {
           "winter": "Winter mode",
           "summer": "Summer mode",
@@ -126,25 +126,57 @@
       "status": {
         "name": "System status",
         "state": {
-          "init": "Initializing",
+          "init": "Initialization",
           "ok": "OK",
-          "sensor_invalid": "Invalid sensor data",
-          "price_invalid": "Invalid price data"
+          "sensor_invalid": "Sensor data invalid",
+          "price_invalid": "Price data invalid"
         }
       },
 
-      "ai_status": { "name": "AI status" },
-      "recommendation": { "name": "AI recommendation" },
-      "decision_reason": { "name": "Decision reason" },
-      "planning_status": { "name": "Price planning status" },
+      "ai_status": {
+        "name": "AI status",
+        "state": {
+          "standby": "Standby",
+          "charge_surplus": "Charging (PV surplus)",
+          "cover_deficit": "Discharging (cover house load)",
+          "expensive_discharge": "Discharging (high price)",
+          "very_expensive_force": "Forced discharge (extreme prices)",
+          "emergency_charge": "Emergency charging active",
+          "manual": "Manual mode"
+        }
+      },
+
+      "recommendation": {
+        "name": "AI recommendation",
+        "state": {
+          "standby": "No action",
+          "charge": "Charge",
+          "discharge": "Discharge",
+          "emergency": "Emergency charge"
+        }
+      },
+
+      "decision_reason": {
+        "name": "Decision reason"
+      },
+
+      "planning_status": {
+        "name": "Price planning status"
+      },
 
       "planning_active": { "name": "Price planning active" },
-      "planning_target_soc": { "name": "Target SoC (planning)" },
+      "planning_target_soc": { "name": "Target SoC (price planning)" },
       "planning_reason": { "name": "Planning reason" },
 
-      "next_action_state": { "name": "Next action" },
-      "next_planned_action": { "name": "Next planned action" },
-      "next_action_time": { "name": "Next action start time" },
+      "next_action_state": {
+        "name": "Next action"
+      },
+
+      "next_planned_action": {
+        "name": "Next planned action"
+      },
+
+      "next_action_time": { "name": "Start time of next action" },
 
       "ai_debug": { "name": "AI debug" },
       "house_load": { "name": "House load" },
