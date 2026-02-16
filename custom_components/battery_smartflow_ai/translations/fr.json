@@ -3,15 +3,15 @@
     "step": {
       "reconfigure": {
         "title": "Reconfigurer Battery SmartFlow AI",
-        "description": "Ajustez les capteurs et entités sélectionnés",
+        "description": "Ajuster les capteurs sélectionnés",
         "data": {
-          "device_profile": "Profil de l’appareil",
-          "soc_entity": "Capteur SoC de la batterie",
+          "device_profile": "Profil d'appareil",
+          "soc_entity": "Capteur SoC batterie",
           "soc_limit_entity": "Statut limite SoC (optionnel)",
-          "pv_entity": "Capteur de puissance PV",
+          "pv_entity": "Capteur puissance PV",
           "price_now_entity": "Prix actuel de l'électricité",
-          "price_export_entity": "Prévision des prix (ex. Tibber / EPEX)",
-          "grid_mode": "Mode de mesure du réseau",
+          "price_export_entity": "Prévision des prix (p. ex. Tibber / EPEX)",
+          "grid_mode": "Mesure du réseau",
           "grid_power_entity": "Puissance réseau (simple)",
           "grid_import_entity": "Import réseau (séparé)",
           "grid_export_entity": "Export réseau (séparé)",
@@ -22,7 +22,7 @@
       },
       "reconfigure_grid": {
         "title": "Configurer la mesure réseau",
-        "description": "Sélectionnez les capteurs réseau selon le mode choisi",
+        "description": "Sélectionnez les capteurs réseau selon le mode",
         "data": {
           "grid_power_entity": "Puissance réseau (simple)",
           "grid_import_entity": "Import réseau (séparé)",
@@ -31,7 +31,7 @@
       },
       "grid": {
         "title": "Configurer la mesure réseau",
-        "description": "Sélectionnez les capteurs réseau selon le mode choisi",
+        "description": "Sélectionnez les capteurs réseau selon le mode",
         "data": {
           "grid_power_entity": "Puissance réseau (simple)",
           "grid_import_entity": "Import réseau (séparé)",
@@ -40,15 +40,15 @@
       },
       "user": {
         "title": "Configurer Battery SmartFlow AI",
-        "description": "Sélectionnez les capteurs et entités requis",
+        "description": "Sélectionnez les capteurs nécessaires",
         "data": {
-          "device_profile": "Profil de l’appareil",
-          "soc_entity": "Capteur SoC de la batterie",
+          "device_profile": "Profil d'appareil",
+          "soc_entity": "Capteur SoC batterie",
           "soc_limit_entity": "Statut limite SoC (optionnel)",
-          "pv_entity": "Capteur de puissance PV",
+          "pv_entity": "Capteur puissance PV",
           "price_now_entity": "Prix actuel de l'électricité",
-          "price_export_entity": "Prévision des prix (ex. Tibber / EPEX)",
-          "grid_mode": "Mode de mesure du réseau",
+          "price_export_entity": "Prévision des prix (p. ex. Tibber / EPEX)",
+          "grid_mode": "Mesure du réseau",
           "grid_power_entity": "Puissance réseau (simple)",
           "grid_import_entity": "Import réseau (séparé)",
           "grid_export_entity": "Export réseau (séparé)",
@@ -75,8 +75,8 @@
         "name": "Action manuelle",
         "state": {
           "standby": "Veille",
-          "charge": "Charger",
-          "discharge": "Décharger"
+          "charge": "Charge",
+          "discharge": "Décharge"
         }
       }
     },
@@ -84,19 +84,19 @@
     "number": {
       "soc_min": { "name": "SoC minimum" },
       "soc_max": { "name": "SoC maximum" },
-      "max_charge": { "name": "Puissance de charge max" },
-      "max_discharge": { "name": "Puissance de décharge max" },
-      "emergency_charge": { "name": "Puissance de charge d’urgence" },
-      "emergency_soc": { "name": "Charge d’urgence sous SoC" },
+      "max_charge": { "name": "Puissance de charge max." },
+      "max_discharge": { "name": "Puissance de décharge max." },
+      "emergency_charge": { "name": "Puissance de charge d'urgence" },
+      "emergency_soc": { "name": "Charge d'urgence sous SoC" },
       "very_expensive_threshold": { "name": "Seuil très cher" },
-      "profit_margin_pct": { "name": "Marge de profit (%)" }
+      "profit_margin_pct": { "name": "Marge bénéficiaire (%)" }
     },
 
     "sensor": {
-      "device_profile": { "name": "Profil de l’appareil actif" },
+      "device_profile": { "name": "Profil d'appareil actif" },
 
       "season_mode": {
-        "name": "Mode saison détecté",
+        "name": "Mode de fonctionnement détecté",
         "state": {
           "winter": "Mode hiver",
           "summer": "Mode été",
@@ -107,7 +107,7 @@
       "soc_limit_status": {
         "name": "Statut limite SoC",
         "state": {
-          "not_configured": "Aucun capteur de limite SoC configuré",
+          "not_configured": "Aucun capteur limite SoC configuré",
           "no_limit": "Aucune limite active",
           "upper_limit_active": "Limite SoC supérieure active (charge bloquée)",
           "lower_limit_active": "Limite SoC inférieure active (décharge bloquée)"
@@ -115,30 +115,121 @@
       },
 
       "fault_level_status": {
-        "name": "Statut d’erreur",
+        "name": "Statut de défaut",
         "state": {
-          "normal": "Aucune erreur / fonctionnement normal",
-          "warning": "Avertissement (appareil continue de fonctionner)",
+          "normal": "Aucun défaut / fonctionnement normal",
+          "warning": "Avertissement (l'appareil continue)",
           "error": "Erreur / protection active"
         }
       },
 
-      "status": { "name": "État du système" },
-      "ai_status": { "name": "Statut IA" },
-      "recommendation": { "name": "Recommandation IA" },
-      "decision_reason": { "name": "Raison de décision" },
-      "planning_status": { "name": "Statut de planification des prix" },
-      "planning_active": { "name": "Planification active" },
+      "status": {
+        "name": "Statut système",
+        "state": {
+          "init": "Initialisation",
+          "ok": "OK",
+          "sensor_invalid": "Données capteur invalides",
+          "price_invalid": "Données de prix invalides"
+        }
+      },
+
+      "ai_status": {
+        "name": "Statut IA",
+        "state": {
+          "standby": "Veille",
+          "charge_surplus": "Charge (surplus PV)",
+          "cover_deficit": "Décharge (couvre la charge maison)",
+          "expensive_discharge": "Décharge (prix élevé)",
+          "very_expensive_force": "Décharge forcée (prix extrêmes)",
+          "emergency_charge": "Charge d'urgence active",
+          "manual": "Mode manuel"
+        }
+      },
+
+      "recommendation": {
+        "name": "Recommandation IA",
+        "state": {
+          "standby": "Aucune action",
+          "charge": "Charger",
+          "discharge": "Décharger",
+          "emergency": "Charge d'urgence"
+        }
+      },
+
+      "decision_reason": {
+        "name": "Raison de la décision",
+        "state": {
+          "standby": "Veille",
+          "state_idle": "Aucun besoin détecté",
+          "state_enter_discharge": "Décharge démarrée (besoin détecté)",
+          "state_discharging": "Décharge active (couvre la charge maison)",
+          "state_enter_charge": "Charge démarrée (surplus détecté)",
+          "state_charging": "Charge active",
+          "expensive_discharge": "Décharge en raison d'un prix élevé",
+          "very_expensive_force_discharge": "Décharge forcée en raison d'un pic extrême",
+          "emergency_latched_charge": "Charge d'urgence active (verrouillée)",
+          "soc_min_enforced": "Décharge arrêtée (SoC minimum atteint)",
+          "soc_limit_upper": "Charge bloquée (limite SoC supérieure active)",
+          "soc_limit_lower": "Décharge bloquée (limite SoC inférieure active)",
+          "manual_mode": "Mode manuel actif",
+          "manual_standby": "Veille manuelle",
+          "manual_charge": "Charge manuelle",
+          "manual_discharge": "Décharge manuelle"
+        }
+      },
+
+      "planning_status": {
+        "name": "Statut planification des prix",
+        "state": {
+          "not_checked": "Pas encore vérifié",
+          "planning_inactive_mode": "Planification désactivée (mode)",
+          "planning_blocked_soc_full": "Batterie pleine – planification bloquée",
+          "planning_no_price_now": "Pas de prix actuel",
+          "planning_no_price_data": "Aucune donnée de prix disponible",
+          "planning_no_peak_detected": "Aucun pic pertinent détecté",
+          "planning_waiting_for_cheap_window": "En attente d'une fenêtre de charge économique",
+          "planning_charge_now": "Planification: charge autorisée",
+          "planning_last_chance": "Dernière chance avant pic de prix",
+          "planning_peak_detected_insufficient_window": "Pic détecté, fenêtre trop courte"
+        }
+      },
+
+      "planning_active": { "name": "Pré-planification active" },
       "planning_target_soc": { "name": "SoC cible (planification)" },
       "planning_reason": { "name": "Raison de la planification" },
-      "next_action_state": { "name": "Prochaine action" },
-      "next_planned_action": { "name": "Action planifiée suivante" },
-      "next_action_time": { "name": "Heure de la prochaine action" },
+
+      "next_action_state": {
+        "name": "Prochaine action",
+        "state": {
+          "none": "Aucune action prévue",
+          "planned_charge": "Charge planifiée",
+          "planned_discharge": "Décharge planifiée",
+          "charging_active": "Charge active",
+          "discharging_active": "Décharge active",
+          "manual_charge": "Charge manuelle",
+          "manual_discharge": "Décharge manuelle",
+          "emergency_charge": "Charge d'urgence"
+        }
+      },
+
+      "next_planned_action": {
+        "name": "Prochaine action planifiée",
+        "state": {
+          "none": "Aucune action prévue",
+          "charge": "Charge planifiée",
+          "discharge": "Décharge planifiée",
+          "wait": "Attente",
+          "emergency": "Charge d'urgence"
+        }
+      },
+
+      "next_action_time": { "name": "Heure de début de la prochaine action" },
+
       "ai_debug": { "name": "Débogage IA" },
-      "house_load": { "name": "Charge de la maison" },
-      "price_now": { "name": "Prix actuel de l’électricité" },
-      "avg_charge_price": { "name": "Prix moyen de charge" },
-      "profit_eur": { "name": "Économies / profit (total)" }
+      "house_load": { "name": "Charge maison" },
+      "price_now": { "name": "Prix actuel de l'électricité" },
+      "avg_charge_price": { "name": "Prix moyen de charge batterie" },
+      "profit_eur": { "name": "Économie / profit (total)" }
     }
   }
 }
