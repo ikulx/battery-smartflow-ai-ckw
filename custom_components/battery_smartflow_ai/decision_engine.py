@@ -403,7 +403,7 @@ class DecisionEngine:
                 latch_until_iso = ctx.planning_latch_until.isoformat()
 
         # Defaults (idle)
-        ac_mode: ZendureMode = "INPUT"
+        ac_mode: ZendureMode = "input"
         in_w = 0.0
         out_w = 0.0
         recommendation = "standby"
@@ -427,7 +427,7 @@ class DecisionEngine:
 
         # ---- PRIORITY 1: Emergency ----
         if emergency_active:
-            ac_mode = "INPUT"
+            ac_mode = "input"
             in_w = float(_clamp(ctx.emergency_charge_w, 0.0, max_charge))
             out_w = 0.0
             recommendation = "emergency"
@@ -438,7 +438,7 @@ class DecisionEngine:
 
         # ---- PRIORITY 2: Planning charge (Auto + Winter-manual) OR latch-hold ----
         elif latch_hold:
-            ac_mode = "INPUT"
+            ac_mode = "input"
             in_w = float(max_charge)
             out_w = 0.0
             recommendation = "charge"
@@ -447,7 +447,7 @@ class DecisionEngine:
             discharge_target = 0.0
 
         elif planning_charge_now:
-            ac_mode = "INPUT"
+            ac_mode = "input"
             in_w = float(max_charge)
             out_w = 0.0
             recommendation = "charge"
@@ -459,7 +459,7 @@ class DecisionEngine:
 
         # ---- PRIORITY 3: Price-based discharge (Auto + Winter-manual) ----
         elif price_based_discharge_active:
-            ac_mode = "OUTPUT"
+            ac_mode = "output"
             recommendation = "discharge"
             decision_reason = "price_based_discharge"
             out_w = delta_discharge_w(
@@ -477,7 +477,7 @@ class DecisionEngine:
 
         # ---- PRIORITY 4: Peak discharge (Auto + Winter-manual, close to peak) ----
         elif planning_discharge_now:
-            ac_mode = "OUTPUT"
+            ac_mode = "output"
             recommendation = "discharge"
             decision_reason = "planning_discharge_peak"
             out_w = delta_discharge_w(
@@ -497,7 +497,7 @@ class DecisionEngine:
         elif ctx.ai_mode == "manual":
             latch_until_iso = None
             if ctx.manual_action == "standby":
-                ac_mode = "INPUT"
+                ac_mode = "input"
                 in_w = 0.0
                 out_w = 0.0
                 recommendation = "standby"
@@ -505,7 +505,7 @@ class DecisionEngine:
                 power_state = "idle"
                 discharge_target = 0.0
             elif ctx.manual_action == "charge":
-                ac_mode = "INPUT"
+                ac_mode = "input"
                 in_w = float(max_charge)
                 out_w = 0.0
                 recommendation = "charge"
@@ -513,7 +513,7 @@ class DecisionEngine:
                 power_state = "charging"
                 discharge_target = 0.0
             elif ctx.manual_action == "discharge":
-                ac_mode = "OUTPUT"
+                ac_mode = "output"
                 in_w = 0.0
                 out_w = delta_discharge_w(
                     profile=ctx.profile,
@@ -532,7 +532,7 @@ class DecisionEngine:
         else:
             # Enter/continue discharging if deficit + load and soc > soc_min
             if ctx.house_load_w > float(ctx.profile.get("HOUSE_LOAD_MIN_W", 150.0)) and ctx.net_grid_w > float(ctx.profile.get("DEFICIT_MIN_W", 80.0)) and ctx.soc > ctx.soc_min:
-                ac_mode = "OUTPUT"
+                ac_mode = "output"
                 recommendation = "discharge"
                 decision_reason = "state_discharging"
                 out_w = delta_discharge_w(
@@ -549,7 +549,7 @@ class DecisionEngine:
 
             # Charge from PV surplus
             elif ctx.real_pv_surplus and ctx.soc < ctx.soc_max:
-                ac_mode = "INPUT"
+                ac_mode = "input"
                 recommendation = "charge"
                 # NEW: grid-follow to reduce export (user report: 1kW export in auto)
                 in_w = grid_follow_charge_w(
@@ -564,7 +564,7 @@ class DecisionEngine:
                 discharge_target = 0.0
 
             else:
-                ac_mode = "INPUT"
+                ac_mode = "input"
                 in_w = 0.0
                 out_w = 0.0
                 recommendation = "standby"
@@ -587,8 +587,8 @@ class DecisionEngine:
             power_state = "idle"
 
         # ---- enforce SoC-min on discharge ----
-        if ac_mode == "OUTPUT" and ctx.soc <= ctx.soc_min:
-            ac_mode = "INPUT"
+        if ac_mode == "output" and ctx.soc <= ctx.soc_min:
+            ac_mode = "input"
             out_w = 0.0
             discharge_target = 0.0
             if recommendation == "discharge":
@@ -597,9 +597,9 @@ class DecisionEngine:
             power_state = "idle"
 
         # ---- never set both ----
-        if ac_mode == "OUTPUT":
+        if ac_mode == "output":
             in_w = 0.0
-        if ac_mode == "INPUT":
+        if ac_mode == "input":
             out_w = 0.0
             discharge_target = 0.0
 
