@@ -18,6 +18,21 @@
           "ac_mode_entity": "Zendure AC-Modus",
           "input_limit_entity": "Zendure Ladeleistung",
           "output_limit_entity": "Zendure Entladeleistung"
+        },
+        "data_description": {
+          "device_profile": "Wähle das passende Geräteprofil für dein Zendure-System. Das Profil enthält abgestimmte Regelparameter.",
+          "soc_entity": "Sensor mit dem aktuellen Ladezustand (State of Charge) der Batterie in Prozent. Zentrale Grundlage für alle Entscheidungen.",
+          "soc_limit_entity": "Optionaler Sensor aus der Zendure-Integration, der aktive BMS-Grenzen meldet (z. B. Lade- oder Entladesperre).",
+          "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt. Wird zur Erkennung von Überschuss verwendet.",
+          "price_now_entity": "Sensor mit dem aktuellen Strompreis (z. B. Tibber). Wird für wirtschaftliche Entscheidungen genutzt.",
+          "price_export_entity": "Sensor mit Preisprognosedaten (z. B. Tibber / EPEX). Ermöglicht Preis-Vorplanung.",
+          "grid_mode": "Wähle, wie dein Netzverbrauch gemessen wird: ein kombinierter Sensor oder getrennte Sensoren für Bezug und Einspeisung.",
+          "grid_power_entity": "Ein einzelner Sensor mit positiver Leistung bei Netzbezug und negativer Leistung bei Einspeisung.",
+          "grid_import_entity": "Sensor mit aktueller Netzbezugsleistung (nur positiver Wert).",
+          "grid_export_entity": "Sensor mit aktueller Netzeinspeisung (nur positiver Wert).",
+          "ac_mode_entity": "Select-Entität aus der Zendure-Integration, die zwischen Laden (INPUT) und Entladen (OUTPUT) umschaltet.",
+          "input_limit_entity": "Number-Entität zur Einstellung der Ladeleistung in Watt.",
+          "output_limit_entity": "Number-Entität zur Einstellung der Entladeleistung in Watt."
         }
       },
       "reconfigure_grid": {
@@ -27,6 +42,11 @@
           "grid_power_entity": "Netzleistung (Single)",
           "grid_import_entity": "Netzbezug (Split)",
           "grid_export_entity": "Netzeinspeisung (Split)"
+        },
+        "data_description": {
+          "grid_power_entity": "Ein einzelner Sensor mit positiver Leistung bei Bezug und negativer bei Einspeisung.",
+          "grid_import_entity": "Sensor mit aktueller Netzbezugsleistung in Watt.",
+          "grid_export_entity": "Sensor mit aktueller Netzeinspeisung in Watt."
         }
       },
       "grid": {
@@ -36,6 +56,11 @@
           "grid_power_entity": "Netzleistung (Single)",
           "grid_import_entity": "Netzbezug (Split)",
           "grid_export_entity": "Netzeinspeisung (Split)"
+        },
+        "data_description": {
+          "grid_power_entity": "Ein einzelner Sensor mit positiver Leistung bei Bezug und negativer bei Einspeisung.",
+          "grid_import_entity": "Sensor mit aktueller Netzbezugsleistung in Watt.",
+          "grid_export_entity": "Sensor mit aktueller Netzeinspeisung in Watt."
         }
       },
       "user": {
@@ -55,6 +80,21 @@
           "ac_mode_entity": "Zendure AC-Modus",
           "input_limit_entity": "Zendure Ladeleistung",
           "output_limit_entity": "Zendure Entladeleistung"
+        },
+        "data_description": {
+          "device_profile": "Wähle das passende Geräteprofil für dein Zendure-System. Die Regelparameter werden automatisch angepasst.",
+          "soc_entity": "Sensor mit dem aktuellen Ladezustand der Batterie in Prozent.",
+          "soc_limit_entity": "Optionaler Statussensor aus der Zendure-Integration zur Erkennung aktiver BMS-Sperren.",
+          "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt.",
+          "price_now_entity": "Aktueller Strompreis. Ermöglicht preisabhängige Entladung.",
+          "price_export_entity": "Preisprognosedaten für die nächsten Stunden. Ermöglicht intelligente Ladeplanung.",
+          "grid_mode": "Bestimmt, wie Netzbezug und Einspeisung erfasst werden.",
+          "grid_power_entity": "Ein kombinierter Netzsensor (positiv = Bezug, negativ = Einspeisung).",
+          "grid_import_entity": "Sensor für Netzbezug (Split-Modus).",
+          "grid_export_entity": "Sensor für Netzeinspeisung (Split-Modus).",
+          "ac_mode_entity": "Zendure-AC-Modus (INPUT/OUTPUT). Wird automatisch durch die Integration gesteuert.",
+          "input_limit_entity": "Einstellbare Ladeleistung in Watt.",
+          "output_limit_entity": "Einstellbare Entladeleistung in Watt."
         }
       }
     }
