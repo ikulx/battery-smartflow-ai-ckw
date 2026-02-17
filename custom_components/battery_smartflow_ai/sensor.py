@@ -13,6 +13,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .device_profiles import DEVICE_PROFILES
+
 from .const import (
     DOMAIN,
     INTEGRATION_NAME,
@@ -27,11 +29,6 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-DEVICE_PROFILE_ENUMS = [
-    "SF2400AC",
-    "SF800Pro",
-]
 
 SEASON_MODE_ENUMS = [
     "winter",
@@ -66,6 +63,9 @@ PLANNING_STATUS_ENUMS = [
     "planning_discharge_planned",
     "planning_last_chance",
 ]
+
+# Dynamische Device Profile ENUMs (V2)
+DEVICE_PROFILE_ENUMS = list(DEVICE_PROFILES.keys())
 
 DEBUG_ALWAYS_HAS_STATE = {
     "ai_debug",
