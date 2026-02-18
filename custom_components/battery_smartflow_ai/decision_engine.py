@@ -211,6 +211,10 @@ class DecisionEngine:
 
     hours_needed = required_kwh / charge_power_kw
 
+    # 10% Sicherheitsaufschlag
+    hours_needed *= 1.10
+    hours_needed = max(hours_needed, 0.25)  # mindestens 15 Minuten
+
     latest_start = next_peak - timedelta(hours=hours_needed)
 
     # -----------------------------
