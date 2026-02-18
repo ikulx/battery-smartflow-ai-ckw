@@ -517,7 +517,23 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             emergency_w = self._get_setting(SETTING_EMERGENCY_CHARGE, DEFAULT_EMERGENCY_CHARGE)
             profit_margin_pct = self._get_setting(SETTING_PROFIT_MARGIN_PCT, DEFAULT_PROFIT_MARGIN_PCT)
 
-            battery_capacity_kwh = self._get_setting(SETTING_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH)
+            # -----------------------------
+            # Battery capacity (Entity preferred, fallback manual)
+            # -----------------------------
+            capacity_entity = self.entry.data.get(CONF_CAPACITY_ENTITY)
+
+            battery_capacity_kwh = None
+
+            if capacity_entity:
+                raw_cap = _to_float(self._state(capacity_entity), None)
+                if raw_cap is not None and raw_cap > 0:
+                    battery_capacity_kwh = float(raw_cap)
+
+            if battery_capacity_kwh is None:
+                battery_capacity_kwh = self._get_setting(
+                    SETTING_BATTERY_CAPACITY_KWH,
+                    DEFAULT_BATTERY_CAPACITY_KWH
+                )
 
             ai_mode = str(self.runtime_mode.get("ai_mode", AI_MODE_AUTOMATIC))
             manual_action = str(self.runtime_mode.get("manual_action", MANUAL_STANDBY))
