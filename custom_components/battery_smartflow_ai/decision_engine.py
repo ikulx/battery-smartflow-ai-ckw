@@ -127,6 +127,10 @@ class DecisionEngine:
     # --------------------------------------------------
 
     def _detect_adaptive_peak(self, ctx: DecisionContext) -> bool:
+    """
+    Detects a real-time adaptive price peak.
+    No minimum duration. Immediate reaction.
+    """
 
     if not ctx.price_points or ctx.price_now is None:
         return False
@@ -137,8 +141,9 @@ class DecisionEngine:
 
     avg_price = sum(prices) / len(prices)
 
-    PEAK_FACTOR = 1.35
-    MIN_PEAK_MARGIN_CT = 0.03
+    # ---- V2 Final Adaptive Peak Parameters ----
+    PEAK_FACTOR = 1.35          # 35% above daily average
+    MIN_PEAK_MARGIN_CT = 0.03   # at least +3ct above average
 
     threshold = max(
         avg_price * PEAK_FACTOR,
@@ -146,6 +151,7 @@ class DecisionEngine:
     )
 
     return ctx.price_now >= threshold
+
 
     # --------------------------------------------------
     # Adaptive planning (physically correct)
