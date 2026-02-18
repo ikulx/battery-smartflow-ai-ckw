@@ -169,6 +169,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "last_set_mode": None,
             "last_set_input_w": None,
             "last_set_output_w": None,
+            "prev_discharge_w": 0.0,
 
             # basic state
             "power_state": "idle",  # idle|charging|discharging
@@ -420,7 +421,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if action == "charge":
             return AI_STATUS_CHARGE_SURPLUS
         if action == "discharge":
-            if "very_expensive" in reason:
+            if "very_expensive" in reason or "adaptive_peak" in reason:
                 return AI_STATUS_VERY_EXPENSIVE_FORCE
             if "price" in reason:
                 return AI_STATUS_EXPENSIVE_DISCHARGE
@@ -519,32 +520,43 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # -----------------------------
             ctx = DecisionContext(
                 now=now,
+
                 soc=soc,
                 soc_min=float(soc_min),
                 soc_max=float(soc_max),
+
                 emergency_soc=float(emergency_soc),
                 emergency_charge_w=float(emergency_w),
+
                 max_charge_w=float(max_charge),
                 max_discharge_w=float(max_discharge),
+
                 grid_import_w=float(grid_import),
                 grid_export_w=float(grid_export),
                 pv_w=float(pv_w),
                 house_load_w=float(house_load),
+
                 price_now=price_now,
                 avg_charge_price=self._persist.get("trade_avg_charge_price"),
                 expensive_threshold=float(expensive),
                 very_expensive_threshold=float(very_expensive),
                 profit_margin_pct=float(profit_margin_pct),
-                battery_capacity_kwh=float(battery_capacity_kwh),
                 price_points=price_points,
-                ai_mode=ai_mode,  # automatic/summer/winter/manual
+
+                ai_mode=ai_mode,
                 manual_action=manual_action,
-                season=season,  # winter/summer
-                profile=self._device_profile_cfg,
-                prev_discharge_w=float(self._persist.get("last_set_output_w") or 0.0),
+                season=season,
+
+                # --- V2 additions ---
+                profile=profile,
+                prev_discharge_w=float(self._persist.get("prev_discharge_w", 0.0)),
+                battery_capacity_kwh=0.0,   # optional später über Entity
             )
 
             decision = self._engine.evaluate(ctx)
+
+            # Persist previous discharge for delta controller
+            self._persist["prev_discharge_w"] = float(decision.discharge_w or 0.0)
 
             # -----------------------------
             # BMS SoC limit (directional block)
@@ -601,13 +613,24 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # -----------------------------
             self._persist["planning_checked"] = True
             self._persist["planning_active"] = decision.reason.startswith("planning")
-            self._persist["planning_status"] = (
-                "planning_charge_now" if decision.reason.startswith("planning")
-                else "planning_inactive_mode" if ai_mode not in (AI_MODE_AUTOMATIC, AI_MODE_WINTER)
-                else "planning_no_price_data" if not price_points
-                else "planning_no_price_now" if price_now is None
-                else "planning_no_peak_detected"
-            )
+            if decision.reason == "planning_charge_now":
+                self._persist["planning_status"] = "planning_charge_now"
+
+            elif decision.reason == "planning_latest_start":
+                self._persist["planning_status"] = "planning_last_chance"
+
+            elif ai_mode not in (AI_MODE_AUTOMATIC, AI_MODE_WINTER):
+                self._persist["planning_status"] = "planning_inactive_mode"
+
+            elif not price_points:
+                self._persist["planning_status"] = "planning_no_price_data"
+
+            elif price_now is None:
+                self._persist["planning_status"] = "planning_no_price_now"
+
+            else:
+                self._persist["planning_status"] = "planning_no_peak_detected"
+
             self._persist["planning_reason"] = decision.reason if decision.reason.startswith("planning") else "standby"
             self._persist["planning_target_soc"] = decision.target_soc
 
