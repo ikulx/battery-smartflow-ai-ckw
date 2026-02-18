@@ -128,38 +128,24 @@ class DecisionEngine:
 
     def _detect_adaptive_peak(self, ctx: DecisionContext) -> bool:
 
-        if not ctx.price_points or ctx.price_now is None:
-            return False
+    if not ctx.price_points or ctx.price_now is None:
+        return False
 
-        prices = [p.price for p in ctx.price_points]
-        if not prices:
-            return False
+    prices = [p.price for p in ctx.price_points]
+    if not prices:
+        return False
 
-        avg_price = sum(prices) / len(prices)
+    avg_price = sum(prices) / len(prices)
 
-        PEAK_FACTOR = 1.35
-        MIN_PEAK_MARGIN_CT = 0.03
-        MIN_PEAK_DURATION_MIN = 30
+    PEAK_FACTOR = 1.35
+    MIN_PEAK_MARGIN_CT = 0.03
 
-        threshold = max(
-            avg_price * PEAK_FACTOR,
-            avg_price + MIN_PEAK_MARGIN_CT,
-        )
+    threshold = max(
+        avg_price * PEAK_FACTOR,
+        avg_price + MIN_PEAK_MARGIN_CT
+    )
 
-        if ctx.price_now < threshold:
-            return False
-
-        now = ctx.now
-        matching = [
-            p for p in ctx.price_points
-            if p.start <= now < p.end and p.price >= threshold
-        ]
-
-        if not matching:
-            return False
-
-        duration = (matching[0].end - matching[0].start).total_seconds() / 60.0
-        return duration >= MIN_PEAK_DURATION_MIN
+    return ctx.price_now >= threshold
 
     # --------------------------------------------------
     # Adaptive planning (physically correct)
