@@ -555,6 +555,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             decision = self._engine.evaluate(ctx)
 
+            adaptive_peak_active = decision.reason == "adaptive_peak_discharge"
+
             # Persist previous discharge for delta controller
             self._persist["prev_discharge_w"] = float(decision.discharge_w or 0.0)
 
@@ -678,6 +680,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "ai_mode": ai_mode,
                 "manual_action": manual_action,
                 "decision_reason": decision.reason,
+                "adaptive_peak_active": adaptive_peak_active,
                 "planning_checked": bool(self._persist.get("planning_checked")),
                 "planning_status": self._persist.get("planning_status"),
                 "planning_active": bool(self._persist.get("planning_active")),
