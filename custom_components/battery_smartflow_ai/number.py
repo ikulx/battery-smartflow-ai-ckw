@@ -16,6 +16,8 @@ from .const import (
     INTEGRATION_MANUFACTURER,
     INTEGRATION_MODEL,
     INTEGRATION_VERSION,
+    SETTING_BATTERY_CAPACITY_KWH,
+    DEFAULT_BATTERY_CAPACITY_KWH,
 )
 
 
@@ -25,6 +27,16 @@ class ZendureNumberEntityDescription(NumberEntityDescription):
 
 
 NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
+    ZendureNumberEntityDescription(
+        key=SETTING_BATTERY_CAPACITY_KWH,
+        translation_key="battery_capacity_kwh",
+        native_min_value=0.5,
+        native_max_value=50.0,
+        native_step=0.1,
+        native_unit_of_measurement="kWh",
+        mode="box",
+    ),
+
     ZendureNumberEntityDescription(
         key="soc_min",
         translation_key="soc_min",
