@@ -158,95 +158,110 @@ class DecisionEngine:
     # --------------------------------------------------
 
     def _evaluate_adaptive_planning(self, ctx: DecisionContext) -> Optional[DecisionResult]:
+    """
+    Adaptive planning with real capacity-based latest-start calculation.
+    """
 
-        if (
-            ctx.ai_mode not in ("automatic", "winter")
-            or not ctx.price_points
-            or ctx.price_now is None
-            or ctx.soc >= ctx.soc_max
-        ):
-            return None
-
-        prices = [p.price for p in ctx.price_points]
-        avg_price = sum(prices) / len(prices)
-
-        PEAK_FACTOR = 1.35
-        MIN_PEAK_MARGIN_CT = 0.03
-
-        peak_threshold = max(
-            avg_price * PEAK_FACTOR,
-            avg_price + MIN_PEAK_MARGIN_CT,
-        )
-
-        peak_slots = [p for p in ctx.price_points if p.price >= peak_threshold]
-        future_peaks = [p for p in peak_slots if p.start > ctx.now]
-
-        if not future_peaks:
-            return None
-
-        next_peak = min(p.start for p in future_peaks)
-
-        # ---- Required charge time (real physics) ----
-
-        soc_gap = max(0.0, ctx.soc_max - ctx.soc)
-
-        if ctx.max_charge_w <= 0 or ctx.battery_capacity_kwh <= 0:
-            return None
-
-        needed_kwh = (soc_gap / 100.0) * ctx.battery_capacity_kwh
-        charge_power_kw = ctx.max_charge_w / 1000.0
-
-        if charge_power_kw <= 0:
-            return None
-
-        hours_needed = needed_kwh / charge_power_kw
-
-        latest_start = next_peak - timedelta(hours=hours_needed)
-
-        # ---- Valley detection ----
-
-        pre_peak_slots = [
-            p for p in ctx.price_points
-            if p.end <= next_peak
-        ]
-
-        if not pre_peak_slots:
-            return None
-
-        min_price = min(p.price for p in pre_peak_slots)
-        valley_threshold = min_price * 1.04
-
-        valley_slots = [
-            p for p in pre_peak_slots
-            if p.price <= valley_threshold
-        ]
-
-        in_valley = any(
-            slot.start <= ctx.now < slot.end
-            for slot in valley_slots
-        )
-
-        if in_valley:
-            return DecisionResult(
-                action="charge",
-                ac_mode="input",
-                charge_w=ctx.max_charge_w,
-                discharge_w=0.0,
-                reason="planning_charge_now",
-                target_soc=ctx.soc_max,
-            )
-
-        if ctx.now >= latest_start:
-            return DecisionResult(
-                action="charge",
-                ac_mode="input",
-                charge_w=ctx.max_charge_w,
-                discharge_w=0.0,
-                reason="planning_latest_start",
-                target_soc=ctx.soc_max,
-            )
-
+    if (
+        ctx.ai_mode not in ("automatic", "winter")
+        or not ctx.price_points
+        or ctx.price_now is None
+        or ctx.soc >= ctx.soc_max
+        or ctx.battery_capacity_kwh <= 0
+        or ctx.max_charge_w <= 0
+    ):
         return None
+
+    prices = [p.price for p in ctx.price_points]
+    if not prices:
+        return None
+
+    avg_price = sum(prices) / len(prices)
+
+    # -----------------------------
+    # 1️⃣ Detect peak
+    # -----------------------------
+    PEAK_FACTOR = 1.35
+    MIN_PEAK_MARGIN_CT = 0.03
+
+    peak_threshold = max(
+        avg_price * PEAK_FACTOR,
+        avg_price + MIN_PEAK_MARGIN_CT
+    )
+
+    peak_slots = [p for p in ctx.price_points if p.price >= peak_threshold]
+    if not peak_slots:
+        return None
+
+    future_peaks = [p for p in peak_slots if p.start > ctx.now]
+    if not future_peaks:
+        return None
+
+    next_peak = min(p.start for p in future_peaks)
+
+    # -----------------------------
+    # 2️⃣ Real capacity calculation
+    # -----------------------------
+    soc_gap_pct = max(0.0, ctx.soc_max - ctx.soc)
+    required_kwh = ctx.battery_capacity_kwh * (soc_gap_pct / 100.0)
+
+    charge_power_kw = ctx.max_charge_w / 1000.0
+    if charge_power_kw <= 0:
+        return None
+
+    hours_needed = required_kwh / charge_power_kw
+
+    latest_start = next_peak - timedelta(hours=hours_needed)
+
+    # -----------------------------
+    # 3️⃣ Valley detection
+    # -----------------------------
+    pre_peak_slots = [
+        p for p in ctx.price_points
+        if p.end <= next_peak
+    ]
+
+    if not pre_peak_slots:
+        return None
+
+    min_price = min(p.price for p in pre_peak_slots)
+    valley_threshold = min_price * 1.04  # 4% above lowest
+
+    valley_slots = [
+        p for p in pre_peak_slots
+        if p.price <= valley_threshold
+    ]
+
+    in_valley = any(
+        slot.start <= ctx.now < slot.end
+        for slot in valley_slots
+    )
+
+    # -----------------------------
+    # 4️⃣ Decision
+    # -----------------------------
+    if in_valley:
+        return DecisionResult(
+            action="charge",
+            ac_mode="input",
+            charge_w=ctx.max_charge_w,
+            discharge_w=0.0,
+            reason="planning_charge_now",
+            target_soc=ctx.soc_max,
+        )
+
+    if ctx.now >= latest_start:
+        return DecisionResult(
+            action="charge",
+            ac_mode="input",
+            charge_w=ctx.max_charge_w,
+            discharge_w=0.0,
+            reason="planning_latest_start",
+            target_soc=ctx.soc_max,
+        )
+
+    return None
+
 
     # --------------------------------------------------
     # MAIN EVALUATION
