@@ -10,7 +10,7 @@ DOMAIN = "battery_smartflow_ai"
 INTEGRATION_NAME = "Battery SmartFlow AI"
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "1.5.1"
+INTEGRATION_VERSION = "2.0.0-Beta1"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -40,6 +40,8 @@ CONF_GRID_MODE = "grid_mode"
 CONF_GRID_POWER_ENTITY = "grid_power_entity"      # +import / -export
 CONF_GRID_IMPORT_ENTITY = "grid_import_entity"    # import W
 CONF_GRID_EXPORT_ENTITY = "grid_export_entity"    # export W
+
+CONF_CAPACITY_ENTITY = "capacity_entity"
 
 # --------------------------------------------------
 # Device profiles (V1.5.x)
