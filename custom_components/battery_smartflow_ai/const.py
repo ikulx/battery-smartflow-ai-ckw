@@ -75,6 +75,8 @@ MANUAL_ACTIONS = [MANUAL_STANDBY, MANUAL_CHARGE, MANUAL_DISCHARGE]
 # ==================================================
 # Settings (Number entities) – entity keys
 # ==================================================
+SETTING_BATTERY_CAPACITY_KWH = "battery_capacity_kwh"
+
 SETTING_SOC_MIN = "soc_min"
 SETTING_SOC_MAX = "soc_max"
 SETTING_MAX_CHARGE = "max_charge"
@@ -91,6 +93,8 @@ SETTING_PROFIT_MARGIN_PCT = "profit_margin_pct"   # Arbitrage/Planung
 # ==================================================
 # Defaults
 # ==================================================
+DEFAULT_BATTERY_CAPACITY_KWH = 2.88  # 1x AB3000X als sinnvolle Basis
+
 UPDATE_INTERVAL = 10  # seconds
 
 DEFAULT_SOC_MIN = 12.0
