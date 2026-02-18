@@ -137,6 +137,9 @@
 
     "sensor": {
       "device_profile": { "name": "Aktives Geräteprofil" },
+      "adaptive_peak_active": {
+        "name": "Adaptiver Peak erkannt"
+      }
 
       "season_mode": {
         "name": "Erkannter Betriebsmodus",
