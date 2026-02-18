@@ -118,6 +118,8 @@ class SelectedEntities:
     grid_import: str | None
     grid_export: str | None
 
+    capacity_entity: str | None
+
 
 class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -152,6 +154,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             grid_power=entry.data.get(CONF_GRID_POWER_ENTITY),
             grid_import=entry.data.get(CONF_GRID_IMPORT_ENTITY),
             grid_export=entry.data.get(CONF_GRID_EXPORT_ENTITY),
+            capacity_entity=entry.data.get(CONF_CAPACITY_ENTITY),
         )
 
         self.runtime_mode: dict[str, Any] = {
@@ -338,6 +341,30 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return int(val)
         except Exception:
             return None
+
+    def _get_battery_capacity(self) -> float:
+    """
+    Hybrid capacity detection:
+    1. Entity sensor (kWh)
+    2. Fallback number setting
+    """
+
+    # --- 1️⃣ Entity ---
+    if self.entities.capacity_entity:
+        val = _to_float(self._state(self.entities.capacity_entity), None)
+        if val and val > 0:
+            return float(val)
+
+    # --- 2️⃣ Fallback setting ---
+    fallback = self._get_setting(
+        SETTING_BATTERY_CAPACITY_KWH,
+        DEFAULT_BATTERY_CAPACITY_KWH,
+    )
+
+    if fallback and fallback > 0:
+        return float(fallback)
+
+    return 0.0
 
     def _parse_price_points(self, now) -> list[PricePoint]:
         """Parse export attributes.data (Tibber/EPEX style) to engine price points."""
@@ -550,7 +577,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # --- V2 additions ---
                 profile=profile,
                 prev_discharge_w=float(self._persist.get("prev_discharge_w", 0.0)),
-                battery_capacity_kwh=0.0,   # optional später über Entity
+                battery_capacity_kwh=self._get_battery_capacity(),
             )
 
             decision = self._engine.evaluate(ctx)
