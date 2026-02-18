@@ -535,6 +535,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ai_mode=ai_mode,  # automatic/summer/winter/manual
                 manual_action=manual_action,
                 season=season,  # winter/summer
+                profile=self._device_profile_cfg,
+                prev_discharge_w=float(self._persist.get("last_set_output_w") or 0.0),
             )
 
             decision = self._engine.evaluate(ctx)
@@ -575,6 +577,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # set limits
             await self._set_input_limit(in_w)
             await self._set_output_limit(out_w)
+
+            # Persist discharge memory for delta controller
+            self._persist["last_set_output_w"] = out_w
 
             is_charging = ac_mode == ZENDURE_MODE_INPUT and in_w > 0.0
             is_discharging = ac_mode == ZENDURE_MODE_OUTPUT and out_w > 0.0
