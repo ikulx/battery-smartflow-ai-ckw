@@ -122,6 +122,9 @@
     },
 
     "number": {
+      "battery_capacity_kwh": {
+        "name": "Nutzbare Batteriekapazität"
+      } 
       "soc_min": { "name": "SoC Minimum" },
       "soc_max": { "name": "SoC Maximum" },
       "max_charge": { "name": "Max. Ladeleistung" },
