@@ -155,10 +155,7 @@ class DecisionEngine:
 
     def _evaluate_adaptive_planning(self, ctx: DecisionContext) -> Optional[DecisionResult]:
     """
-    Adaptive planning:
-    - detect real peak
-    - detect cheapest valley before peak
-    - charge in optimal valley window
+    Adaptive planning with latest-start calculation.
     """
 
     if (
@@ -169,10 +166,12 @@ class DecisionEngine:
     ):
         return None
 
-    # 1️⃣ Detect peak
     prices = [p.price for p in ctx.price_points]
     avg_price = sum(prices) / len(prices)
 
+    # -----------------------------
+    # 1️⃣ Detect peak
+    # -----------------------------
     PEAK_FACTOR = 1.35
     MIN_PEAK_MARGIN_CT = 0.03
 
@@ -186,9 +185,30 @@ class DecisionEngine:
     if not peak_slots:
         return None
 
-    next_peak = min(p.start for p in peak_slots if p.start > ctx.now)
+    future_peaks = [p for p in peak_slots if p.start > ctx.now]
+    if not future_peaks:
+        return None
 
-    # 2️⃣ Valley before peak
+    next_peak = min(p.start for p in future_peaks)
+
+    # -----------------------------
+    # 2️⃣ Required charging time
+    # -----------------------------
+    soc_gap = max(0.0, ctx.soc_max - ctx.soc)
+
+    if ctx.max_charge_w <= 0:
+        return None
+
+    # 1% SoC ≈ 1% battery capacity
+    # Relative approach (we don't know capacity, so we use time proportion)
+    hours_needed = soc_gap / 100.0 * 4.0  
+    # Annahme: 4h Voll-Ladung bei max_charge (robust + konservativ)
+
+    latest_start = next_peak - timedelta(hours=hours_needed)
+
+    # -----------------------------
+    # 3️⃣ Valley before peak
+    # -----------------------------
     pre_peak_slots = [
         p for p in ctx.price_points
         if p.end <= next_peak
@@ -198,8 +218,6 @@ class DecisionEngine:
         return None
 
     min_price = min(p.price for p in pre_peak_slots)
-
-    # Valley tolerance 4%
     valley_threshold = min_price * 1.04
 
     valley_slots = [
@@ -207,17 +225,36 @@ class DecisionEngine:
         if p.price <= valley_threshold
     ]
 
-    # 3️⃣ Are we currently inside valley?
-    for slot in valley_slots:
-        if slot.start <= ctx.now < slot.end:
-            return DecisionResult(
-                action="charge",
-                ac_mode="input",
-                charge_w=ctx.max_charge_w,
-                discharge_w=0.0,
-                reason="planning_charge_now",
-                target_soc=min(ctx.soc_max, ctx.soc + 30),
-            )
+    in_valley = any(
+        slot.start <= ctx.now < slot.end
+        for slot in valley_slots
+    )
+
+    # -----------------------------
+    # 4️⃣ Decision logic
+    # -----------------------------
+
+    # Ideal: inside valley
+    if in_valley:
+        return DecisionResult(
+            action="charge",
+            ac_mode="input",
+            charge_w=ctx.max_charge_w,
+            discharge_w=0.0,
+            reason="planning_charge_now",
+            target_soc=ctx.soc_max,
+        )
+
+    # Safety: must start now or miss peak
+    if ctx.now >= latest_start:
+        return DecisionResult(
+            action="charge",
+            ac_mode="input",
+            charge_w=ctx.max_charge_w,
+            discharge_w=0.0,
+            reason="planning_latest_start",
+            target_soc=ctx.soc_max,
+        )
 
     return None
 
