@@ -51,6 +51,8 @@ class DecisionContext:
     profile: dict
     prev_discharge_w: float
 
+    battery_capacity_kwh: float
+
 
 @dataclass
 class DecisionResult:
