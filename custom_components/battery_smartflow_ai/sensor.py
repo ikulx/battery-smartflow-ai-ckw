@@ -191,6 +191,12 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         runtime_key="decision_reason",
         icon="mdi:head-question-outline",
     ),
+    ZendureSensorEntityDescription(
+        key="adaptive_peak_active",
+        translation_key="adaptive_peak_active",
+        runtime_key="adaptive_peak_active",
+        icon="mdi:chart-line",
+    ),
 
     # --- Planning transparency ---
     ZendureSensorEntityDescription(
