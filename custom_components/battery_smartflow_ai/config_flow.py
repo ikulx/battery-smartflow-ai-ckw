@@ -26,6 +26,7 @@ from .const import (
     CONF_DEVICE_PROFILE,
     DEFAULT_DEVICE_PROFILE,
     CONF_SOC_LIMIT_ENTITY,
+    CONF_CAPACITY_ENTITY,
 )
 
 from .device_profiles import DEVICE_PROFILES
