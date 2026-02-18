@@ -343,28 +343,28 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
 
     def _get_battery_capacity(self) -> float:
-    """
-    Hybrid capacity detection:
-    1. Entity sensor (kWh)
-    2. Fallback number setting
-    """
+        """
+        Hybrid capacity detection:
+        1. Entity sensor (kWh)
+        2. Fallback number setting
+        """
 
-    # --- 1️⃣ Entity ---
-    if self.entities.capacity_entity:
-        val = _to_float(self._state(self.entities.capacity_entity), None)
-        if val and val > 0:
-            return float(val)
+        # --- 1️⃣ Entity ---
+        if self.entities.capacity_entity:
+            val = _to_float(self._state(self.entities.capacity_entity), None)
+            if val and val > 0:
+                return float(val)
 
-    # --- 2️⃣ Fallback setting ---
-    fallback = self._get_setting(
-        SETTING_BATTERY_CAPACITY_KWH,
-        DEFAULT_BATTERY_CAPACITY_KWH,
-    )
+        # --- 2️⃣ Fallback setting ---
+        fallback = self._get_setting(
+            SETTING_BATTERY_CAPACITY_KWH,
+            DEFAULT_BATTERY_CAPACITY_KWH,
+        )
 
-    if fallback and fallback > 0:
-        return float(fallback)
+        if fallback and fallback > 0:
+            return float(fallback)
 
-    return 0.0
+        return 0.0
 
     def _parse_price_points(self, now) -> list[PricePoint]:
         """Parse export attributes.data (Tibber/EPEX style) to engine price points."""
@@ -497,6 +497,23 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             soc = float(soc)
             pv_w = float(pv)
 
+            # -----------------------------
+            # Battery capacity (Hybrid detection)
+            # -----------------------------
+            battery_capacity_kwh = self._get_battery_capacity()
+
+            # -----------------------------
+            # Energy delta calculation
+            # -----------------------------
+            prev_soc = self._persist.get("prev_soc")
+            delta_kwh = 0.0
+
+            if prev_soc is not None and battery_capacity_kwh > 0:
+                soc_delta_pct = soc - prev_soc
+                delta_kwh = battery_capacity_kwh * (soc_delta_pct / 100.0)
+
+            self._persist["prev_soc"] = soc
+
             profile = self._device_profile_cfg
 
             soc_min = self._get_setting(SETTING_SOC_MIN, profile.get("SOC_MIN", DEFAULT_SOC_MIN))
@@ -516,24 +533,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             emergency_soc = self._get_setting(SETTING_EMERGENCY_SOC, DEFAULT_EMERGENCY_SOC)
             emergency_w = self._get_setting(SETTING_EMERGENCY_CHARGE, DEFAULT_EMERGENCY_CHARGE)
             profit_margin_pct = self._get_setting(SETTING_PROFIT_MARGIN_PCT, DEFAULT_PROFIT_MARGIN_PCT)
-
-            # -----------------------------
-            # Battery capacity (Entity preferred, fallback manual)
-            # -----------------------------
-            capacity_entity = self.entry.data.get(CONF_CAPACITY_ENTITY)
-
-            battery_capacity_kwh = None
-
-            if capacity_entity:
-                raw_cap = _to_float(self._state(capacity_entity), None)
-                if raw_cap is not None and raw_cap > 0:
-                    battery_capacity_kwh = float(raw_cap)
-
-            if battery_capacity_kwh is None:
-                battery_capacity_kwh = self._get_setting(
-                    SETTING_BATTERY_CAPACITY_KWH,
-                    DEFAULT_BATTERY_CAPACITY_KWH
-                )
 
             ai_mode = str(self.runtime_mode.get("ai_mode", AI_MODE_AUTOMATIC))
             manual_action = str(self.runtime_mode.get("manual_action", MANUAL_STANDBY))
@@ -593,10 +592,48 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # --- V2 additions ---
                 profile=profile,
                 prev_discharge_w=float(self._persist.get("prev_discharge_w", 0.0)),
-                battery_capacity_kwh=self._get_battery_capacity(),
+                battery_capacity_kwh=battery_capacity_kwh,
             )
 
             decision = self._engine.evaluate(ctx)
+
+            # -----------------------------
+            # Profit Tracking – Charging
+            # -----------------------------
+            if delta_kwh > 0 and price_now is not None:
+                charged_kwh = self._persist.get("trade_charged_kwh", 0.0)
+                avg_price = self._persist.get("trade_avg_charge_price")
+
+                new_total_kwh = charged_kwh + delta_kwh
+
+                if avg_price is None:
+                    new_avg = price_now
+                else:
+                    new_avg = ((avg_price * charged_kwh + price_now * delta_kwh) / new_total_kwh)
+
+                self._persist["trade_charged_kwh"] = new_total_kwh
+                self._persist["trade_avg_charge_price"] = new_avg
+
+            # -----------------------------
+            # Profit Tracking – Discharging
+            # -----------------------------
+            if delta_kwh < 0 and price_now is not None:
+                sold_kwh = abs(delta_kwh)
+                avg_price = self._persist.get("trade_avg_charge_price")
+
+                if avg_price is not None:
+                    profit = (price_now - avg_price) * sold_kwh
+
+                    self._persist["profit_eur"] = (
+                        self._persist.get("profit_eur", 0.0) + profit
+                    )
+
+                    remaining_kwh = self._persist.get("trade_charged_kwh", 0.0) - sold_kwh
+                    self._persist["trade_charged_kwh"] = max(0.0, remaining_kwh)
+
+                    if remaining_kwh <= 0:
+                        self._persist["trade_avg_charge_price"] = None
+
 
             adaptive_peak_active = decision.reason == "adaptive_peak_discharge"
 
