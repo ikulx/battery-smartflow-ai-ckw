@@ -113,6 +113,46 @@ class DecisionEngine:
 
         return out_w
 
+    def _detect_adaptive_peak(self, ctx: DecisionContext) -> bool:
+    """
+    Detects a real market peak based on dynamic average.
+    """
+
+    if not ctx.price_points or ctx.price_now is None:
+        return False
+
+    prices = [p.price for p in ctx.price_points]
+    if not prices:
+        return False
+
+    avg_price = sum(prices) / len(prices)
+
+    # --- Adaptive parameters (V2 global config) ---
+    PEAK_FACTOR = 1.35              # 35% above average
+    MIN_PEAK_MARGIN_CT = 0.03       # at least +3ct
+    MIN_PEAK_DURATION_MIN = 30      # minimum 30 min continuous peak
+
+    threshold = max(
+        avg_price * PEAK_FACTOR,
+        avg_price + MIN_PEAK_MARGIN_CT
+    )
+
+    if ctx.price_now < threshold:
+        return False
+
+    # Duration check
+    now = ctx.now
+    matching = [
+        p for p in ctx.price_points
+        if p.start <= now < p.end and p.price >= threshold
+    ]
+
+    if not matching:
+        return False
+
+    duration = (matching[0].end - matching[0].start).total_seconds() / 60.0
+    return duration >= MIN_PEAK_DURATION_MIN
+
     # --------------------------------------------------
     # Main evaluate
     # --------------------------------------------------
@@ -129,21 +169,30 @@ class DecisionEngine:
                 reason="emergency_latched_charge",
             )
 
-        # 2️⃣ Very expensive discharge
+        # --------------------------------------------------
+        # 2️⃣ VERY EXPENSIVE / ADAPTIVE PEAK DISCHARGE
+        # --------------------------------------------------
         if (
-            ctx.price_now is not None
-            and ctx.price_now >= ctx.very_expensive_threshold
-            and ctx.soc > ctx.soc_min + 5
+            ctx.soc > ctx.soc_min + 5
             and ctx.ai_mode in ("automatic", "winter")
         ):
-            discharge_w = self._delta_discharge(ctx)
-            return DecisionResult(
-                action="discharge",
-                ac_mode="output",
-                charge_w=0.0,
-                discharge_w=discharge_w,
-                reason="very_expensive_force_discharge",
-            )
+            adaptive_peak = self._detect_adaptive_peak(ctx)
+
+            if (
+                ctx.price_now is not None
+                and ctx.price_now >= ctx.very_expensive_threshold
+            ) or adaptive_peak:
+
+                return DecisionResult(
+                    action="discharge",
+                    ac_mode="output",
+                    charge_w=0.0,
+                    discharge_w=ctx.max_discharge_w,
+                    reason="very_expensive_force_discharge"
+                    if not adaptive_peak
+                    else "adaptive_peak_discharge",
+                )
+
 
         # 3️⃣ Arbitrage discharge
         if (
