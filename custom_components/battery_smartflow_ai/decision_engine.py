@@ -1,10 +1,13 @@
-# decision_engine.py
-
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, List, Literal
-from datetime import datetime
+from datetime import datetime, timedelta
 
+
+# --------------------------------------------------
+# TYPES
+# --------------------------------------------------
 
 AiMode = Literal["automatic", "summer", "winter", "manual"]
 ZendureMode = Literal["input", "output"]
@@ -64,6 +67,10 @@ class DecisionResult:
     target_soc: Optional[float] = None
 
 
+# --------------------------------------------------
+# ENGINE
+# --------------------------------------------------
+
 class DecisionEngine:
 
     # --------------------------------------------------
@@ -115,153 +122,142 @@ class DecisionEngine:
 
         return out_w
 
+    # --------------------------------------------------
+    # Adaptive peak detection
+    # --------------------------------------------------
+
     def _detect_adaptive_peak(self, ctx: DecisionContext) -> bool:
-    """
-    Detects a real market peak based on dynamic average.
-    """
 
-    if not ctx.price_points or ctx.price_now is None:
-        return False
+        if not ctx.price_points or ctx.price_now is None:
+            return False
 
-    prices = [p.price for p in ctx.price_points]
-    if not prices:
-        return False
+        prices = [p.price for p in ctx.price_points]
+        if not prices:
+            return False
 
-    avg_price = sum(prices) / len(prices)
+        avg_price = sum(prices) / len(prices)
 
-    # --- Adaptive parameters (V2 global config) ---
-    PEAK_FACTOR = 1.35              # 35% above average
-    MIN_PEAK_MARGIN_CT = 0.03       # at least +3ct
-    MIN_PEAK_DURATION_MIN = 30      # minimum 30 min continuous peak
+        PEAK_FACTOR = 1.35
+        MIN_PEAK_MARGIN_CT = 0.03
+        MIN_PEAK_DURATION_MIN = 30
 
-    threshold = max(
-        avg_price * PEAK_FACTOR,
-        avg_price + MIN_PEAK_MARGIN_CT
-    )
-
-    if ctx.price_now < threshold:
-        return False
-
-    # Duration check
-    now = ctx.now
-    matching = [
-        p for p in ctx.price_points
-        if p.start <= now < p.end and p.price >= threshold
-    ]
-
-    if not matching:
-        return False
-
-    duration = (matching[0].end - matching[0].start).total_seconds() / 60.0
-    return duration >= MIN_PEAK_DURATION_MIN
-
-    def _evaluate_adaptive_planning(self, ctx: DecisionContext) -> Optional[DecisionResult]:
-    """
-    Adaptive planning with latest-start calculation.
-    """
-
-    if (
-        ctx.ai_mode not in ("automatic", "winter")
-        or not ctx.price_points
-        or ctx.price_now is None
-        or ctx.soc >= ctx.soc_max
-    ):
-        return None
-
-    prices = [p.price for p in ctx.price_points]
-    avg_price = sum(prices) / len(prices)
-
-    # -----------------------------
-    # 1️⃣ Detect peak
-    # -----------------------------
-    PEAK_FACTOR = 1.35
-    MIN_PEAK_MARGIN_CT = 0.03
-
-    peak_threshold = max(
-        avg_price * PEAK_FACTOR,
-        avg_price + MIN_PEAK_MARGIN_CT
-    )
-
-    peak_slots = [p for p in ctx.price_points if p.price >= peak_threshold]
-
-    if not peak_slots:
-        return None
-
-    future_peaks = [p for p in peak_slots if p.start > ctx.now]
-    if not future_peaks:
-        return None
-
-    next_peak = min(p.start for p in future_peaks)
-
-    # -----------------------------
-    # 2️⃣ Required charging time
-    # -----------------------------
-    soc_gap = max(0.0, ctx.soc_max - ctx.soc)
-
-    if ctx.max_charge_w <= 0:
-        return None
-
-    # 1% SoC ≈ 1% battery capacity
-    # Relative approach (we don't know capacity, so we use time proportion)
-    hours_needed = soc_gap / 100.0 * 4.0  
-    # Annahme: 4h Voll-Ladung bei max_charge (robust + konservativ)
-
-    latest_start = next_peak - timedelta(hours=hours_needed)
-
-    # -----------------------------
-    # 3️⃣ Valley before peak
-    # -----------------------------
-    pre_peak_slots = [
-        p for p in ctx.price_points
-        if p.end <= next_peak
-    ]
-
-    if not pre_peak_slots:
-        return None
-
-    min_price = min(p.price for p in pre_peak_slots)
-    valley_threshold = min_price * 1.04
-
-    valley_slots = [
-        p for p in pre_peak_slots
-        if p.price <= valley_threshold
-    ]
-
-    in_valley = any(
-        slot.start <= ctx.now < slot.end
-        for slot in valley_slots
-    )
-
-    # -----------------------------
-    # 4️⃣ Decision logic
-    # -----------------------------
-
-    # Ideal: inside valley
-    if in_valley:
-        return DecisionResult(
-            action="charge",
-            ac_mode="input",
-            charge_w=ctx.max_charge_w,
-            discharge_w=0.0,
-            reason="planning_charge_now",
-            target_soc=ctx.soc_max,
+        threshold = max(
+            avg_price * PEAK_FACTOR,
+            avg_price + MIN_PEAK_MARGIN_CT,
         )
 
-    # Safety: must start now or miss peak
-    if ctx.now >= latest_start:
-        return DecisionResult(
-            action="charge",
-            ac_mode="input",
-            charge_w=ctx.max_charge_w,
-            discharge_w=0.0,
-            reason="planning_latest_start",
-            target_soc=ctx.soc_max,
-        )
+        if ctx.price_now < threshold:
+            return False
 
-    return None
+        now = ctx.now
+        matching = [
+            p for p in ctx.price_points
+            if p.start <= now < p.end and p.price >= threshold
+        ]
+
+        if not matching:
+            return False
+
+        duration = (matching[0].end - matching[0].start).total_seconds() / 60.0
+        return duration >= MIN_PEAK_DURATION_MIN
 
     # --------------------------------------------------
-    # Main evaluate
+    # Adaptive planning (physically correct)
+    # --------------------------------------------------
+
+    def _evaluate_adaptive_planning(self, ctx: DecisionContext) -> Optional[DecisionResult]:
+
+        if (
+            ctx.ai_mode not in ("automatic", "winter")
+            or not ctx.price_points
+            or ctx.price_now is None
+            or ctx.soc >= ctx.soc_max
+        ):
+            return None
+
+        prices = [p.price for p in ctx.price_points]
+        avg_price = sum(prices) / len(prices)
+
+        PEAK_FACTOR = 1.35
+        MIN_PEAK_MARGIN_CT = 0.03
+
+        peak_threshold = max(
+            avg_price * PEAK_FACTOR,
+            avg_price + MIN_PEAK_MARGIN_CT,
+        )
+
+        peak_slots = [p for p in ctx.price_points if p.price >= peak_threshold]
+        future_peaks = [p for p in peak_slots if p.start > ctx.now]
+
+        if not future_peaks:
+            return None
+
+        next_peak = min(p.start for p in future_peaks)
+
+        # ---- Required charge time (real physics) ----
+
+        soc_gap = max(0.0, ctx.soc_max - ctx.soc)
+
+        if ctx.max_charge_w <= 0 or ctx.battery_capacity_kwh <= 0:
+            return None
+
+        needed_kwh = (soc_gap / 100.0) * ctx.battery_capacity_kwh
+        charge_power_kw = ctx.max_charge_w / 1000.0
+
+        if charge_power_kw <= 0:
+            return None
+
+        hours_needed = needed_kwh / charge_power_kw
+
+        latest_start = next_peak - timedelta(hours=hours_needed)
+
+        # ---- Valley detection ----
+
+        pre_peak_slots = [
+            p for p in ctx.price_points
+            if p.end <= next_peak
+        ]
+
+        if not pre_peak_slots:
+            return None
+
+        min_price = min(p.price for p in pre_peak_slots)
+        valley_threshold = min_price * 1.04
+
+        valley_slots = [
+            p for p in pre_peak_slots
+            if p.price <= valley_threshold
+        ]
+
+        in_valley = any(
+            slot.start <= ctx.now < slot.end
+            for slot in valley_slots
+        )
+
+        if in_valley:
+            return DecisionResult(
+                action="charge",
+                ac_mode="input",
+                charge_w=ctx.max_charge_w,
+                discharge_w=0.0,
+                reason="planning_charge_now",
+                target_soc=ctx.soc_max,
+            )
+
+        if ctx.now >= latest_start:
+            return DecisionResult(
+                action="charge",
+                ac_mode="input",
+                charge_w=ctx.max_charge_w,
+                discharge_w=0.0,
+                reason="planning_latest_start",
+                target_soc=ctx.soc_max,
+            )
+
+        return None
+
+    # --------------------------------------------------
+    # MAIN EVALUATION
     # --------------------------------------------------
 
     def evaluate(self, ctx: DecisionContext) -> DecisionResult:
@@ -276,9 +272,7 @@ class DecisionEngine:
                 reason="emergency_latched_charge",
             )
 
-        # --------------------------------------------------
-        # 2️⃣ VERY EXPENSIVE / ADAPTIVE PEAK DISCHARGE
-        # --------------------------------------------------
+        # 2️⃣ Very expensive / adaptive peak discharge
         if (
             ctx.soc > ctx.soc_min + 5
             and ctx.ai_mode in ("automatic", "winter")
@@ -295,11 +289,8 @@ class DecisionEngine:
                     ac_mode="output",
                     charge_w=0.0,
                     discharge_w=ctx.max_discharge_w,
-                    reason="very_expensive_force_discharge"
-                    if not adaptive_peak
-                    else "adaptive_peak_discharge",
+                    reason="adaptive_peak_discharge" if adaptive_peak else "very_expensive_force_discharge",
                 )
-
 
         # 3️⃣ Arbitrage discharge
         if (
@@ -319,14 +310,12 @@ class DecisionEngine:
                 reason="price_based_discharge",
             )
 
-        # --------------------------------------------------
-        # 4️⃣ ADAPTIVE PLANNING
-        # --------------------------------------------------
+        # 4️⃣ Adaptive planning
         planning_result = self._evaluate_adaptive_planning(ctx)
         if planning_result:
             return planning_result
 
-        # 4️⃣ Summer logic
+        # 5️⃣ Summer logic
         if (
             ctx.ai_mode == "summer"
             or (ctx.ai_mode == "automatic" and ctx.season == "summer")
@@ -351,7 +340,7 @@ class DecisionEngine:
                     reason="pv_surplus_charge",
                 )
 
-        # 5️⃣ Manual
+        # 6️⃣ Manual
         if ctx.ai_mode == "manual":
             if ctx.manual_action == "charge":
                 return DecisionResult(
@@ -380,7 +369,7 @@ class DecisionEngine:
                 reason="manual_idle",
             )
 
-        # 6️⃣ Default idle
+        # 7️⃣ Default idle
         return DecisionResult(
             action="idle",
             ac_mode="input",
