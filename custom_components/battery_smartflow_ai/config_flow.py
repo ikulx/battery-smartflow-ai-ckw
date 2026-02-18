@@ -151,9 +151,10 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
 
                 vol.Optional(CONF_SOC_LIMIT_ENTITY, default=_val(CONF_SOC_LIMIT_ENTITY)):
-                    selector.EntitySelector(
-                        selector.EntitySelectorConfig(domain="sensor")
-                    ),
+                    selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+
+                vol.Optional(CONF_CAPACITY_ENTITY):
+                    selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
 
                 vol.Required(CONF_PV_ENTITY, default=_val(CONF_PV_ENTITY)):
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
