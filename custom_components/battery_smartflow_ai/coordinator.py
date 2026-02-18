@@ -40,6 +40,7 @@ from .const import (
     SETTING_EMERGENCY_SOC,
     SETTING_EMERGENCY_CHARGE,
     SETTING_PROFIT_MARGIN_PCT,
+    SETTING_BATTERY_CAPACITY_KWH,
     # defaults
     DEFAULT_SOC_MIN,
     DEFAULT_SOC_MAX,
@@ -50,6 +51,7 @@ from .const import (
     DEFAULT_EMERGENCY_SOC,
     DEFAULT_EMERGENCY_CHARGE,
     DEFAULT_PROFIT_MARGIN_PCT,
+    DEFAULT_BATTERY_CAPACITY_KWH,
     # modes
     AI_MODE_AUTOMATIC,
     AI_MODE_SUMMER,
@@ -487,6 +489,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             emergency_w = self._get_setting(SETTING_EMERGENCY_CHARGE, DEFAULT_EMERGENCY_CHARGE)
             profit_margin_pct = self._get_setting(SETTING_PROFIT_MARGIN_PCT, DEFAULT_PROFIT_MARGIN_PCT)
 
+            battery_capacity_kwh = self._get_setting(SETTING_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH)
+
             ai_mode = str(self.runtime_mode.get("ai_mode", AI_MODE_AUTOMATIC))
             manual_action = str(self.runtime_mode.get("manual_action", MANUAL_STANDBY))
 
@@ -531,6 +535,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 expensive_threshold=float(expensive),
                 very_expensive_threshold=float(very_expensive),
                 profit_margin_pct=float(profit_margin_pct),
+                battery_capacity_kwh=float(battery_capacity_kwh),
                 price_points=price_points,
                 ai_mode=ai_mode,  # automatic/summer/winter/manual
                 manual_action=manual_action,
