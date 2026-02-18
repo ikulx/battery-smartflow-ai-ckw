@@ -153,6 +153,74 @@ class DecisionEngine:
     duration = (matching[0].end - matching[0].start).total_seconds() / 60.0
     return duration >= MIN_PEAK_DURATION_MIN
 
+    def _evaluate_adaptive_planning(self, ctx: DecisionContext) -> Optional[DecisionResult]:
+    """
+    Adaptive planning:
+    - detect real peak
+    - detect cheapest valley before peak
+    - charge in optimal valley window
+    """
+
+    if (
+        ctx.ai_mode not in ("automatic", "winter")
+        or not ctx.price_points
+        or ctx.price_now is None
+        or ctx.soc >= ctx.soc_max
+    ):
+        return None
+
+    # 1️⃣ Detect peak
+    prices = [p.price for p in ctx.price_points]
+    avg_price = sum(prices) / len(prices)
+
+    PEAK_FACTOR = 1.35
+    MIN_PEAK_MARGIN_CT = 0.03
+
+    peak_threshold = max(
+        avg_price * PEAK_FACTOR,
+        avg_price + MIN_PEAK_MARGIN_CT
+    )
+
+    peak_slots = [p for p in ctx.price_points if p.price >= peak_threshold]
+
+    if not peak_slots:
+        return None
+
+    next_peak = min(p.start for p in peak_slots if p.start > ctx.now)
+
+    # 2️⃣ Valley before peak
+    pre_peak_slots = [
+        p for p in ctx.price_points
+        if p.end <= next_peak
+    ]
+
+    if not pre_peak_slots:
+        return None
+
+    min_price = min(p.price for p in pre_peak_slots)
+
+    # Valley tolerance 4%
+    valley_threshold = min_price * 1.04
+
+    valley_slots = [
+        p for p in pre_peak_slots
+        if p.price <= valley_threshold
+    ]
+
+    # 3️⃣ Are we currently inside valley?
+    for slot in valley_slots:
+        if slot.start <= ctx.now < slot.end:
+            return DecisionResult(
+                action="charge",
+                ac_mode="input",
+                charge_w=ctx.max_charge_w,
+                discharge_w=0.0,
+                reason="planning_charge_now",
+                target_soc=min(ctx.soc_max, ctx.soc + 30),
+            )
+
+    return None
+
     # --------------------------------------------------
     # Main evaluate
     # --------------------------------------------------
@@ -211,6 +279,13 @@ class DecisionEngine:
                 discharge_w=discharge_w,
                 reason="price_based_discharge",
             )
+
+        # --------------------------------------------------
+        # 4️⃣ ADAPTIVE PLANNING
+        # --------------------------------------------------
+        planning_result = self._evaluate_adaptive_planning(ctx)
+        if planning_result:
+            return planning_result
 
         # 4️⃣ Summer logic
         if (
