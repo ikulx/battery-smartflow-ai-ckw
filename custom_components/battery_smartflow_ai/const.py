@@ -101,7 +101,6 @@ SETTING_EMERGENCY_CHARGE = "emergency_charge"     # Notladeleistung (W)
 
 SETTING_PROFIT_MARGIN_PCT = "profit_margin_pct"   # Arbitrage/Planung
 
-SETTING_BATTERY_CAPACITY_KWH = "battery_capacity_kwh"
 
 # ==================================================
 # Defaults
@@ -122,7 +121,6 @@ DEFAULT_EMERGENCY_CHARGE = 1200.0
 
 DEFAULT_PROFIT_MARGIN_PCT = 27.0
 
-DEFAULT_BATTERY_CAPACITY_KWH = 2.88  # Default: 1x AB3000X
 
 # ==================================================
 # Status / Enum values (internal)
