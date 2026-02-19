@@ -73,6 +73,7 @@
           "soc_entity": "Batterie-SoC Sensor",
           "soc_limit_entity": "SoC-Limit Status (optional)",
           "battery_capacity_kwh": "Nutzbare Batteriekapazität",
+          "pack_capacity_kwh": "Kapazität pro Akku-Pack (kWh)"
           "pv_entity": "PV-Leistung Sensor",
           "price_now_entity": "Aktueller Strompreis",
           "price_export_entity": "Preisverlauf (z. B. Tibber / EPEX)",
@@ -89,6 +90,7 @@
           "soc_entity": "Sensor mit dem aktuellen Ladezustand der Batterie in Prozent.",
           "soc_limit_entity": "Optionaler Statussensor aus der Zendure-Integration zur Erkennung aktiver BMS-Sperren.",
           "battery_capacity_kwh": "Gesamte nutzbare Kapazität aller installierten Akku-Packs in kWh. Wird für die adaptive Preisplanung und Ladezeitberechnung verwendet.",
+          "pack_capacity_kwh": "Nutzbare Kapazität eines einzelnen Akku-Packs in kWh. Wird mit der Anzahl der Packs multipliziert, um die Gesamtkapazität zu berechnen."
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt.",
           "price_now_entity": "Aktueller Strompreis. Ermöglicht preisabhängige Entladung.",
           "price_export_entity": "Preisprognosedaten für die nächsten Stunden. Ermöglicht intelligente Ladeplanung.",
