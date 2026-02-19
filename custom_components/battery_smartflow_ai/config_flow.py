@@ -27,6 +27,8 @@ from .const import (
     DEFAULT_DEVICE_PROFILE,
     CONF_SOC_LIMIT_ENTITY,
     CONF_CAPACITY_ENTITY,
+    CONF_PACK_CAPACITY_KWH,
+    DEFAULT_PACK_CAPACITY_KWH,
 )
 
 from .device_profiles import DEVICE_PROFILES
@@ -156,6 +158,18 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 vol.Optional(CONF_CAPACITY_ENTITY):
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+
+                vol.Required(
+                    CONF_PACK_CAPACITY_KWH,
+                    default=_val(CONF_PACK_CAPACITY_KWH) or DEFAULT_PACK_CAPACITY_KWH,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.1,
+                        max=20.0,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
 
                 vol.Required(CONF_PV_ENTITY, default=_val(CONF_PV_ENTITY)):
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
