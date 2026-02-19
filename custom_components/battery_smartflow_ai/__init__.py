@@ -37,3 +37,20 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if coordinator:
             await coordinator.async_shutdown()
     return unload_ok
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old config entries to new version."""
+    if entry.version == 1:
+        new_data = {**entry.data}
+
+        # Falls pack_capacity_kwh noch nicht existiert → Default setzen
+        if "pack_capacity_kwh" not in new_data:
+            new_data["pack_capacity_kwh"] = 2.88
+
+        hass.config_entries.async_update_entry(
+            entry,
+            data=new_data,
+            version=2,
+        )
+
+    return True
