@@ -29,8 +29,9 @@ class ZendureNumberEntityDescription(NumberEntityDescription):
 NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
     ZendureNumberEntityDescription(
         key=SETTING_BATTERY_CAPACITY_KWH,
+        runtime_key="battery_capacity_kwh",
         translation_key="battery_capacity_kwh",
-        native_min_value=0.5,
+        native_min_value=0.1,
         native_max_value=50.0,
         native_step=0.1,
         native_unit_of_measurement="kWh",
