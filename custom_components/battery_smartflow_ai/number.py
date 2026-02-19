@@ -31,6 +31,7 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
 
     ZendureNumberEntityDescription(
         key=SETTING_BATTERY_PACKS,
+        translation_key="battery_packs",
         runtime_key=SETTING_BATTERY_PACKS,
         native_min_value=1,
         native_max_value=10,
