@@ -367,27 +367,71 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return 0.0
 
     def _parse_price_points(self, now) -> list[PricePoint]:
-        """Parse export attributes.data (Tibber/EPEX style) to engine price points."""
+        """
+        Universal price parser.
+        Supports:
+        - Tibber (attributes.data[])
+        - EPEX style exports
+        - Octopus (rates[])
+        - generic 15min APIs
+        """
+
         if not self.entities.price_export:
             return []
-        export = self._attr(self.entities.price_export, "data")
-        if not isinstance(export, list):
+
+        raw = self._attr(self.entities.price_export, "data")
+
+        if not raw:
+            return []
+
+        # --------------------------------------------------
+        # Normalize structure (list or dict)
+        # --------------------------------------------------
+        if isinstance(raw, dict):
+            # Octopus style
+            raw = (
+                raw.get("rates")
+                or raw.get("data")
+                or raw.get("timeslots")
+            )
+
+        if not isinstance(raw, list):
             return []
 
         out: list[PricePoint] = []
-        for item in export:
+
+        for item in raw:
             if not isinstance(item, dict):
                 continue
 
+            # --------------------------------------------------
+            # Flexible time parsing
+            # --------------------------------------------------
             start = (
                 item.get("start_time")
                 or item.get("starts_at")
                 or item.get("start")
                 or item.get("time")
             )
-            end = item.get("end_time") or item.get("ends_at")
 
-            p = _to_float(item.get("price_per_kwh"), None)
+            end = (
+                item.get("end_time")
+                or item.get("ends_at")
+                or item.get("end")
+            )
+
+            # --------------------------------------------------
+            # Flexible price parsing
+            # --------------------------------------------------
+            p = _to_float(
+                item.get("price_per_kwh")
+                or item.get("value_inc_vat")
+                or item.get("value")
+                or item.get("unit_rate")
+                or item.get("price"),
+                None,
+            )
+
             if not start or p is None:
                 continue
 
@@ -400,12 +444,20 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if not t_end:
                     continue
             else:
+                # default 15min slot
                 t_end = t_start + timedelta(minutes=15)
 
+            # ignore past slots
             if t_end <= now:
                 continue
 
-            out.append(PricePoint(start=t_start, end=t_end, price=float(p)))
+            out.append(
+                PricePoint(
+                    start=t_start,
+                    end=t_end,
+                    price=float(p),
+                )
+            )
 
         return out
 
