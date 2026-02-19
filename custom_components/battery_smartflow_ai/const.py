@@ -43,6 +43,17 @@ CONF_GRID_EXPORT_ENTITY = "grid_export_entity"    # export W
 
 CONF_CAPACITY_ENTITY = "capacity_entity"
 
+# --- Config entry keys ---
+CONF_PACK_CAPACITY_KWH = "pack_capacity_kwh"
+
+# --- Runtime settings ---
+SETTING_BATTERY_PACKS = "battery_packs"
+
+# Default
+DEFAULT_PACK_CAPACITY_KWH = 2.88
+DEFAULT_BATTERY_PACKS = 1
+
+
 # --------------------------------------------------
 # Device profiles (V1.5.x)
 # --------------------------------------------------
