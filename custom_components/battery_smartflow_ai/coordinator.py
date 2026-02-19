@@ -28,6 +28,7 @@ from .const import (
     CONF_GRID_EXPORT_ENTITY,
     CONF_SOC_LIMIT_ENTITY,
     CONF_CAPACITY_ENTITY,
+    CONF_PACK_CAPACITY_KWH,
     GRID_MODE_NONE,
     GRID_MODE_SINGLE,
     GRID_MODE_SPLIT,
@@ -41,7 +42,7 @@ from .const import (
     SETTING_EMERGENCY_SOC,
     SETTING_EMERGENCY_CHARGE,
     SETTING_PROFIT_MARGIN_PCT,
-    SETTING_BATTERY_CAPACITY_KWH,
+    SETTING_BATTERY_PACKS,
     # defaults
     DEFAULT_SOC_MIN,
     DEFAULT_SOC_MAX,
@@ -53,6 +54,7 @@ from .const import (
     DEFAULT_EMERGENCY_CHARGE,
     DEFAULT_PROFIT_MARGIN_PCT,
     DEFAULT_BATTERY_CAPACITY_KWH,
+    DEFAULT_BATTERY_PACKS,
     # modes
     AI_MODE_AUTOMATIC,
     AI_MODE_SUMMER,
@@ -344,28 +346,24 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
 
     def _get_battery_capacity(self) -> float:
-        """
-        Hybrid capacity detection:
-        1. Entity sensor (kWh)
-        2. Fallback number setting
-        """
-
-        # --- 1️⃣ Entity ---
-        if self.entities.capacity_entity:
-            val = _to_float(self._state(self.entities.capacity_entity), None)
-            if val and val > 0:
-                return float(val)
-
-        # --- 2️⃣ Fallback setting ---
-        fallback = self._get_setting(
-            SETTING_BATTERY_CAPACITY_KWH,
-            DEFAULT_BATTERY_CAPACITY_KWH,
+        pack_capacity = float(
+            self.entry.data.get(CONF_PACK_CAPACITY_KWH, 0)
         )
 
-        if fallback and fallback > 0:
-            return float(fallback)
+        packs = self._get_setting(
+            SETTING_BATTERY_PACKS,
+            DEFAULT_BATTERY_PACKS,
+        )
 
-        return 0.0
+        try:
+            packs = int(packs)
+        except Exception:
+            packs = DEFAULT_BATTERY_PACKS
+
+        if pack_capacity <= 0 or packs <= 0:
+            return 0.0
+
+        return pack_capacity * packs
 
     def _parse_price_points(self, now) -> list[PricePoint]:
         """
