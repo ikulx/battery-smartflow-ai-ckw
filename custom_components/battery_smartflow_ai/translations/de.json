@@ -218,7 +218,8 @@
           "manual_mode": "Manueller Modus aktiv",
           "manual_standby": "Manueller Standby",
           "manual_charge": "Manuelles Laden",
-          "manual_discharge": "Manuelles Entladen"
+          "manual_discharge": "Manuelles Entladen",
+          "manual_idle": "Manuelle Bereitschaft"
         }
       },
 
