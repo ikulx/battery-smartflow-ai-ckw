@@ -155,7 +155,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             grid_power=entry.data.get(CONF_GRID_POWER_ENTITY),
             grid_import=entry.data.get(CONF_GRID_IMPORT_ENTITY),
             grid_export=entry.data.get(CONF_GRID_EXPORT_ENTITY),
-            capacity_entity=entry.data.get(CONF_CAPACITY_ENTITY),
         )
 
         self.runtime_mode: dict[str, Any] = {
