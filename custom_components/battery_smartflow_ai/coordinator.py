@@ -370,28 +370,37 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Supports:
         - Tibber (attributes.data[])
         - EPEX style exports
-        - Octopus (rates[])
+        - Octopus (attributes.rates[] OR attributes.unit_rate_forecast[])
         - generic 15min APIs
         """
-
         if not self.entities.price_export:
             return []
 
-        raw = self._attr(self.entities.price_export, "data")
+        st = self.hass.states.get(self.entities.price_export)
+        if not st:
+            return []
+
+        attrs = st.attributes or {}
+
+        # --------------------------------------------------
+        # 1) Pick the best available raw list
+        # --------------------------------------------------
+        raw = attrs.get("data")
+
+        # Octopus: "rates" (preferred; already close to our internal format)
+        if not raw:
+            raw = attrs.get("rates")
+
+        # Octopus Germany: "unit_rate_forecast" (German native API format)
+        if not raw:
+            raw = attrs.get("unit_rate_forecast")
 
         if not raw:
             return []
 
-        # --------------------------------------------------
-        # Normalize structure (list or dict)
-        # --------------------------------------------------
+        # Some integrations wrap into dicts
         if isinstance(raw, dict):
-            # Octopus style
-            raw = (
-                raw.get("rates")
-                or raw.get("data")
-                or raw.get("timeslots")
-            )
+            raw = raw.get("rates") or raw.get("data") or raw.get("timeslots")
 
         if not isinstance(raw, list):
             return []
@@ -403,7 +412,38 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 continue
 
             # --------------------------------------------------
-            # Flexible time parsing
+            # 2) Octopus Germany (unit_rate_forecast) format
+            #    validFrom / validTo + unitRateInformation.rates[0].latestGrossUnitRateCentsPerKwh
+            # --------------------------------------------------
+            if "validFrom" in item and "validTo" in item:
+                start = item.get("validFrom")
+                end = item.get("validTo")
+
+                cents = None
+                uinfo = item.get("unitRateInformation") or {}
+                rates_list = uinfo.get("rates") or []
+                if rates_list and isinstance(rates_list[0], dict):
+                    cents = _to_float(rates_list[0].get("latestGrossUnitRateCentsPerKwh"), None)
+
+                if not start or not end or cents is None:
+                    continue
+
+                t_start = dt_util.parse_datetime(str(start))
+                t_end = dt_util.parse_datetime(str(end))
+                if not t_start or not t_end:
+                    continue
+
+                # convert cents/kWh -> €/kWh
+                price = float(cents) / 100.0
+
+                if t_end <= now:
+                    continue
+
+                out.append(PricePoint(start=t_start, end=t_end, price=price))
+                continue
+
+            # --------------------------------------------------
+            # 3) Generic / Tibber / Octopus "rates" format
             # --------------------------------------------------
             start = (
                 item.get("start_time")
@@ -411,16 +451,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 or item.get("start")
                 or item.get("time")
             )
-
             end = (
                 item.get("end_time")
                 or item.get("ends_at")
                 or item.get("end")
             )
 
-            # --------------------------------------------------
-            # Flexible price parsing
-            # --------------------------------------------------
             p = _to_float(
                 item.get("price_per_kwh")
                 or item.get("value_inc_vat")
@@ -442,20 +478,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if not t_end:
                     continue
             else:
-                # default 15min slot
                 t_end = t_start + timedelta(minutes=15)
 
-            # ignore past slots
             if t_end <= now:
                 continue
 
-            out.append(
-                PricePoint(
-                    start=t_start,
-                    end=t_end,
-                    price=float(p),
-                )
-            )
+            out.append(PricePoint(start=t_start, end=t_end, price=float(p)))
 
         return out
 
