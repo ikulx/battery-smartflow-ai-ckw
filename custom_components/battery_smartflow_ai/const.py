@@ -41,8 +41,6 @@ CONF_GRID_POWER_ENTITY = "grid_power_entity"      # +import / -export
 CONF_GRID_IMPORT_ENTITY = "grid_import_entity"    # import W
 CONF_GRID_EXPORT_ENTITY = "grid_export_entity"    # export W
 
-CONF_CAPACITY_ENTITY = "capacity_entity"
-
 # --- Config entry keys ---
 CONF_PACK_CAPACITY_KWH = "pack_capacity_kwh"
 
