@@ -366,13 +366,21 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _parse_price_points(self, now) -> list[PricePoint]:
         """
-        Universal price parser.
+        Universal price parser (production hardened).
+
         Supports:
         - Tibber (attributes.data[])
+        - Octopus (attributes.rates[])
+        - Octopus Germany (unit_rate_forecast[])
         - EPEX style exports
-        - Octopus (attributes.rates[] OR attributes.unit_rate_forecast[])
-        - generic 15min APIs
+        - Generic 15min APIs
+
+        Handles:
+        - Mixed timezones (UTC / CET)
+        - Broken Octopus slots (end <= start)
+        - DST edge cases
         """
+
         if not self.entities.price_export:
             return []
 
@@ -382,28 +390,34 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         attrs = st.attributes or {}
 
-        # --------------------------------------------------
-        # 1) Pick the best available raw list
-        # --------------------------------------------------
-        raw = attrs.get("data")
-
-        # Octopus: "rates" (preferred; already close to our internal format)
-        if not raw:
-            raw = attrs.get("rates")
-
-        # Octopus Germany: "unit_rate_forecast" (German native API format)
-        if not raw:
-            raw = attrs.get("unit_rate_forecast")
+        # --------------------------------------------
+        # 1️⃣ Prefer Octopus "rates" if available
+        # --------------------------------------------
+        raw = (
+            attrs.get("rates")
+            or attrs.get("data")
+            or attrs.get("unit_rate_forecast")
+        )
 
         if not raw:
             return []
 
-        # Some integrations wrap into dicts
         if isinstance(raw, dict):
             raw = raw.get("rates") or raw.get("data") or raw.get("timeslots")
 
         if not isinstance(raw, list):
             return []
+
+        tz = dt_util.get_default_time_zone()
+
+        def normalize(dt):
+            if not dt:
+                return None
+            if dt.tzinfo is None:
+                return dt_util.replace(dt, tzinfo=tz)
+            return dt.astimezone(tz)
+
+        now = normalize(now)
 
         out: list[PricePoint] = []
 
@@ -411,10 +425,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not isinstance(item, dict):
                 continue
 
-            # --------------------------------------------------
-            # 2) Octopus Germany (unit_rate_forecast) format
-            #    validFrom / validTo + unitRateInformation.rates[0].latestGrossUnitRateCentsPerKwh
-            # --------------------------------------------------
+            # ==================================================
+            # 🟢 Octopus Germany unit_rate_forecast format
+            # ==================================================
             if "validFrom" in item and "validTo" in item:
                 start = item.get("validFrom")
                 end = item.get("validTo")
@@ -423,34 +436,41 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 uinfo = item.get("unitRateInformation") or {}
                 rates_list = uinfo.get("rates") or []
                 if rates_list and isinstance(rates_list[0], dict):
-                    cents = _to_float(rates_list[0].get("latestGrossUnitRateCentsPerKwh"), None)
+                    cents = _to_float(
+                        rates_list[0].get("latestGrossUnitRateCentsPerKwh"),
+                        None,
+                    )
 
                 if not start or not end or cents is None:
                     continue
 
-                t_start = dt_util.parse_datetime(str(start))
-                t_end = dt_util.parse_datetime(str(end))
+                t_start = normalize(dt_util.parse_datetime(str(start)))
+                t_end = normalize(dt_util.parse_datetime(str(end)))
+
                 if not t_start or not t_end:
                     continue
 
-                # convert cents/kWh -> €/kWh
-                price = float(cents) / 100.0
+                # Skip broken slots (Octopus DST bug)
+                if t_end <= t_start:
+                    continue
 
                 if t_end <= now:
                     continue
 
+                price = float(cents) / 100.0  # cents → €
                 out.append(PricePoint(start=t_start, end=t_end, price=price))
                 continue
 
-            # --------------------------------------------------
-            # 3) Generic / Tibber / Octopus "rates" format
-            # --------------------------------------------------
+            # ==================================================
+            # 🔵 Generic / Tibber / Octopus "rates" format
+            # ==================================================
             start = (
                 item.get("start_time")
                 or item.get("starts_at")
                 or item.get("start")
                 or item.get("time")
             )
+
             end = (
                 item.get("end_time")
                 or item.get("ends_at")
@@ -469,24 +489,31 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not start or p is None:
                 continue
 
-            t_start = dt_util.parse_datetime(str(start))
+            t_start = normalize(dt_util.parse_datetime(str(start)))
             if not t_start:
                 continue
 
             if end:
-                t_end = dt_util.parse_datetime(str(end))
+                t_end = normalize(dt_util.parse_datetime(str(end)))
                 if not t_end:
                     continue
             else:
                 t_end = t_start + timedelta(minutes=15)
+
+            # Skip broken slots
+            if t_end <= t_start:
+                continue
 
             if t_end <= now:
                 continue
 
             out.append(PricePoint(start=t_start, end=t_end, price=float(p)))
 
-        return out
+        # Final safety: sort chronologically
+        out.sort(key=lambda x: x.start)
 
+        return out
+    
     def _season_detection(self, pv_w: float, export_w: float) -> str:
         """
         Option A: Season detection stays here.
