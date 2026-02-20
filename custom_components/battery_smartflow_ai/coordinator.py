@@ -119,8 +119,6 @@ class SelectedEntities:
     grid_import: str | None
     grid_export: str | None
 
-    capacity_entity: str | None
-
 
 class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
