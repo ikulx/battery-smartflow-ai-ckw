@@ -56,6 +56,8 @@ class DecisionContext:
 
     battery_capacity_kwh: float
 
+    peak_factor: float = 1.35
+
 
 @dataclass
 class DecisionResult:
@@ -140,11 +142,11 @@ class DecisionEngine:
         avg_price = sum(prices) / len(prices)
 
         # ---- V2 Final Adaptive Peak Parameters ----
-        PEAK_FACTOR = 1.35          # 35% above daily average
+        peak_factor = float(ctx.peak_factor or 1.35)
         MIN_PEAK_MARGIN_CT = 0.03   # at least +3ct above average
 
         threshold = max(
-            avg_price * PEAK_FACTOR,
+            avg_price * peak_factor,
             avg_price + MIN_PEAK_MARGIN_CT,
         )
 
@@ -177,11 +179,11 @@ class DecisionEngine:
         # -----------------------------
         # 1️⃣ Detect peak
         # -----------------------------
-        PEAK_FACTOR = 1.35
+        peak_factor = float(ctx.peak_factor or 1.35)
         MIN_PEAK_MARGIN_CT = 0.03
 
         peak_threshold = max(
-            avg_price * PEAK_FACTOR,
+            avg_price * peak_factor,
             avg_price + MIN_PEAK_MARGIN_CT,
         )
 
