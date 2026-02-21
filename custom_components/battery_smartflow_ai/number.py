@@ -152,18 +152,18 @@ async def async_setup_entry(
     # --- INITIALIZE RUNTIME SETTINGS ONCE (after entities exist) ---
     for ent in entities:
         key = ent.entity_description.runtime_key
+
         if key not in coordinator.runtime_settings:
-            default_value = (
-                DEFAULT_PEAK_FACTOR
-                if key == SETTING_PEAK_FACTOR
-                else ent.entity_description.native_min_value
+
+            if key == SETTING_PEAK_FACTOR:
+                default_value = DEFAULT_PEAK_FACTOR
+            else:
+                default_value = ent.entity_description.native_min_value
+
+            coordinator.runtime_settings[key] = entry.options.get(
+                key,
+                default_value,
             )
-
-coordinator.runtime_settings[key] = entry.options.get(
-    key,
-    default_value,
-)
-
 
 class ZendureSmartFlowNumber(NumberEntity):
     _attr_has_entity_name = True
