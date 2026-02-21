@@ -658,6 +658,13 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # -----------------------------
             season = self._season_detection(pv_w=pv_w, export_w=float(grid_export))
 
+            peak_factor = float(
+                self.runtime_settings.get(
+                    SETTING_PEAK_FACTOR,
+                    DEFAULT_PEAK_FACTOR,
+                )
+            )
+            
             # -----------------------------
             # Engine Context
             # -----------------------------
@@ -694,6 +701,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 profile=profile,
                 prev_discharge_w=float(self._persist.get("prev_discharge_w", 0.0)),
                 battery_capacity_kwh=battery_capacity_kwh,
+                peak_factor=peak_factor,
             )
 
             decision = self._engine.evaluate(ctx)
