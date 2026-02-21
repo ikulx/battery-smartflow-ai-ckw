@@ -138,7 +138,11 @@
       "emergency_charge": { "name": "Notladeleistung" },
       "emergency_soc": { "name": "Notladung ab SoC" },
       "very_expensive_threshold": { "name": "Sehr-teuer-Schwelle" },
-      "profit_margin_pct": { "name": "Gewinnmarge (%)" }
+      "profit_margin_pct": { "name": "Gewinnmarge (%)" },
+      "peak_factor": {
+        "name": "Peak-Faktor",
+        "description": "Legt fest, ab welchem Multiplikator des Durchschnittspreises ein Preis als Hochpreisphase gilt. 1.35 bedeutet 35% über Durchschnitt. Niedrigere Werte erkennen mehr Peaks, höhere nur starke Preisspitzen."
+      }
     },
 
     "sensor": {
