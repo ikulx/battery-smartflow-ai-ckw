@@ -19,6 +19,8 @@ from .const import (
    # DEFAULT_BATTERY_CAPACITY_KWH,
     SETTING_BATTERY_PACKS,
     DEFAULT_BATTERY_PACKS,
+    SETTING_PEAK_FACTOR,
+    DEFAULT_PEAK_FACTOR,
 )
 
 
@@ -39,6 +41,17 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         mode="box",
     ),
 
+    ZendureNumberEntityDescription(
+        key=SETTING_PEAK_FACTOR,
+        translation_key="peak_factor",
+        runtime_key=SETTING_PEAK_FACTOR,
+        native_min_value=1.0,
+        native_max_value=2.5,
+        native_step=0.05,
+        mode="box",
+        icon="mdi:chart-bell-curve",
+    ),
+    
     ZendureNumberEntityDescription(
         key="soc_min",
         translation_key="soc_min",
@@ -140,10 +153,16 @@ async def async_setup_entry(
     for ent in entities:
         key = ent.entity_description.runtime_key
         if key not in coordinator.runtime_settings:
-            coordinator.runtime_settings[key] = entry.options.get(
-                key,
-                ent.entity_description.native_min_value,
+            default_value = (
+                DEFAULT_PEAK_FACTOR
+                if key == SETTING_PEAK_FACTOR
+                else ent.entity_description.native_min_value
             )
+
+coordinator.runtime_settings[key] = entry.options.get(
+    key,
+    default_value,
+)
 
 
 class ZendureSmartFlowNumber(NumberEntity):
