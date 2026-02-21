@@ -10,7 +10,7 @@ DOMAIN = "battery_smartflow_ai"
 INTEGRATION_NAME = "Battery SmartFlow AI"
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "2.0.0-Beta3"
+INTEGRATION_VERSION = "2.0.0-Beta4"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -99,6 +99,7 @@ SETTING_EMERGENCY_CHARGE = "emergency_charge"     # Notladeleistung (W)
 
 SETTING_PROFIT_MARGIN_PCT = "profit_margin_pct"   # Arbitrage/Planung
 
+SETTING_PEAK_FACTOR = "peak_factor"
 
 # ==================================================
 # Defaults
@@ -119,6 +120,7 @@ DEFAULT_EMERGENCY_CHARGE = 1200.0
 
 DEFAULT_PROFIT_MARGIN_PCT = 27.0
 
+DEFAULT_PEAK_FACTOR = 1.35
 
 # ==================================================
 # Status / Enum values (internal)
