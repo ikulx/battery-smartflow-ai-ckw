@@ -137,10 +137,7 @@
       "emergency_soc": { "name": "Charge d’urgence à partir du SoC" },
       "very_expensive_threshold": { "name": "Seuil très coûteux" },
       "profit_margin_pct": { "name": "Marge bénéficiaire (%)" },
-      "peak_factor": {
-        "name": "Facteur de pic",
-        "description": "Définit à partir de quel multiple du prix moyen un prix est considéré comme un pic. 1.35 signifie 35% au-dessus de la moyenne. Des valeurs plus basses détectent plus de pics, des valeurs plus hautes seulement de fortes pointes."
-      }
+      "peak_factor": { "name": "Facteur de pic", }
     },
     "sensor": {
       "device_profile": { "name": "Profil d’appareil actif" },
