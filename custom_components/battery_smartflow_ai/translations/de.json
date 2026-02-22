@@ -246,7 +246,8 @@
           "manual_standby": "Manueller Standby",
           "manual_charge": "Manuelles Laden",
           "manual_discharge": "Manuelles Entladen",
-          "manual_idle": "Manuelle Bereitschaft"
+          "manual_idle": "Manuelle Bereitschaft",
+          "idle": "Bereit"
         }
       },
 
