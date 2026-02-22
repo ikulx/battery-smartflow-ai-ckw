@@ -137,10 +137,7 @@
       "emergency_soc": { "name": "Emergency charge from SoC" },
       "very_expensive_threshold": { "name": "Very expensive threshold" },
       "profit_margin_pct": { "name": "Profit margin (%)" },
-      "peak_factor": {
-        "name": "Peak factor",
-        "description": "Defines at which multiple of the average price a price is considered a peak. 1.35 means 35% above average. Lower values detect more peaks, higher values only strong price spikes."
-      }
+      "peak_factor": { "name": "Peak factor", }
     },
     "sensor": {
       "device_profile": { "name": "Active device profile" },
