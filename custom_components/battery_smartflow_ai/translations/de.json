@@ -150,6 +150,21 @@
       "adaptive_peak_active": {
         "name": "Adaptiver Peak erkannt"
       },
+      "price_daily_average": {
+        "name": "Ø Tagespreis"
+      },
+      "current_peak_threshold": {
+        "name": "Aktuelle Peak-Schwelle"
+      },
+      "engine_health": {
+        "name": "Engine-Status",
+        "state": {
+          "ok": "System normal",
+          "no_price_data": "Keine Preisdaten verfügbar",
+          "no_current_price": "Kein aktueller Strompreis",
+          "sensor_invalid": "Ungültige Sensordaten"
+        }
+      },
 
       "season_mode": {
         "name": "Erkannter Betriebsmodus",
