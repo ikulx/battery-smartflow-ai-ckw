@@ -137,7 +137,7 @@
       "emergency_soc": { "name": "Charge d’urgence à partir du SoC" },
       "very_expensive_threshold": { "name": "Seuil très coûteux" },
       "profit_margin_pct": { "name": "Marge bénéficiaire (%)" },
-      "peak_factor": { "name": "Facteur de pic", }
+      "peak_factor": { "name": "Facteur de pic" }
     },
     "sensor": {
       "device_profile": { "name": "Profil d’appareil actif" },
