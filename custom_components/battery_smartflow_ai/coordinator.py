@@ -648,6 +648,37 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             price_now = self._get_price_now()
             price_points = self._parse_price_points(now)
 
+            # --- Daily price average ---
+            daily_avg_price = None
+            if price_points:
+                prices = [p.price for p in price_points]
+                if prices:
+                     daily_avg_price = sum(prices) / len(prices)
+
+            # --- Current peak threshold ---
+            peak_factor = float(
+                self.runtime_settings.get(
+                    SETTING_PEAK_FACTOR,
+                    DEFAULT_PEAK_FACTOR,
+                )
+            )
+
+            current_peak_threshold = None
+            if daily_avg_price is not None:
+                current_peak_threshold = max(
+                    daily_avg_price * peak_factor,
+                    daily_avg_price + 0.03,
+                )
+
+            # --- Engine health ---
+            engine_health = "ok"
+            if not price_points:
+                engine_health = "no_price_data"
+            elif price_now is None:
+                engine_health = "no_current_price"
+            elif soc is None or pv is None:
+                engine_health = "sensor_invalid"
+
             # -----------------------------
             # house load estimate
             # -----------------------------
