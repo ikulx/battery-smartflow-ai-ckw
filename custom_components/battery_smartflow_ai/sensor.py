@@ -201,6 +201,7 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
     ZendureSensorEntityDescription(
         key="price_daily_average",
         translation_key="price_daily_average",
+        runtime_key="price_daily_average",
         icon="mdi:chart-line",
         native_unit_of_measurement="€/kWh",
     ),
@@ -208,6 +209,7 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
     ZendureSensorEntityDescription(
         key="current_peak_threshold",
         translation_key="current_peak_threshold",
+        runtime_key="current_peak_threshold",
         icon="mdi:chart-bell-curve",
         native_unit_of_measurement="€/kWh",
     ),
@@ -215,6 +217,7 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
     ZendureSensorEntityDescription(
         key="engine_health",
         translation_key="engine_health",
+        runtime_key="engine_health",
         icon="mdi:heart-pulse",
     ),
 
