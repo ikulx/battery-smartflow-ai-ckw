@@ -8,25 +8,105 @@
           "device_profile": "Device profile",
           "soc_entity": "Battery SoC sensor",
           "soc_limit_entity": "SoC limit status (optional)",
+          "pack_capacity_kwh": "Capacity per battery pack (kWh)",
+          "capacity_entity": "Capacity sensor (optional)",
           "pv_entity": "PV power sensor",
           "price_now_entity": "Current electricity price",
-          "price_export_entity": "Price forecast (e.g. Tibber / EPEX)",
-          "grid_mode": "Grid measurement",
+          "price_export_entity": "Price forecast/history (e.g. Tibber / EPEX)",
+          "grid_mode": "Grid metering",
           "grid_power_entity": "Grid power (single)",
           "grid_import_entity": "Grid import (split)",
           "grid_export_entity": "Grid export (split)",
           "ac_mode_entity": "Zendure AC mode",
           "input_limit_entity": "Zendure charge power",
           "output_limit_entity": "Zendure discharge power"
+        },
+        "data_description": {
+          "device_profile": "Select the matching device profile for your Zendure system. The profile contains tuned control parameters.",
+          "soc_entity": "Sensor providing the current battery State of Charge (SoC) in percent. Core input for all decisions.",
+          "soc_limit_entity": "Optional sensor from the Zendure integration that reports active BMS limits (e.g. charge/discharge lock).",
+          "pack_capacity_kwh": "Usable capacity of a single battery pack in kWh. Multiplied by the number of installed packs to calculate total capacity.",
+          "capacity_entity": "Optional sensor providing the automatically calculated available battery capacity in kWh (e.g. from the Zendure integration). If set, it overrides the manual calculation.",
+          "pv_entity": "Sensor providing current PV power in watts. Used for surplus detection.",
+          "price_now_entity": "Sensor providing the current electricity price (e.g. Tibber). Used for economic decisions.",
+          "price_export_entity": "Sensor providing price forecast data (e.g. Tibber / EPEX). Enables price planning.",
+          "grid_mode": "Choose how your grid usage is measured: one combined sensor or separate sensors for import and export.",
+          "grid_power_entity": "A single sensor with positive power for grid import and negative power for export.",
+          "grid_import_entity": "Sensor with current grid import power (positive values only).",
+          "grid_export_entity": "Sensor with current grid export power (positive values only).",
+          "ac_mode_entity": "Select entity from the Zendure integration that switches between charging (INPUT) and discharging (OUTPUT).",
+          "input_limit_entity": "Number entity to set charge power in watts.",
+          "output_limit_entity": "Number entity to set discharge power in watts."
+        }
+      },
+      "reconfigure_grid": {
+        "title": "Configure grid metering",
+        "description": "Select the grid sensors according to the mode",
+        "data": {
+          "grid_power_entity": "Grid power (single)",
+          "grid_import_entity": "Grid import (split)",
+          "grid_export_entity": "Grid export (split)"
+        },
+        "data_description": {
+          "grid_power_entity": "A single sensor with positive power for import and negative power for export.",
+          "grid_import_entity": "Sensor with current grid import power in watts.",
+          "grid_export_entity": "Sensor with current grid export power in watts."
+        }
+      },
+      "grid": {
+        "title": "Configure grid metering",
+        "description": "Select the grid sensors according to the mode",
+        "data": {
+          "grid_power_entity": "Grid power (single)",
+          "grid_import_entity": "Grid import (split)",
+          "grid_export_entity": "Grid export (split)"
+        },
+        "data_description": {
+          "grid_power_entity": "A single sensor with positive power for import and negative power for export.",
+          "grid_import_entity": "Sensor with current grid import power in watts.",
+          "grid_export_entity": "Sensor with current grid export power in watts."
         }
       },
       "user": {
         "title": "Set up Battery SmartFlow AI",
-        "description": "Select the required sensors"
+        "description": "Select the required sensors",
+        "data": {
+          "device_profile": "Device profile",
+          "soc_entity": "Battery SoC sensor",
+          "soc_limit_entity": "SoC limit status (optional)",
+          "pack_capacity_kwh": "Capacity per battery pack (kWh)",
+          "capacity_entity": "Capacity sensor (optional)",
+          "pv_entity": "PV power sensor",
+          "price_now_entity": "Current electricity price",
+          "price_export_entity": "Price forecast/history (e.g. Tibber / EPEX)",
+          "grid_mode": "Grid metering",
+          "grid_power_entity": "Grid power (single)",
+          "grid_import_entity": "Grid import (split)",
+          "grid_export_entity": "Grid export (split)",
+          "ac_mode_entity": "Zendure AC mode",
+          "input_limit_entity": "Zendure charge power",
+          "output_limit_entity": "Zendure discharge power"
+        },
+        "data_description": {
+          "device_profile": "Select the matching device profile for your Zendure system. Control parameters will be adjusted automatically.",
+          "soc_entity": "Sensor providing the current battery State of Charge in percent.",
+          "soc_limit_entity": "Optional status sensor from the Zendure integration to detect active BMS locks.",
+          "pack_capacity_kwh": "Usable capacity of a single battery pack in kWh. Multiplied by the number of installed packs to calculate total capacity.",
+          "capacity_entity": "Optional sensor providing the automatically calculated available battery capacity in kWh (e.g. from the Zendure integration). If set, it overrides the manual calculation.",
+          "pv_entity": "Sensor providing current PV power in watts.",
+          "price_now_entity": "Current electricity price. Enables price-based discharge.",
+          "price_export_entity": "Price forecast data for the next hours. Enables intelligent charge planning.",
+          "grid_mode": "Defines how grid import and export are measured.",
+          "grid_power_entity": "A combined grid sensor (positive = import, negative = export).",
+          "grid_import_entity": "Sensor for grid import (split mode).",
+          "grid_export_entity": "Sensor for grid export (split mode).",
+          "ac_mode_entity": "Zendure AC mode (INPUT/OUTPUT). Controlled automatically by the integration.",
+          "input_limit_entity": "Adjustable charge power in watts.",
+          "output_limit_entity": "Adjustable discharge power in watts."
+        }
       }
     }
   },
-
   "entity": {
     "select": {
       "ai_mode": {
@@ -47,23 +127,41 @@
         }
       }
     },
-
     "number": {
-      "battery_capacity_kwh": { "name": "Usable battery capacity" },
+      "battery_packs": { "name": "Number of battery packs" },
       "soc_min": { "name": "SoC minimum" },
       "soc_max": { "name": "SoC maximum" },
-      "max_charge": { "name": "Max. charge power" },
-      "max_discharge": { "name": "Max. discharge power" },
+      "max_charge": { "name": "Max charge power" },
+      "max_discharge": { "name": "Max discharge power" },
       "emergency_charge": { "name": "Emergency charge power" },
-      "emergency_soc": { "name": "Emergency charge below SoC" },
+      "emergency_soc": { "name": "Emergency charge from SoC" },
       "very_expensive_threshold": { "name": "Very expensive threshold" },
-      "profit_margin_pct": { "name": "Profit margin (%)" }
+      "profit_margin_pct": { "name": "Profit margin (%)" },
+      "peak_factor": {
+        "name": "Peak factor",
+        "description": "Defines at which multiple of the average price a price is considered a peak. 1.35 means 35% above average. Lower values detect more peaks, higher values only strong price spikes."
+      }
     },
-
     "sensor": {
       "device_profile": { "name": "Active device profile" },
-      "adaptive_peak_active": { "name": "Adaptive peak detected" },
-
+      "adaptive_peak_active": {
+        "name": "Adaptive peak detected"
+      },
+      "price_daily_average": {
+        "name": "Daily avg price"
+      },
+      "current_peak_threshold": {
+        "name": "Current peak threshold"
+      },
+      "engine_health": {
+        "name": "Engine health",
+        "state": {
+          "ok": "System normal",
+          "no_price_data": "No price data available",
+          "no_current_price": "No current electricity price",
+          "sensor_invalid": "Invalid sensor data"
+        }
+      },
       "season_mode": {
         "name": "Detected operating mode",
         "state": {
@@ -72,34 +170,122 @@
           "manual": "Manual mode"
         }
       },
-
+      "soc_limit_status": {
+        "name": "SoC limit status",
+        "state": {
+          "not_configured": "No SoC limit sensor configured",
+          "no_limit": "No limit active",
+          "upper_limit_active": "Upper SoC limit active (charging locked)",
+          "lower_limit_active": "Lower SoC limit active (discharging locked)"
+        }
+      },
+      "fault_level_status": {
+        "name": "Fault status",
+        "state": {
+          "normal": "No fault / all normal",
+          "warning": "Warning (device continues running)",
+          "error": "Error / protection active"
+        }
+      },
       "status": {
-        "name": "System status"
+        "name": "System status",
+        "state": {
+          "init": "Initializing",
+          "ok": "OK",
+          "sensor_invalid": "Invalid sensor data",
+          "price_invalid": "Invalid price data"
+        }
       },
-
       "ai_status": {
-        "name": "AI status"
+        "name": "AI status",
+        "state": {
+          "standby": "Standby",
+          "charge_surplus": "Charging (PV surplus)",
+          "cover_deficit": "Discharging (cover load)",
+          "expensive_discharge": "Discharging (high price)",
+          "very_expensive_force": "Forced discharge (extreme prices)",
+          "emergency_charge": "Emergency charge active",
+          "manual": "Manual mode"
+        }
       },
-
       "recommendation": {
-        "name": "AI recommendation"
+        "name": "AI recommendation",
+        "state": {
+          "standby": "No action",
+          "charge": "Charge",
+          "discharge": "Discharge",
+          "emergency": "Emergency charge"
+        }
       },
-
+      "decision_reason": {
+        "name": "Decision reason",
+        "state": {
+          "standby": "Standby",
+          "state_idle": "No demand detected",
+          "state_enter_discharge": "Started discharging (demand detected)",
+          "state_discharging": "Discharging active (covering load)",
+          "state_enter_charge": "Started charging (surplus detected)",
+          "state_charging": "Charging active",
+          "expensive_discharge": "Discharging due to high price",
+          "very_expensive_force_discharge": "Forced discharge due to extreme price spike",
+          "emergency_latched_charge": "Emergency charge active (latched)",
+          "soc_min_enforced": "Discharge stopped (SoC minimum reached)",
+          "soc_limit_upper": "Charging blocked (upper SoC limit active)",
+          "soc_limit_lower": "Discharging blocked (lower SoC limit active)",
+          "manual_mode": "Manual mode active",
+          "manual_standby": "Manual standby",
+          "manual_charge": "Manual charging",
+          "manual_discharge": "Manual discharging",
+          "manual_idle": "Manual standby",
+          "idle": "Ready"
+        }
+      },
       "planning_status": {
-        "name": "Price planning status"
+        "name": "Price planning status",
+        "state": {
+          "not_checked": "Not checked yet",
+          "planning_inactive_mode": "Planning disabled (mode)",
+          "planning_blocked_soc_full": "Battery full — planning blocked",
+          "planning_no_price_now": "No current electricity price",
+          "planning_no_price_data": "No price data available",
+          "planning_no_peak_detected": "No relevant price peak detected",
+          "planning_waiting_for_cheap_window": "Waiting for a cheap charging window",
+          "planning_charge_now": "Price planning: charging allowed",
+          "planning_last_chance": "Last chance before price peak",
+          "planning_peak_detected_insufficient_window": "Price peak detected, time window too short"
+        }
       },
-
       "planning_active": { "name": "Price planning active" },
       "planning_target_soc": { "name": "Target SoC (planning)" },
-
-      "next_action_state": { "name": "Next action" },
-      "next_planned_action": { "name": "Next planned action" },
-      "next_action_time": { "name": "Next action start time" },
-
+      "planning_reason": { "name": "Planning reason" },
+      "next_action_state": {
+        "name": "Next action",
+        "state": {
+          "none": "No action planned",
+          "planned_charge": "Planned charge",
+          "planned_discharge": "Planned discharge",
+          "charging_active": "Charging active",
+          "discharging_active": "Discharging active",
+          "manual_charge": "Manual charging",
+          "manual_discharge": "Manual discharging",
+          "emergency_charge": "Emergency charge"
+        }
+      },
+      "next_planned_action": {
+        "name": "Next planned action",
+        "state": {
+          "none": "No action planned",
+          "charge": "Planned charge",
+          "discharge": "Planned discharge",
+          "wait": "Wait",
+          "emergency": "Emergency charge"
+        }
+      },
+      "next_action_time": { "name": "Start time of next action" },
       "ai_debug": { "name": "AI debug" },
       "house_load": { "name": "House load" },
       "price_now": { "name": "Current electricity price" },
-      "avg_charge_price": { "name": "Average battery charge price" },
+      "avg_charge_price": { "name": "Avg battery charge price" },
       "profit_eur": { "name": "Savings / profit (total)" }
     }
   }
