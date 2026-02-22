@@ -969,6 +969,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     else self._persist.get("season_mode", "winter")
                 ),
                 "fault_level_status": "normal",
+                "price_daily_average": daily_avg_price,
+                "current_peak_threshold": current_peak_threshold,
+                "engine_health": engine_health,
             }
 
         except Exception as err:
