@@ -47,7 +47,7 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         runtime_key=SETTING_PEAK_FACTOR,
         native_min_value=1.0,
         native_max_value=2.5,
-        native_step=0.05,
+        native_step=0.01,
         mode="box",
         icon="mdi:chart-bell-curve",
     ),
