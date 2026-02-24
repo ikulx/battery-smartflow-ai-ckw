@@ -269,25 +269,34 @@ class DecisionEngine:
                 reason="emergency_latched_charge",
             )
 
-        # 2️⃣ Very expensive / adaptive peak discharge
+        # 2️⃣ Peak / very expensive discharge (always dynamic)
         if (
             ctx.soc > ctx.soc_min + 5
             and ctx.ai_mode in ("automatic", "winter")
         ):
             adaptive_peak = self._detect_adaptive_peak(ctx)
 
-            if (
-                (ctx.price_now is not None and ctx.price_now >= ctx.very_expensive_threshold)
-                or adaptive_peak
-            ):
+            if adaptive_peak:
+                discharge_w = self._delta_discharge(ctx)
                 return DecisionResult(
                     action="discharge",
                     ac_mode="output",
                     charge_w=0.0,
-                    discharge_w=float(ctx.max_discharge_w),
-                    reason="adaptive_peak_discharge"
-                    if adaptive_peak
-                    else "very_expensive_force_discharge",
+                    discharge_w=discharge_w,
+                    reason="adaptive_peak_discharge",
+                )
+
+            if (
+                ctx.price_now is not None
+                and ctx.price_now >= ctx.very_expensive_threshold
+            ):
+                discharge_w = self._delta_discharge(ctx)
+                return DecisionResult(
+                    action="discharge",
+                    ac_mode="output",
+                    charge_w=0.0,
+                    discharge_w=discharge_w,
+                    reason="very_expensive_force_discharge",
                 )
 
         # 3️⃣ Arbitrage discharge
