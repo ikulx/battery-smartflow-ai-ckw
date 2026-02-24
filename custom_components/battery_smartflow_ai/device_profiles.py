@@ -26,11 +26,11 @@ SF2400AC_PROFILE = {
     # --- Discharge controller tuning ---
     "TARGET_IMPORT_W": 10.0,
     "DEADBAND_W": 30.0,
-    "EXPORT_GUARD_W": 45.0,
-    "KP_UP": 0.55,
-    "KP_DOWN": 0.95,
-    "MAX_STEP_UP": 450.0,
-    "MAX_STEP_DOWN": 900.0,
+    "EXPORT_GUARD_W": 80.0,
+    "KP_UP": 0.65,
+    "KP_DOWN": 0.90,
+    "MAX_STEP_UP": 550.0,
+    "MAX_STEP_DOWN": 800.0,
     "KEEPALIVE_MIN_DEFICIT_W": 15.0,
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
 
