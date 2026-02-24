@@ -759,19 +759,22 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # -----------------------------
             # Profit Tracking – Discharging
             # -----------------------------
-            if (delta_kwh > 0 and price_now is not None and soc >= soc_min and decision.action != "emergency"):
-                sold_kwh = abs(delta_kwh)
+            if (
+                delta_kwh < 0
+                and price_now is not None
+                and decision.action != "emergency"
+            ):
+                sold_kwh = abs(float(delta_kwh))
                 avg_price = self._persist.get("trade_avg_charge_price")
 
-                if avg_price is not None:
-                    profit = (price_now - avg_price) * sold_kwh
+                if avg_price is not None and sold_kwh > 0:
+                    profit = (float(price_now) - float(avg_price)) * sold_kwh
 
-                    self._persist["profit_eur"] = (
-                        self._persist.get("profit_eur", 0.0) + profit
-                    )
+                    self._persist["profit_eur"] = float(self._persist.get("profit_eur", 0.0)) + float(profit)
 
-                    remaining_kwh = self._persist.get("trade_charged_kwh", 0.0) - sold_kwh
-                    self._persist["trade_charged_kwh"] = max(0.0, remaining_kwh)
+                    remaining_kwh = float(self._persist.get("trade_charged_kwh", 0.0)) - sold_kwh
+                    remaining_kwh = max(0.0, remaining_kwh)
+                    self._persist["trade_charged_kwh"] = remaining_kwh
 
                     if remaining_kwh <= 0:
                         self._persist["trade_avg_charge_price"] = None
