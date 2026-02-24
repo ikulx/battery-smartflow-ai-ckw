@@ -244,7 +244,8 @@
           "manual_charge": "Manuelles Laden",
           "manual_discharge": "Manuelles Entladen",
           "manual_idle": "Manuelle Bereitschaft",
-          "idle": "Bereit"
+          "idle": "Bereit",
+          "adaptive_peak_discharge": "Entladen wegen Preisspitze"
         }
       },
 
