@@ -24,8 +24,8 @@ SF2400AC_PROFILE = {
     "label": "Zendure SF2400AC",
 
     # --- Discharge controller tuning ---
-    "TARGET_IMPORT_W": 35.0,
-    "DEADBAND_W": 40.0,
+    "TARGET_IMPORT_W": 10.0,
+    "DEADBAND_W": 30.0,
     "EXPORT_GUARD_W": 45.0,
     "KP_UP": 0.55,
     "KP_DOWN": 0.95,
