@@ -193,18 +193,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "season_mode": "winter",        # winter|summer
             "season_counter": 0,
 
-            # planning transparency (keep sensor-compat)
-            "planning_checked": False,
-            "planning_status": "not_checked",
-            "planning_blocked_by": None,
-            "planning_active": False,
-            "planning_target_soc": None,
-            "planning_next_peak": None,
-            "planning_reason": None,
-            "next_planned_action": "none",
-            "next_planned_action_time": "",
-            "next_action_time": None,
-
             # debug
             "debug": "init",
         }
@@ -590,7 +578,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     },
                     "decision_reason": "sensor_invalid",
                     "next_action_time": None,
-                    "next_planned_action_time": "",
                     "next_action_state": "none",
                     "device_profile": self.device_profile_key,
                     "season_mode": self._persist.get("season_mode", "winter"),
@@ -842,44 +829,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 self._persist["power_state"] = "idle"
 
-            # -----------------------------
-            # Planning sensor compatibility (minimal but stable)
-            # -----------------------------
-            self._persist["planning_checked"] = True
-            self._persist["planning_active"] = decision.reason.startswith("planning")
-            if decision.reason == "planning_charge_now":
-                self._persist["planning_status"] = "planning_charge_now"
-
-            elif decision.reason == "planning_latest_start":
-                self._persist["planning_status"] = "planning_last_chance"
-
-            elif ai_mode not in (AI_MODE_AUTOMATIC, AI_MODE_WINTER):
-                self._persist["planning_status"] = "planning_inactive_mode"
-
-            elif not price_points:
-                self._persist["planning_status"] = "planning_no_price_data"
-
-            elif price_now is None:
-                self._persist["planning_status"] = "planning_no_price_now"
-
-            else:
-                self._persist["planning_status"] = "planning_no_peak_detected"
-
-            self._persist["planning_reason"] = decision.reason if decision.reason.startswith("planning") else "standby"
-            self._persist["planning_target_soc"] = decision.target_soc
-
-            if decision.action == "charge" and decision.reason.startswith("planning"):
-                self._persist["next_planned_action"] = "charge"
-                self._persist["next_planned_action_time"] = now.isoformat()
-            else:
-                self._persist["next_planned_action"] = "none"
-                self._persist["next_planned_action_time"] = ""
-
             # next_action_time (top-level sensor expects ISO or None)
             if is_charging or is_discharging:
                 self._persist["next_action_time"] = now.isoformat()
             else:
-                self._persist["next_action_time"] = self._persist.get("next_planned_action_time") or None
+                self._persist["next_action_time"] = None
 
             # -----------------------------
             # AI status + recommendation
@@ -913,14 +867,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "manual_action": manual_action,
                 "decision_reason": decision.reason,
                 "adaptive_peak_active": adaptive_peak_active,
-                "planning_checked": bool(self._persist.get("planning_checked")),
-                "planning_status": self._persist.get("planning_status"),
-                "planning_active": bool(self._persist.get("planning_active")),
-                "planning_target_soc": self._persist.get("planning_target_soc"),
-                "planning_next_peak": self._persist.get("planning_next_peak"),
-                "planning_reason": self._persist.get("planning_reason"),
-                "next_planned_action": self._persist.get("next_planned_action"),
-                "next_planned_action_time": self._persist.get("next_planned_action_time"),
                 "device_profile": self.device_profile_key,
                 "profile_max_input_w": profile_max_in,
                 "profile_max_output_w": profile_max_out,
@@ -947,17 +893,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     return None
 
             next_action_time_state = _iso_or_none(self._persist.get("next_action_time"))
-            next_planned_action_time_state = (
-                self._persist.get("next_planned_action_time")
-                if isinstance(self._persist.get("next_planned_action_time"), str)
-                else ""
-            )
 
             next_action_state = (
                 "charging_active" if self._persist.get("power_state") == "charging"
                 else "discharging_active" if self._persist.get("power_state") == "discharging"
-                else "planned_charge" if self._persist.get("next_planned_action") == "charge"
-                else "planned_discharge" if self._persist.get("next_planned_action") == "discharge"
                 else "none"
             )
 
@@ -969,7 +908,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "details": details,
                 "decision_reason": decision.reason,
                 "next_action_time": next_action_time_state,
-                "next_planned_action_time": next_planned_action_time_state,
                 "next_action_state": next_action_state,
                 "device_profile": self.device_profile_key,
                 "season_mode": (
