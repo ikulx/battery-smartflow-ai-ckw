@@ -144,6 +144,14 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         native_unit_of_measurement="€/kWh",
         icon="mdi:chart-bell-curve",
     ),
+    # --- Numeric sensors ---
+    ZendureSensorEntityDescription(
+        key="house_load",
+        translation_key="house_load",
+        runtime_key="house_load",
+        icon="mdi:home-lightning-bolt",
+        native_unit_of_measurement="W",
+    ),
     ZendureSensorEntityDescription(
         key="price_now",
         translation_key="price_now",
