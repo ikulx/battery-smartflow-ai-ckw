@@ -1,231 +1,101 @@
 # Battery SmartFlow AI
 
-**Intelligente, preis-, PV- und lastbasierte Steuerung für Zendure SolarFlow Systeme in Home Assistant**
+**Intelligente, wirtschaftliche und stabile Steuerung für Zendure SolarFlow Systeme in Home Assistant**
 
 ---
 
-## 🇩🇪 Deutsch
+## Was macht diese Integration?
 
----
+**Battery SmartFlow AI** steuert dein Zendure SolarFlow System automatisch – basierend auf:
 
-## Version 1.5.0
+- ☀️ PV-Erzeugung
+- 🏠 Realer Hauslast
+- 🔋 Batterie-SoC
+- 💶 Dynamischen Strompreisen (optional)
+- ⚙️ Gerätespezifischen Regelprofilen
 
-## ⚠️ Wichtiger Hinweis (ab Version 1.5.0)
-
-Die Integration wurde von  
-**„Zendure SmartFlow AI“**  
-in  
-**„Battery SmartFlow AI“**  
-umbenannt.
-
-### ❗ Einmalige Neuinstallation erforderlich
-
-Bitte vor dem Update:
-
-1. In **HACS → Benutzerdefinierte Repositories**  
-   den alten Eintrag entfernen  
-2. Home Assistant neu starten  
-3. Repository erneut hinzufügen:  
-   `https://github.com/PalmManiac/battery-smartflow-ai`
-4. Integration neu installieren
-
-Andernfalls funktionieren zukünftige Updates nicht korrekt, da sich die Domain der Integration geändert hat.
-
----
-
-## Überblick
-
-**Battery SmartFlow AI** ist eine Home-Assistant-Integration zur **stabilen, wirtschaftlichen und transparenten** Steuerung von **Zendure SolarFlow** Batteriesystemen.
-
-Ab Version **1.5.x** kombiniert die Integration:
-
-- ☀️ PV-Erzeugung  
-- 🏠 Reale Hauslast (inkl. Batterieanteil)  
-- 🔋 Batterie-SoC  
-- 💶 Dynamische Strompreise (optional, inkl. Vorplanung)  
-- ⚙️ Geräteprofile mit modellabhängiger Regelung  
-
-zu kontextbasierten Lade- und Entladeentscheidungen.
+Die Integration kombiniert diese Daten zu einer **physikalisch stabilen und wirtschaftlich optimierten Lade- und Entladestrategie**.
 
 Ziel:
 
-> Nicht maximale Aktivität – sondern maximaler Nutzen.
-
-- Laden, wenn es wirtschaftlich sinnvoll ist  
-- Entladen, wenn Netzbezug vermieden werden kann  
-- Stillstand, wenn keine Verbesserung möglich ist  
-- Keine hektischen Richtungswechsel  
+> Minimaler Netzbezug.  
+> Maximale Wirtschaftlichkeit.  
+> Keine hektischen Richtungswechsel.
 
 ---
 
-# ⚙️ Geräteprofile (ab 1.5.0)
+# 🧠 Kernfunktionen (V2 Architektur)
 
-Die Integration nutzt modellabhängige Profile aus `device_profiles.py`.
-
-Aktuell unterstützt:
-
-{% for profile in ["SF800Pro", "SF2400AC"] %}
-- **{{ profile }}**
-{% endfor %}
-
-Neue Modelle können ergänzt werden, ohne den ConfigFlow anzupassen.  
-Die Profilauswahl wird automatisch generiert.
-
----
-
-# 🧠 Preis-Vorplanung (Price Planning 2.0)
-
-Die Integration analysiert:
-
-- Kommende Preisstruktur
-- Relevante Preisspitzen
-- Das optimale Lade-Tal davor
-
-## Verbesserungen ab 1.5.x
-
-- Valley-basierte Tal-Erkennung  
-- Preis-Toleranz statt Einzel-Slot-Logik  
-- Schutz vor Peak-Erkennung in der Vergangenheit  
-- Anti-Flutter-Latch  
-- Vollständige Ausnutzung des Ladefensters  
-- Kein vorzeitiger Abbruch durch nachfolgende Peak-Planung  
-
-Ziel:
-
-> Vor einer Preisspitze vollständig laden –  
-aber nur wenn wirtschaftlich sinnvoll.
-
----
-
-# ⚡ Sehr teure Strompreise
-
-Bei Überschreiten der konfigurierten „Sehr-teuer-Schwelle“:
-
-- Entladung hat höchste Priorität  
-- SoC-Reserve wird berücksichtigt  
-- Keine Beeinflussung durch PV  
-- Keine Instabilität durch Planungswechsel  
-
----
-
-# 🔄 Netzgeführtes Laden
-
-Die Ladeleistung orientiert sich an der realen Netzbilanz.
-
-Ergebnis:
-
-- Minimale Rest-Einspeisung  
-- Kein 1-kW-Dauerexport während Ladevorgängen  
-- Verhalten entspricht manuellem Gegenregeln  
-
----
-
-# Betriebsmodi
-
-## 🔹 Automatik (empfohlen)
-
-- PV-Nutzung  
-- Preisplanung aktiv  
-- Entladung bei teurem Strom  
-- Sehr-teuer-Priorität  
-
-## 🔹 Sommer
-
-- Fokus auf Autarkie  
-- Keine Preisplanung  
-- Entladung bei Defizit  
-
-## 🔹 Winter
-
-- Fokus auf Wirtschaftlichkeit  
-- Preisplanung aktiv  
-
-## 🔹 Manuell
-
-- Keine KI-Eingriffe  
-- Laden / Entladen / Standby manuell  
-
----
-
-# 🛡 Sicherheitsmechanismen
-
-## SoC-Minimum
-Kein Entladen unterhalb dieses Wertes.
-
-## SoC-Maximum
-Kein Laden oberhalb dieses Wertes.
-
-## SoC-Limit (BMS)
-Hardware-Grenzen werden strikt respektiert.
-
-## Fault-Level Sensor
-- 0 → Normal  
-- 1 → Warnung  
-- 2 → Fehler / Schutz aktiv  
-
----
-
-# 🔧 Hard-Sync mit Hardware
-
-Ab Version 1.5.x folgt die interne Logik strikt dem realen Zendure-AC-Modus:
-
-- INPUT = Laden  
-- OUTPUT = Entladen  
-- 0 W = Idle  
-
-Keine Software-/Hardware-Abweichungen.
-
----
-
-# 🧯 Notladefunktion
-
-- Aktivierung bei kritischem SoC  
-- Laden bis SoC-Minimum  
-- Automatische Freigabe  
-- Kein Dauerbetrieb  
+- Adaptive Peak-Erkennung (individuell einstellbar)
+- Preis-Vorplanung mit Valley-Erkennung
+- Dynamische Netzregelung (Regelung statt Vollgas)
+- Geräteprofile pro Modell
+- Hard-Sync mit realem AC-Modus
+- Transparenz-Sensoren für Preislogik
+- Gewinn-/Ersparnis-Berechnung
+- Saisonale Logik (Sommer/Winter)
 
 ---
 
 # ⚠️ Zwingende Voraussetzungen
 
-## 1️⃣ Zendure Original-App
-
-- Lade-/Entladeleistung auf Maximum setzen  
-- HEMS deaktivieren  
-- Keine parallelen Steuerungen  
-
-Die Steuerung erfolgt ausschließlich über Home Assistant.
+Damit die Integration korrekt arbeitet, **müssen** folgende Punkte erfüllt sein:
 
 ---
 
-## 2️⃣ Zendure Home-Assistant Integration
+## 1️⃣ Zendure Original-App
 
-Erforderliche Einstellungen:
+In der Zendure App:
 
-- Kein P1-Sensor auswählen  
-- Energie-Export: „Erlaubt“  
-- Zendure Manager → Betriebsmodus AUS  
+- Ladeleistung → Maximum
+- Entladeleistung → Maximum
+- HEMS → deaktivieren
+- Keine parallelen Automationen
+
+⚠️ Die Steuerung erfolgt ausschließlich über Home Assistant.
+
+---
+
+## 2️⃣ Zendure Home Assistant Integration
+
+Folgende Einstellungen sind zwingend erforderlich:
+
+- Kein P1-Sensor auswählen
+- Energie-Export: **Erlaubt**
+- Zendure Manager → Betriebsmodus **AUS**
 
 Falsche Einstellungen führen zu:
 
-- Entladeabbrüchen  
-- Blockierten AC-Modi  
-- Falschen Zuständen  
+- Blockierten AC-Modi
+- Entladeabbrüchen
+- Instabiler Regelung
 
 ---
 
-## 3️⃣ Strompreis-Integration (optional)
+## 3️⃣ Netzsensor korrekt konfigurieren
 
-Kompatibel mit:
+Empfohlen:
 
-- Tibber  
-- EPEX Spot Integrationen  
+- Split-Modus mit separatem Bezug & Einspeisung  
+  (z. B. Shelly Pro 3EM)
 
 ---
 
-# Installation (HACS)
+## 4️⃣ Strompreis-Integration (optional)
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=PalmManiac&repository=battery-smartflow-ai&category=integration)
+Unterstützt:
+
+- Tibber
+- EPEX
+- Octopus (inkl. deutscher Forecast API)
+
+Ohne Strompreis funktioniert PV- und lastbasierte Steuerung weiterhin.
+
+---
+
+# 🛠 Installation (HACS)
+
+[![HACS Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=PalmManiac&repository=battery-smartflow-ai&category=integration)
 
 1. HACS öffnen  
 2. ⋮ → Benutzerdefinierte Repositories  
@@ -233,26 +103,166 @@ Kompatibel mit:
    `https://github.com/PalmManiac/battery-smartflow-ai`  
 4. Typ: Integration  
 5. Installieren  
-6. Home Assistant neu starten  
+6. Home Assistant neu starten
 
 ---
 
-# 🛣 Roadmap
+# ⚙️ Konfiguration
 
-Version 1.6.x geplant:
+Nach der Installation:
 
-- Überarbeitung der Prioritätslogik  
-- Planning-Charge-Lock  
-- Klare Hierarchie der Entscheidungsquellen  
-- Strukturelle Optimierung der State-Maschine  
+**Einstellungen → Geräte & Dienste → Integration hinzufügen → Battery SmartFlow AI**
+
+---
+
+## 1️⃣ Hauptkonfiguration
+
+<img width="635" height="1186" alt="Screenshot 2026-02-19 134834" src="https://github.com/user-attachments/assets/541d5438-d41f-4595-8456-b93a5f5f41b7" /><img width="633" height="1228" alt="Screenshot 2026-02-25 141115" src="https://github.com/user-attachments/assets/23c3cc0b-938d-44b7-800a-7ad5fdc11711" />
+
+Hier werden ausgewählt:
+
+- Geräteprofil
+- Batterie-SoC Sensor
+- PV-Leistung
+- Strompreis (optional)
+- Preisverlauf (optional)
+- Zendure AC-Modus
+- Lade- & Entlade-Entitäten
+- Netzmodus
+
+📖 Detaillierte Erklärungen findest du in der **Anleitung (V2)**.
+
+---
+
+## 2️⃣ Netzmessung
+
+<img width="631" height="708" alt="Screenshot 2026-02-25 141200" src="https://github.com/user-attachments/assets/c86a8dce-c792-426a-8b33-9b01ffbba776" />
+
+Du kannst wählen zwischen:
+
+- Kein Netzsensor
+- Ein kombinierter Sensor (+/-)
+- Zwei Sensoren (Bezug & Einspeisung)
+
+Empfohlen: **Zwei Sensoren**.
+
+---
+
+## 3️⃣ Split-Sensor Auswahl
+
+<img width="421" height="475" alt="Screenshot 2026-02-25 141224" src="https://github.com/user-attachments/assets/d0dc939a-be84-4b70-8053-29207e3612ba" />
+
+Hier werden:
+
+- Netzbezug
+- Netzeinspeisung
+
+separat ausgewählt.
+
+---
+
+# ⚙️ Geräteprofile
+
+Die Integration nutzt modellabhängige Regelparameter.
+
+Aktuell unterstützt:
+
+- SF800Pro
+- SF1600AC+
+- SF2400AC
+
+Das Profil beeinflusst u. a.:
+
+- Ziel-Netzbezug
+- Regelgeschwindigkeit
+- Export-Toleranz
+- Hardware-Grenzen
+
+---
+
+# 🧠 Peak-Faktor (Adaptive Peak)
+
+Der Peak-Faktor ist über die GUI einstellbar und beeinflusst die Erkennung von Preisspitzen.
+
+Formel:
+
+Peak-Schwelle = max(
+Durchschnittspreis × Peak-Faktor,
+Durchschnittspreis + 0,03 €
+)
+
+Standard: **1.35**
+
+- Niedriger → erkennt mehr Peaks (sensitiver)
+- Höher → erkennt nur starke Preisspitzen (konservativer)
+
+---
+
+# 📊 Transparenz-Sensoren (V2)
+
+V2 macht die Preislogik sichtbar, z. B.:
+
+- Ø Tagespreis
+- Aktuelle Peak-Schwelle
+- Engine-Status
+- Adaptive Peak aktiv
+
+---
+
+# 💶 Gewinn / Ersparnis
+
+Die Integration kann:
+
+- Ø Ladepreis (gewichteter Durchschnitt)
+- Entladene Energie
+- Preis-Differenz
+- Gesamtgewinn in €
+
+sichtbar machen.
+
+Hinweis: Details zur Berechnung stehen in der **Anleitung (V2)**.
+
+---
+
+# 🔄 Betriebsmodi
+
+## Automatik (empfohlen)
+Preis + PV + Last kombiniert.
+
+## Sommer
+Autarkie-Fokus, ohne Preisplanung.
+
+## Winter
+Wirtschaftlichkeits-Fokus, mit Preisplanung.
+
+## Manuell
+Keine KI-Eingriffe, Laden/Entladen/Standby manuell.
+
+---
+
+# 🛡 Sicherheitsmechanismen
+
+- SoC-Minimum / SoC-Maximum
+- BMS-Limit-Erkennung (SoC-Limit Status)
+- Notladefunktion (Emergency)
+- Hard-Sync mit realem Zendure AC-Modus
+
+---
+
+# 📖 Dokumentation
+
+Diese README bietet eine Übersicht.
+
+Für Details (inkl. Screenshots, Beispiele, FAQ) siehe:
+
+- **Anleitung (V2)**
 
 ---
 
 # Support & Mitwirkung
 
-- GitHub Issues für Bugs & Feature-Wünsche  
-- Pull Requests willkommen  
-- Community-Projekt  
+- GitHub Issues für Bugs & Feature-Wünsche
+- Pull Requests willkommen
 
 ---
 
