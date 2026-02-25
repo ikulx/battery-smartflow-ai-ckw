@@ -273,11 +273,19 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
         # -------------------------
         # NUMERIC
         # -------------------------
-        val = details.get(key)
-        try:
-            return float(val) if val is not None else None
-        except Exception:
+        val = details.get(key, data.get(key))
+
+        if val is None:
             return None
+
+        # Numeric detection via unit
+        if self.entity_description.nativ_unit_of_measurement:
+            try:
+                return float(val)
+            except Exception:
+                return None
+
+        return val
 
     def _handle_coordinator_update(self) -> None:
         data = self.coordinator.data or {}
