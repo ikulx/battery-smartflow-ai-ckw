@@ -249,40 +249,6 @@
         }
       },
 
-      "planning_status": {
-        "name": "Preisplanung Status",
-        "state": {
-          "not_checked": "Noch nicht geprüft",
-          "planning_inactive_mode": "Planung deaktiviert (Modus)",
-          "planning_blocked_soc_full": "Akku voll – Planung blockiert",
-          "planning_no_price_now": "Kein aktueller Strompreis",
-          "planning_no_price_data": "Keine Preisdaten verfügbar",
-          "planning_no_peak_detected": "Keine relevante Preisspitze erkannt",
-          "planning_waiting_for_cheap_window": "Warte auf günstiges Ladefenster",
-          "planning_charge_now": "Preisplanung: Laden erlaubt",
-          "planning_last_chance": "Letzte Chance vor Preisspitze",
-          "planning_peak_detected_insufficient_window": "Preisspitze erkannt, Zeitfenster zu kurz"
-        }
-      },
-
-      "planning_active": { "name": "Preisvorplanung aktiv" },
-      "planning_target_soc": { "name": "Ziel-SoC (Preisplanung)" },
-      "planning_reason": { "name": "Planungsbegründung" },
-
-      "next_action_state": {
-        "name": "Nächste Aktion",
-        "state": {
-          "none": "Keine Aktion geplant",
-          "planned_charge": "Geplantes Laden",
-          "planned_discharge": "Geplante Entladung",
-          "charging_active": "Ladevorgang aktiv",
-          "discharging_active": "Entladevorgang aktiv",
-          "manual_charge": "Manuelles Laden",
-          "manual_discharge": "Manuelle Entladung",
-          "emergency_charge": "Notladung"
-        }
-      },
-      
       "next_planned_action": {
         "name": "Geplante nächste Aktion",
         "state": {
