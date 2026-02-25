@@ -12,9 +12,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .device_profiles import DEVICE_PROFILES
-
 from .const import (
     DOMAIN,
     INTEGRATION_NAME,
@@ -25,16 +25,11 @@ from .const import (
     AI_STATUS_ENUMS,
     RECO_ENUMS,
     NEXT_ACTION_STATE_ENUMS,
-    NEXT_PLANNED_ACTION_ENUMS,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-SEASON_MODE_ENUMS = [
-    "winter",
-    "summer",
-    "manual",
-]
+SEASON_MODE_ENUMS = ["winter", "summer", "manual"]
 
 SOC_LIMIT_ENUMS = [
     "not_configured",
@@ -43,148 +38,76 @@ SOC_LIMIT_ENUMS = [
     "lower_limit_active",
 ]
 
-FAULT_LEVEL_ENUMS = [
-    "normal",
-    "warning",
-    "error",
-]
+FAULT_LEVEL_ENUMS = ["normal", "warning", "error"]
 
-PLANNING_STATUS_ENUMS = [
-    "not_checked",
-    "sensor_invalid",
-    "planning_inactive_mode",
-    "planning_blocked_soc_full",
-    "planning_no_price_now",
-    "planning_no_price_data",
-    "planning_no_peak_detected",
-    "planning_peak_detected_insufficient_window",
-    "planning_waiting_for_cheap_window",
-    "planning_charge_now",
-    "planning_discharge_planned",
-    "planning_last_chance",
-]
-
-# Dynamische Device Profile ENUMs (V2)
 DEVICE_PROFILE_ENUMS = list(DEVICE_PROFILES.keys())
 
-DEBUG_ALWAYS_HAS_STATE = {
-    "ai_debug",
-    "decision_reason",
-    "planning_reason",
-}
 
 @dataclass(frozen=True, kw_only=True)
 class ZendureSensorEntityDescription(SensorEntityDescription):
     runtime_key: str
 
-    def __post_init__(self):
-        if not self.key:
-            raise ValueError(
-                "ZendureSmartFlowSensor created without a key. "
-                "This would result in *_none entity_id."
-            )
 
 SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
-    # --- ENUM sensors (translated) ---
+
+    # --------------------------------------------------
+    # SYSTEM STATUS
+    # --------------------------------------------------
     ZendureSensorEntityDescription(
         key="status",
         translation_key="status",
         runtime_key="status",
-        icon="mdi:power-plug",
         device_class=SensorDeviceClass.ENUM,
         options=STATUS_ENUMS,
+        icon="mdi:power-plug",
     ),
     ZendureSensorEntityDescription(
         key="ai_status",
         translation_key="ai_status",
         runtime_key="ai_status",
-        icon="mdi:robot",
         device_class=SensorDeviceClass.ENUM,
         options=AI_STATUS_ENUMS,
+        icon="mdi:robot",
     ),
     ZendureSensorEntityDescription(
         key="recommendation",
         translation_key="recommendation",
         runtime_key="recommendation",
-        icon="mdi:lightbulb-outline",
         device_class=SensorDeviceClass.ENUM,
         options=RECO_ENUMS,
+        icon="mdi:lightbulb-outline",
     ),
     ZendureSensorEntityDescription(
         key="fault_level_status",
         translation_key="fault_level_status",
         runtime_key="fault_level_status",
-        icon="mdi:alert-circle-outline",
         device_class=SensorDeviceClass.ENUM,
         options=FAULT_LEVEL_ENUMS,
+        icon="mdi:alert-circle-outline",
     ),
 
-    # --- NEXT ACTION (V1.3.x) ---
+    # --------------------------------------------------
+    # ACTION STATE
+    # --------------------------------------------------
     ZendureSensorEntityDescription(
         key="next_action_state",
         translation_key="next_action_state",
         runtime_key="next_action_state",
-        icon="mdi:clock-outline",
         device_class=SensorDeviceClass.ENUM,
         options=NEXT_ACTION_STATE_ENUMS,
+        icon="mdi:clock-outline",
     ),
     ZendureSensorEntityDescription(
         key="next_action_time",
         translation_key="next_action_time",
         runtime_key="next_action_time",
+        device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:clock-start",
-        device_class=SensorDeviceClass.TIMESTAMP,
     ),
 
-    # --- NEXT PLANNED ACTION (V1.4.0) ---
-    ZendureSensorEntityDescription(
-        key="next_planned_action",
-        translation_key="next_planned_action",
-        runtime_key="next_planned_action",
-        icon="mdi:calendar-arrow-right",
-        device_class=SensorDeviceClass.ENUM,
-        options=NEXT_PLANNED_ACTION_ENUMS,
-    ),
-    ZendureSensorEntityDescription(
-        key="next_planned_action_time",
-        translation_key="next_planned_action_time",
-        runtime_key="next_planned_action_time",
-        icon="mdi:calendar-clock",
-        device_class=SensorDeviceClass.TIMESTAMP,
-    ),
-    ZendureSensorEntityDescription(
-        key="device_profile",
-        translation_key="device_profile",
-        runtime_key="device_profile",
-        icon="mdi:battery-outline",
-        device_class=SensorDeviceClass.ENUM,
-        options=DEVICE_PROFILE_ENUMS,
-    ),
-    ZendureSensorEntityDescription(
-        key="season_mode",
-        translation_key="season_mode",
-        runtime_key="season_mode",
-        icon="mdi:weather-partly-snowy",
-        device_class=SensorDeviceClass.ENUM,
-        options=SEASON_MODE_ENUMS,
-    ),
-
-    ZendureSensorEntityDescription(
-        key="soc_limit_status",
-        translation_key="soc_limit_status",
-        runtime_key="soc_limit_status",
-        icon="mdi:shield-alert-outline",
-        device_class=SensorDeviceClass.ENUM,
-        options=SOC_LIMIT_ENUMS,
-    ),
-    
-    # --- Debug / reasoning ---
-    ZendureSensorEntityDescription(
-        key="ai_debug",
-        translation_key="ai_debug",
-        runtime_key="debug",
-        icon="mdi:bug",
-    ),
+    # --------------------------------------------------
+    # ENGINE TRANSPARENCY
+    # --------------------------------------------------
     ZendureSensorEntityDescription(
         key="decision_reason",
         translation_key="decision_reason",
@@ -197,23 +120,6 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         runtime_key="adaptive_peak_active",
         icon="mdi:chart-line",
     ),
-    
-    ZendureSensorEntityDescription(
-        key="price_daily_average",
-        translation_key="price_daily_average",
-        runtime_key="price_daily_average",
-        icon="mdi:chart-line",
-        native_unit_of_measurement="€/kWh",
-    ),
-
-    ZendureSensorEntityDescription(
-        key="current_peak_threshold",
-        translation_key="current_peak_threshold",
-        runtime_key="current_peak_threshold",
-        icon="mdi:chart-bell-curve",
-        native_unit_of_measurement="€/kWh",
-    ),
-
     ZendureSensorEntityDescription(
         key="engine_health",
         translation_key="engine_health",
@@ -221,65 +127,78 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         icon="mdi:heart-pulse",
     ),
 
-    # --- Planning transparency ---
+    # --------------------------------------------------
+    # PRICE TRANSPARENCY
+    # --------------------------------------------------
     ZendureSensorEntityDescription(
-        key="planning_status",
-        translation_key="planning_status",
-        runtime_key="planning_status",
-        icon="mdi:timeline-alert",
-        device_class=SensorDeviceClass.ENUM,
-        options=PLANNING_STATUS_ENUMS,
+        key="price_daily_average",
+        translation_key="price_daily_average",
+        runtime_key="price_daily_average",
+        native_unit_of_measurement="€/kWh",
+        icon="mdi:chart-line",
     ),
     ZendureSensorEntityDescription(
-        key="planning_active",
-        translation_key="planning_active",
-        runtime_key="planning_active",
-        icon="mdi:flash",
-    ),
-    ZendureSensorEntityDescription(
-        key="planning_target_soc",
-        translation_key="planning_target_soc",
-        runtime_key="planning_target_soc",
-        icon="mdi:battery-high",
-        native_unit_of_measurement="%",
-    ),
-    ZendureSensorEntityDescription(
-        key="planning_reason",
-        translation_key="planning_reason",
-        runtime_key="planning_reason",
-        icon="mdi:text-long",
-    ),
-
-    # --- Numeric sensors ---
-    ZendureSensorEntityDescription(
-        key="house_load",
-        translation_key="house_load",
-        runtime_key="house_load",
-        icon="mdi:home-lightning-bolt",
-        native_unit_of_measurement="W",
+        key="current_peak_threshold",
+        translation_key="current_peak_threshold",
+        runtime_key="current_peak_threshold",
+        native_unit_of_measurement="€/kWh",
+        icon="mdi:chart-bell-curve",
     ),
     ZendureSensorEntityDescription(
         key="price_now",
         translation_key="price_now",
         runtime_key="price_now",
-        icon="mdi:currency-eur",
         native_unit_of_measurement="€/kWh",
+        icon="mdi:currency-eur",
     ),
+
+    # --------------------------------------------------
+    # ECONOMICS
+    # --------------------------------------------------
     ZendureSensorEntityDescription(
         key="avg_charge_price",
         translation_key="avg_charge_price",
         runtime_key="avg_charge_price",
-        icon="mdi:scale-balance",
         native_unit_of_measurement="€/kWh",
+        icon="mdi:scale-balance",
     ),
     ZendureSensorEntityDescription(
         key="profit_eur",
         translation_key="profit_eur",
         runtime_key="profit_eur",
-        icon="mdi:cash",
         native_unit_of_measurement="€",
+        icon="mdi:cash",
+    ),
+
+    # --------------------------------------------------
+    # DEVICE / MODE
+    # --------------------------------------------------
+    ZendureSensorEntityDescription(
+        key="device_profile",
+        translation_key="device_profile",
+        runtime_key="device_profile",
+        device_class=SensorDeviceClass.ENUM,
+        options=DEVICE_PROFILE_ENUMS,
+        icon="mdi:battery-outline",
+    ),
+    ZendureSensorEntityDescription(
+        key="season_mode",
+        translation_key="season_mode",
+        runtime_key="season_mode",
+        device_class=SensorDeviceClass.ENUM,
+        options=SEASON_MODE_ENUMS,
+        icon="mdi:weather-partly-snowy",
+    ),
+    ZendureSensorEntityDescription(
+        key="soc_limit_status",
+        translation_key="soc_limit_status",
+        runtime_key="soc_limit_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=SOC_LIMIT_ENUMS,
+        icon="mdi:shield-alert-outline",
     ),
 )
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -287,33 +206,17 @@ async def async_setup_entry(
     add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator = hass.data[DOMAIN][entry.entry_id]
-
-    # HARD SAFETY CHECK
-    for d in SENSORS:
-        if not d.key:
-            raise RuntimeError(f"Sensor without key detected: {d}")
-
-    entities = []
-    for d in SENSORS:
-        entities.append(ZendureSmartFlowSensor(entry, coordinator, d))
-
+    entities = [ZendureSmartFlowSensor(entry, coordinator, d) for d in SENSORS]
     add_entities(entities)
+
 
 class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
 
-    def __init__(
-        self,
-        entry: ConfigEntry,
-        coordinator,
-        description: ZendureSensorEntityDescription,
-    ) -> None:
+    def __init__(self, entry, coordinator, description):
         super().__init__(coordinator)
         self.entity_description = description
         self._entry = entry
-
-        if not description.key:
-            raise ValueError(f"ZendureSmartFlowSensor created without key: {description}")
 
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{description.key}"
 
@@ -335,74 +238,40 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
         details = data.get("details") or {}
         key = self.entity_description.runtime_key
 
-        from homeassistant.util import dt as dt_util
-
-        # --------------------------------------------------
+        # -------------------------
         # TIMESTAMP
-        # --------------------------------------------------
+        # -------------------------
         if self.device_class == SensorDeviceClass.TIMESTAMP:
             val = data.get(key)
-
             if val is None:
                 return None
-
             if hasattr(val, "tzinfo"):
                 return dt_util.as_utc(val)
-
             if isinstance(val, str):
                 dt = dt_util.parse_datetime(val)
                 return dt_util.as_utc(dt) if dt else None
-
             return None
 
-        # --------------------------------------------------
-        # ENUM (MUSS immer gültig sein)
-        # --------------------------------------------------
+        # -------------------------
+        # ENUM
+        # -------------------------
         if self.device_class == SensorDeviceClass.ENUM:
-            # season_mode liegt auf Top-Level
-            if key == "season_mode":
-                val = data.get(key)
-            else:
-                val = details.get(key, data.get(key))
-                
+            val = details.get(key, data.get(key))
             options = self.entity_description.options or []
-
             if val in options:
                 return val
-
-            # Fallback: IMMER erster Enum-Wert → sonst Sensor invalid
             return options[0] if options else None
 
-        # --------------------------------------------------
+        # -------------------------
         # NUMERIC
-        # --------------------------------------------------
-        if key in (
-            "house_load",
-            "price_now",
-            "avg_charge_price",
-            "profit_eur",
-            "planning_target_soc",
-        ):
-            val = details.get(key)
-            try:
-                return float(val) if val is not None else None
-            except Exception:
-                return None
+        # -------------------------
+        val = details.get(key)
+        try:
+            return float(val) if val is not None else None
+        except Exception:
+            return None
 
-        # --------------------------------------------------
-        # BOOLEAN / TEXT / DEBUG
-        # --------------------------------------------------
-        val = details.get(key, data.get(key))
-
-        # Debug-/Text-Sensoren dürfen NIE None sein
-        if val is None:
-            return "ok"
-
-        return val
-
-        
     def _handle_coordinator_update(self) -> None:
         data = self.coordinator.data or {}
         self._attr_extra_state_attributes = data.get("details") or {}
         super()._handle_coordinator_update()
-        
