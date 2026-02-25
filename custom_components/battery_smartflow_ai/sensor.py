@@ -279,7 +279,7 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
             return None
 
         # Numeric detection via unit
-        if self.entity_description.nativ_unit_of_measurement:
+        if self.entity_description.native_unit_of_measurement:
             try:
                 return float(val)
             except Exception:
