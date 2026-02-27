@@ -27,3 +27,77 @@ Die Integration greift nicht blind ein –
 sie bewertet kontinuierlich die aktuelle Situation und reagiert nur dann, wenn eine Verbesserung möglich ist.
 
 > Das Ergebnis: geringere Stromkosten, saubere Netzbilanz und nachvollziehbares Systemverhalten.
+
+# Kapitel 2 – Zwingende Voraussetzungen
+
+Damit Battery SmartFlow AI korrekt und stabil arbeiten kann, müssen bestimmte Einstellungen zwingend beachtet werden.
+
+Die Integration übernimmt die vollständige Steuerung des Zendure-Systems.  
+Parallele oder widersprüchliche Steuerungen führen zu Instabilität.
+
+---
+
+## 1️⃣ Zendure Original-App
+
+In der offiziellen Zendure-App müssen folgende Punkte geprüft werden:
+
+- Ladeleistung auf Maximum setzen  
+- Entladeleistung auf Maximum setzen  
+- HEMS deaktivieren  
+- Keine zeitgesteuerten Lade-/Entladepläne aktiv  
+- Keine externe Leistungsbegrenzung aktiv  
+
+### ⚠ Hardwareliste prüfen (sehr wichtig)
+
+In der Zendure-App darf sich in der **Hardwareliste ausschließlich der Wechselrichter bzw. die Zendure-Hardware selbst** befinden.
+
+Es dürfen **keine zusätzlichen Geräte** eingebunden sein, wie zum Beispiel:
+
+- Shelly Pro 3EM  
+- externe Smart Meter / Zähler  
+- Zendure eigene Messsensoren  
+- sonstige Leistungs- oder Netzsensoren  
+
+Externe Messgeräte oder interne HEMS-Komponenten beeinflussen das Regelverhalten des Systems und führen zu unvorhersehbaren Eingriffen (z. B. blockierte AC-Modi, Leistungsbegrenzungen oder Richtungswechsel).
+
+Battery SmartFlow AI benötigt eine „saubere“ Hardwarekonfiguration ohne parallele Steuerinstanzen.
+
+---
+
+## 2️⃣ Zendure Home-Assistant Integration
+
+Folgende Einstellungen sind erforderlich:
+
+- Energie-Export: **Erlaubt**  
+- Kein P1-Sensor auswählen  
+- Zendure Manager: **deaktiviert**  
+- Keine parallelen Automationen, die AC-Modus oder Leistungsgrenzen verändern  
+
+Falsche Einstellungen können führen zu:
+
+- Entladeabbrüchen  
+- blockierten AC-Modi  
+- Wechsel zwischen INPUT/OUTPUT  
+- falschen Zuständen / Fehlinterpretationen  
+
+---
+
+## 3️⃣ Strompreis-Integration (optional)
+
+Für preisbasierte Planung ist eine kompatible Strompreis-Integration erforderlich.
+
+Unterstützt werden unter anderem:
+
+- Tibber  
+- EPEX Spot Integrationen  
+- Octopus (inkl. Forecast-Attribute)  
+
+Ohne Preisdaten arbeitet die Integration weiterhin PV- und lastbasiert, jedoch ohne Preisoptimierung.
+
+---
+
+## Wichtig
+
+Wenn das System nicht wie erwartet arbeitet, sollten zuerst diese Voraussetzungen überprüft werden.
+
+In den meisten Fällen liegt die Ursache in widersprüchlichen Einstellungen außerhalb der Integration.
