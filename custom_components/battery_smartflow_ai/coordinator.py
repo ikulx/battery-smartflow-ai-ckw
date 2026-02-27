@@ -173,6 +173,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "last_set_input_w": None,
             "last_set_output_w": None,
             "prev_discharge_w": 0.0,
+            "prev_charge_w": 0.0,
 
             # basic state
             "power_state": "idle",  # idle|charging|discharging
@@ -720,6 +721,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # --- V2 additions ---
                 profile=profile,
                 prev_discharge_w=float(self._persist.get("prev_discharge_w", 0.0)),
+                prev_charge_w=float(self._persist.get("prev_charge_w", 0.0)),
                 battery_capacity_kwh=battery_capacity_kwh,
                 peak_factor=peak_factor,
             )
@@ -778,6 +780,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Persist previous discharge for delta controller
             self._persist["prev_discharge_w"] = float(decision.discharge_w or 0.0)
+
+            # charge memory for delta controller
+            if decision.ac_mode == "input" and float(decision.charge_w or 0.0) > 0.0:
+                self._persist["prev_charge_w"] = float(decision.charge_w)
+            else:
+                self._persist["prev_charge_w"] = 0.0
 
             # -----------------------------
             # BMS SoC limit (directional block)
