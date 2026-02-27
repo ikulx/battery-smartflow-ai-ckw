@@ -53,6 +53,7 @@ class DecisionContext:
 
     profile: dict
     prev_discharge_w: float
+    prev_charge_w: float
 
     battery_capacity_kwh: float
 
@@ -122,6 +123,54 @@ class DecisionEngine:
             out_w = max(out_w, KEEPALIVE_MIN_OUTPUT)
 
         return out_w
+
+    # --------------------------------------------------
+    # Delta charge controller (NEW V2.0.1)
+    # --------------------------------------------------
+
+    def _delta_charge(self, ctx: DecisionContext) -> float:
+        p = ctx.profile
+
+        TARGET_EXPORT = float(p.get("TARGET_EXPORT_W", 10.0))
+        DEADBAND = float(p["DEADBAND_W"])
+        EXPORT_GUARD = float(p["EXPORT_GUARD_W"])
+
+        KP_UP = float(p["KP_UP"])
+        KP_DOWN = float(p["KP_DOWN"])
+
+        MAX_STEP_UP = float(p["MAX_STEP_UP"]) * 0.5
+        MAX_STEP_DOWN = float(p["MAX_STEP_DOWN"]) * 0.5
+
+        if ctx.soc >= ctx.soc_max:
+            return 0.0
+
+        net = float(ctx.grid_import_w) - float(ctx.grid_export_w)
+        in_w = float(ctx.prev_charge_w or 0.0)
+
+        # Wenn Import entsteht → sofort reduzieren
+        if net > DEADBAND:
+            step = min(MAX_STEP_DOWN, max(60.0, KP_DOWN * abs(net)))
+            in_w -= step
+            return max(0.0, min(float(ctx.max_charge_w), in_w))
+
+        target_net = -TARGET_EXPORT
+        err = target_net - net
+
+        # Starkes Export-Signal → schneller hoch
+        if net < -(EXPORT_GUARD):
+            step = min(MAX_STEP_UP * 1.5, max(40.0, KP_UP * abs(err)))
+            in_w += step
+            return max(0.0, min(float(ctx.max_charge_w), in_w))
+
+        if err > DEADBAND:
+            step = min(MAX_STEP_UP, max(30.0, KP_UP * err))
+            in_w += step
+        elif err < -DEADBAND:
+            step = min(MAX_STEP_DOWN, max(40.0, KP_DOWN * abs(err)))
+            in_w -= step
+
+        in_w = max(0.0, min(float(ctx.max_charge_w), in_w))
+        return in_w
 
     # --------------------------------------------------
     # Adaptive peak detection
@@ -338,7 +387,7 @@ class DecisionEngine:
                 )
 
             if ctx.grid_export_w > 80 and ctx.soc < ctx.soc_max:
-                charge_w = min(float(ctx.max_charge_w), float(ctx.grid_export_w))
+                charge_w = self._delta_charge(ctx)
                 return DecisionResult(
                     action="charge",
                     ac_mode="input",
