@@ -364,3 +364,192 @@ eingetragen sein.
 Es dürfen **keine externen Zähler oder Messgeräte** (z. B. Shelly Pro 3EM oder Zendure-eigene Messsensoren) dort eingebunden sein.
 
 Die gesamte Regelung erfolgt ausschließlich über Home Assistant.
+
+# Kapitel 5 – Betriebsmodi & Arbeitsweise
+
+Battery SmartFlow AI arbeitet kontextbasiert.  
+Die Integration bewertet kontinuierlich:
+
+- Batterie-SoC  
+- Netzbezug / Einspeisung  
+- PV-Leistung  
+- Aktueller Strompreis  
+- Zukünftige Preisstruktur  
+
+Aus diesen Daten entstehen dynamische Lade- und Entladeentscheidungen.
+
+---
+
+## 5.1 Betriebsmodi
+
+Die Integration kennt vier Betriebsmodi.
+
+---
+
+### 🔹 Automatik (empfohlen)
+
+Standardmodus für die meisten Anwender.
+
+Aktiv:
+
+- PV-Überschussladen  
+- Netzgeführte Leistungsregelung  
+- Preisbasierte Entladung  
+- Adaptive Peak-Erkennung  
+- Sehr-teuer-Priorität  
+
+Ziel:
+
+> Maximale Wirtschaftlichkeit bei stabiler Regelung.
+
+---
+
+### 🔹 Sommermodus
+
+Optimiert für hohe PV-Erzeugung.
+
+Eigenschaften:
+
+- Fokus auf Autarkie  
+- Preisplanung deaktiviert  
+- Entladung primär bei Netzdefizit  
+- Sehr-teuer-Erkennung weiterhin aktiv  
+
+Ziel:
+
+> Möglichst wenig Netzbezug.
+
+---
+
+### 🔹 Wintermodus
+
+Optimiert für geringe PV-Erzeugung.
+
+Eigenschaften:
+
+- Preisplanung aktiv  
+- Vorbereitung auf Preisspitzen  
+- Wirtschaftliche Entladung im Vordergrund  
+
+Ziel:
+
+> Strom dann nutzen, wenn er teuer ist.
+
+---
+
+### 🔹 Manuell
+
+Keine KI-Logik.
+
+Mögliche Aktionen:
+
+- Laden  
+- Entladen  
+- Standby  
+
+Die Integration greift nicht automatisch ein.
+
+---
+
+## 5.2 Adaptive Peak-Erkennung
+
+Die Integration analysiert kontinuierlich die Tagespreisstruktur.
+
+Ein Preis gilt als Peak, wenn er oberhalb der dynamischen Schwelle liegt:
+
+Peak-Schwelle =  
+max( Durchschnittspreis × Peak-Faktor,  
+     Durchschnittspreis + 0,03 € )
+
+Der Peak-Faktor ist ein einstellbarer Multiplikator.
+
+Beispiel:
+
+- Tagesdurchschnitt: 0,30 €/kWh  
+- Peak-Faktor: 1,35  
+
+→ Schwelle = 0,405 €/kWh  
+
+Preise darüber werden als Hochpreisphase erkannt.
+
+---
+
+## 5.3 Entscheidungsgrund (Sensor)
+
+Der Sensor „Entscheidungsgrund“ zeigt transparent an, warum eine Aktion ausgeführt wird.
+
+Typische Werte:
+
+- adaptive_peak_discharge  
+- price_discharge  
+- surplus_charge  
+- cover_deficit  
+- emergency_charge  
+- standby  
+
+Damit wird jede Aktion nachvollziehbar.
+
+---
+
+## 5.4 Sehr-teuer-Priorität
+
+Wird die konfigurierte „Sehr-teuer-Schwelle“ überschritten:
+
+- Entladung hat höchste Priorität  
+- PV-Logik wird ignoriert  
+- Planung wird übersteuert  
+- SoC-Minimum bleibt geschützt  
+
+Dies verhindert unnötig hohen Netzbezug bei Extrempreisen.
+
+---
+
+## 5.5 Netzgeführte Leistungsregelung
+
+Die Entladeleistung wird dynamisch angepasst an:
+
+- aktuellen Netzbezug  
+- definierte Ziel-Importleistung  
+- Geräteprofil-Parameter  
+
+Ziel:
+
+> Netzbezug möglichst nahe 0 W  
+> ohne instabile Überregelung
+
+Je nach Geräteprofil erfolgt die Regelung:
+
+- konservativ  
+- dynamisch  
+- aggressiv  
+
+---
+
+## 5.6 Wirtschaftlichkeitsberechnung
+
+Die Integration speichert:
+
+- Durchschnittlichen Einkaufspreis geladener Energie  
+- Geladene kWh  
+- Entladene kWh  
+- Realisierten Gewinn  
+
+Bei Entladung wird berechnet:
+
+(aktueller Preis – Durchschnittsladepreis) × entladene kWh
+
+So entsteht der Sensor „Gewinn / Ersparnis“.
+
+---
+
+## 5.7 Transparenz-Sensoren
+
+Zur Analyse stehen zur Verfügung:
+
+- Durchschnittlicher Tagespreis  
+- Aktuelle Peak-Schwelle  
+- Engine-Status  
+- Entscheidungsgrund  
+- Adaptive Peak aktiv  
+
+Damit ist jede Entscheidung technisch nachvollziehbar.
