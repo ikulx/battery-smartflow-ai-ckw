@@ -553,3 +553,293 @@ Zur Analyse stehen zur Verfügung:
 - Adaptive Peak aktiv  
 
 Damit ist jede Entscheidung technisch nachvollziehbar.
+
+# Kapitel 6 – Sensoren & Steuerelemente
+
+Dieses Kapitel beschreibt alle von Battery SmartFlow AI bereitgestellten Sensoren und Steuerelemente.
+
+Die Sensoren dienen der Transparenz und Analyse.  
+Die Steuerelemente ermöglichen gezielte Anpassungen der Strategie.
+
+---
+
+# 6.1 Status- & Wirtschaftssensoren
+
+![Status & Wirtschaft](images/sensors_01_status.png)
+
+---
+
+## Systemstatus
+
+Zeigt den allgemeinen Zustand der Integration.
+
+Typische Werte:
+
+- OK
+- Sensorfehler
+- Initialisierung
+
+---
+
+## KI-Status
+
+Beschreibt den aktuellen Betriebszustand der Engine.
+
+Beispiele:
+
+- Bereitschaft
+- Entladung aktiv
+- Laden aktiv
+- Sehr teuer
+- Notladung
+
+---
+
+## KI-Empfehlung
+
+Zeigt, welche Aktion aktuell empfohlen wird:
+
+- Keine Aktion
+- Laden
+- Entladen
+- Notladen
+
+---
+
+## Hauslast
+
+Berechnete aktuelle Hauslast in Watt.
+
+Dieser Wert ergibt sich aus:
+
+Netzbezug + Eigenverbrauch
+
+Er dient zur dynamischen Leistungsregelung.
+
+---
+
+## Ø Ladepreis Akku
+
+Durchschnittlicher Einkaufspreis der aktuell gespeicherten Energie.
+
+Wird genutzt für:
+
+- Gewinnberechnung
+- Wirtschaftliche Entladung
+
+---
+
+## Ø Tagespreis
+
+Durchschnitt aller verfügbaren Preisdaten des Tages.
+
+Basis für:
+
+- Adaptive Peak-Erkennung
+- Dynamische Peak-Schwelle
+
+---
+
+# 6.2 Peak- & Transparenzsensoren
+
+![Peak & Transparenz](images/sensors_02_peak.png)
+
+---
+
+## Adaptiver Peak erkannt
+
+Boolean-Sensor.
+
+True → Aktueller Preis liegt oberhalb der dynamischen Peak-Schwelle.  
+False → Kein Hochpreisbereich.
+
+---
+
+## Aktuelle Peak-Schwelle
+
+Preiswert in €/kWh.
+
+Berechnung:
+
+max( Durchschnittspreis × Peak-Faktor,  
+     Durchschnittspreis + 0,03 € )
+
+Dient als dynamische Hochpreis-Grenze.
+
+---
+
+## Aktueller Strompreis
+
+Echtzeitpreis in €/kWh.
+
+Wird für:
+
+- Entladeentscheidung
+- Gewinnberechnung
+- Sehr-teuer-Erkennung
+
+verwendet.
+
+---
+
+## Engine-Status
+
+Diagnosesensor.
+
+Typische Werte:
+
+- System normal
+- Keine Preisdaten
+- Kein aktueller Preis
+- Sensor ungültig
+
+Erleichtert Fehlersuche.
+
+---
+
+## Entscheidungsgrund
+
+Transparenz-Sensor.
+
+Zeigt exakt an, warum eine Aktion erfolgt.
+
+Typische Werte:
+
+- adaptive_peak_discharge
+- price_discharge
+- surplus_charge
+- cover_deficit
+- emergency_charge
+- standby
+
+---
+
+## Aktives Geräteprofil
+
+Zeigt das aktuell verwendete Regelprofil (z. B. SF2400AC).
+
+---
+
+## Erkannter Betriebsmodus
+
+Automatisch erkannter Modus:
+
+- Winterbetrieb
+- Sommerbetrieb
+- Manuell
+
+---
+
+## Ersparnis / Gewinn
+
+Berechneter realisierter Gewinn in Euro.
+
+Berechnung:
+
+(aktueller Preis − Durchschnittsladepreis) × entladene kWh
+
+---
+
+# 6.3 Steuerelemente
+
+![Leistungs- & Schutzparameter](images/controls_01_limits.png)
+
+---
+
+## Max. Entladeleistung
+
+Begrenzt die maximale Entladeleistung in Watt.
+
+Das Geräteprofil setzt zusätzlich Hardware-Grenzen.
+
+---
+
+## Max. Ladeleistung
+
+Begrenzt die maximale AC-Ladeleistung.
+
+---
+
+## Notladeleistung
+
+Leistung in Watt, die bei kritischem SoC genutzt wird.
+
+---
+
+## Notladung ab SoC
+
+Schwellenwert, unter dem automatisch eine Notladung startet.
+
+---
+
+## Peak-Faktor
+
+Multiplikator für die Adaptive Peak-Erkennung.
+
+Niedriger Wert → mehr Peaks  
+Höherer Wert → nur starke Preisspitzen
+
+---
+
+## Sehr-teuer-Schwelle
+
+Ab diesem Preis wird Entladung priorisiert.
+
+---
+
+## SoC Maximum
+
+Obergrenze für das Laden.
+
+---
+
+## SoC Minimum
+
+Untergrenze für Entladung.
+
+---
+
+![Modus & Wirtschaft](images/controls_02_mode.png)
+
+---
+
+## Anzahl Akku-Packs
+
+Multipliziert mit der Pack-Kapazität zur Gesamtberechnung.
+
+Wichtig für:
+
+- kWh-Berechnung
+- Profit
+- Planung
+
+---
+
+## Betriebsmodus
+
+Auswahl zwischen:
+
+- Automatik
+- Sommer
+- Winter
+- Manuell
+
+---
+
+## Gewinnmarge (%)
+
+Mindestgewinn, bevor wirtschaftliche Entladung erfolgt.
+
+Verhindert unwirtschaftliche Mikro-Entladungen.
+
+---
+
+## Manuelle Aktion
+
+Nur im manuellen Modus aktiv.
+
+Optionen:
+
+- Standby
+- Laden
+- Entladen
