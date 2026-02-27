@@ -101,3 +101,50 @@ Ohne Preisdaten arbeitet die Integration weiterhin PV- und lastbasiert, jedoch o
 Wenn das System nicht wie erwartet arbeitet, sollten zuerst diese Voraussetzungen überprüft werden.
 
 In den meisten Fällen liegt die Ursache in widersprüchlichen Einstellungen außerhalb der Integration.
+
+# Kapitel 3 – Installation
+
+Battery SmartFlow AI wird über HACS (Home Assistant Community Store) installiert.
+
+Es gibt zwei Möglichkeiten:
+
+---
+
+## 🚀 Schnellinstallation (empfohlen)
+
+Über folgenden Button kann das Repository direkt in HACS geöffnet werden:
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=PalmManiac&repository=battery-smartflow-ai&category=integration)
+
+Nach dem Öffnen:
+
+1. Repository hinzufügen  
+2. Integration installieren  
+
+---
+
+## 🔧 Manuelle Installation über HACS
+
+Falls der Direktlink nicht genutzt wird:
+
+1. HACS öffnen  
+2. ⋮ → **Benutzerdefinierte Repositories**  
+3. Repository-URL einfügen:  
+   `https://github.com/PalmManiac/battery-smartflow-ai`  
+4. Typ: **Integration** auswählen  
+5. Hinzufügen bestätigen  
+
+Anschließend:
+
+1. In HACS nach **Battery SmartFlow AI** suchen  
+2. Installieren  
+
+---
+
+## 🔄 Neustart erforderlich
+
+Nach der Installation muss Home Assistant neu gestartet werden.
+
+Erst nach dem Neustart steht die Integration unter  
+**Einstellungen → Geräte & Dienste → Integration hinzufügen**  
+zur Verfügung.
