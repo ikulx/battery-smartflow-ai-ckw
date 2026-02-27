@@ -148,3 +148,219 @@ Nach der Installation muss Home Assistant neu gestartet werden.
 Erst nach dem Neustart steht die Integration unter  
 **Einstellungen → Geräte & Dienste → Integration hinzufügen**  
 zur Verfügung.
+
+# Kapitel 4 – Konfiguration der Integration
+
+Nach der Installation wird die Integration über  
+**Einstellungen → Geräte & Dienste → Integration hinzufügen**  
+eingerichtet.
+
+Dieses Kapitel erklärt alle Felder des Konfigurationsdialogs in der Reihenfolge der Benutzeroberfläche.
+
+---
+
+## 4.1 Geräteprofil & Basisdaten
+
+![Basis-Konfiguration](images/config_01_basic.png)
+
+### Geräteprofil
+
+Hier wird das passende Profil für das verwendete Zendure-Modell gewählt.
+
+Das Profil definiert:
+
+- Dynamik der Leistungsregelung  
+- Sicherheitsgrenzen  
+- Regelparameter  
+- Hardware-Limits  
+
+Es muss immer das tatsächlich verwendete Modell ausgewählt werden.
+
+---
+
+### Batterie-SoC Sensor
+
+Sensor mit dem aktuellen Ladezustand (State of Charge) in Prozent.
+
+- Einheit: %
+- Pflichtfeld
+- Grundlage aller Entscheidungen
+
+Ohne gültigen SoC ist keine Steuerung möglich.
+
+---
+
+### SoC-Limit Status (optional)
+
+Optionaler Sensor aus der Zendure-Integration.
+
+Er meldet aktive BMS-Grenzen wie:
+
+- Ladesperre  
+- Entladesperre  
+
+Die Integration respektiert diese Hardware-Grenzen strikt.
+
+---
+
+### Kapazität pro Akku-Pack (kWh)
+
+Angabe der nutzbaren Kapazität eines einzelnen Akku-Packs.
+
+Dieser Wert ist entscheidend für:
+
+- kWh-Delta-Berechnung  
+- Ladezeitabschätzung  
+- Profit-Berechnung  
+- Planung vor Preisspitzen  
+
+Bei mehreren installierten Akku-Packs wird dieser Wert mit der Pack-Anzahl multipliziert.
+
+⚠ Eine falsche Kapazitätsangabe führt zu falschen wirtschaftlichen Ergebnissen.
+
+---
+
+### PV-Leistung Sensor (optional)
+
+Sensor mit aktueller PV-Leistung in Watt.
+
+Wird genutzt für:
+
+- Überschusserkennung  
+- dynamische Regelung  
+- saisonale Bewertung  
+
+#### Nutzung ohne PV-Anlage
+
+Wenn keine PV-Anlage vorhanden ist, kann ein einfacher Template-Sensor verwendet werden, der dauerhaft **0 W** liefert.
+
+```yaml
+template:
+  - sensor:
+      - name: "Dummy PV Power"
+        unit_of_measurement: "W"
+        state: 0
+```
+
+---
+
+## 4.2 Preis- & AC-Konfiguration
+
+![Preis & AC](images/config_02_price_ac.png)
+
+### Preisverlauf (z. B. Tibber / EPEX)
+
+Sensor mit zukünftigen Preisdaten.
+
+Er muss Preisslots als Attribut enthalten.
+
+Wird benötigt für:
+
+- Adaptive Peak-Erkennung  
+- Ladefenster-Planung  
+- wirtschaftliche Entladeentscheidungen  
+
+---
+
+### Aktueller Strompreis
+
+Sensor mit aktuellem Preis in €/kWh.
+
+Wird für wirtschaftliche Echtzeit-Entscheidungen verwendet.
+
+---
+
+### Zendure AC-Betriebsmodus
+
+Select-Entität aus der Zendure Home-Assistant Integration.
+
+Schaltet zwischen:
+
+- INPUT (Laden)  
+- OUTPUT (Entladen)  
+
+Battery SmartFlow AI steuert diesen Modus automatisch.
+
+⚠ Es dürfen keine parallelen Automationen existieren, die diesen Modus verändern.
+
+---
+
+### Zendure Ladeleistung
+
+Number-Entität zur Einstellung der AC-Ladeleistung in Watt.
+
+Die Integration setzt hier dynamisch die berechnete Ladeleistung.
+
+---
+
+### Zendure Entladeleistung
+
+Number-Entität zur Einstellung der AC-Entladeleistung in Watt.
+
+Auch hier erfolgt eine dynamische Regelung.
+
+---
+
+## 4.3 Netzmessung
+
+![Netzmessung – Modus](images/config_03_grid_mode.png)
+
+Hier wird definiert, wie der Netzfluss gemessen wird.
+
+### Kein Netzsensor
+
+Keine netzgeführte Leistungsregelung.
+
+---
+
+### Ein Sensor (+ / −)
+
+Ein kombinierter Sensor:
+
+- Positiver Wert → Netzbezug  
+- Negativer Wert → Einspeisung  
+
+---
+
+### Zwei Sensoren (Bezug & Einspeisung)
+
+Getrennte Sensoren für:
+
+- Netzbezug  
+- Netzeinspeisung  
+
+Diese Variante ist am präzisesten.
+
+---
+
+## 4.4 Netzsensoren (Split-Modus)
+
+![Netzsensorauswahl](images/config_04_grid_split.png)
+
+Falls „Zwei Sensoren“ gewählt wurde, müssen hier:
+
+- Netzbezug  
+- Netzeinspeisung  
+
+korrekt zugeordnet werden.
+
+Eine falsche Zuordnung führt zu:
+
+- instabiler Regelung  
+- falscher Leistungsanpassung  
+- unnötigem Netzbezug  
+
+---
+
+## Wichtiger Hinweis zur Zendure-App
+
+In der Zendure-App dürfen in der Hardwareliste ausschließlich:
+
+- der Wechselrichter  
+- die Zendure-Batterie  
+
+eingetragen sein.
+
+Es dürfen **keine externen Zähler oder Messgeräte** (z. B. Shelly Pro 3EM oder Zendure-eigene Messsensoren) dort eingebunden sein.
+
+Die gesamte Regelung erfolgt ausschließlich über Home Assistant.
