@@ -1,4 +1,4 @@
-# Kapitel 1 – Was macht Battery SmartFlow AI?
+# Kapitel 1
 
 # Was macht Battery SmartFlow AI?
 
