@@ -843,3 +843,395 @@ Optionen:
 - Standby
 - Laden
 - Entladen
+
+# Kapitel 7 – Technischer Hintergrund (für Power-User)
+
+Dieses Kapitel beschreibt die interne Arbeitsweise von Battery SmartFlow AI.
+
+Es richtet sich an technisch interessierte Anwender, die verstehen möchten, wie Entscheidungen entstehen und wie die Regelung im Detail funktioniert.
+
+---
+
+# 7.1 Architekturüberblick
+
+Die Integration besteht aus drei Kernkomponenten:
+
+1. Datenaggregation (Sensoraufnahme)
+2. Decision Engine (Bewertung & Strategie)
+3. Leistungsregler (dynamische Anpassung)
+
+Der Ablauf pro Zyklus:
+
+1. Sensorwerte werden gelesen
+2. Kontext wird aufgebaut
+3. Decision Engine bewertet die Situation
+4. AC-Modus und Leistungswerte werden gesetzt
+5. Status- und Transparenzsensoren werden aktualisiert
+
+Der gesamte Prozess läuft zyklisch im definierten Update-Intervall.
+
+---
+
+# 7.2 Decision Engine
+
+Die Decision Engine bewertet:
+
+- SoC
+- PV-Leistung
+- Netzimport / Export
+- Aktuellen Preis
+- Preisprognose
+- Saisonmodus
+- Konfigurierte Schwellenwerte
+
+Sie erzeugt:
+
+- action (charge / discharge / idle / emergency)
+- charge_w
+- discharge_w
+- reason (Entscheidungsgrund)
+- target_soc (bei Planung)
+
+Die Engine trifft nur strategische Entscheidungen.  
+Die dynamische Leistungsregelung erfolgt anschließend.
+
+---
+
+# 7.3 Prioritätenhierarchie
+
+Entscheidungen folgen einer festen Hierarchie:
+
+1. Hardware-Schutz (SoC-Minimum / SoC-Limit)
+2. Notladung
+3. Sehr-teuer-Erkennung
+4. Adaptive Peak-Erkennung
+5. Preisplanung
+6. PV-Überschuss
+7. Defizitabdeckung
+8. Standby
+
+Höhere Prioritäten übersteuern niedrigere.
+
+Dies verhindert widersprüchliche Aktionen.
+
+---
+
+# 7.4 Adaptive Peak-Logik
+
+Die Adaptive Peak-Logik analysiert die Preisstruktur des Tages.
+
+Schritt 1:
+Berechnung des Tagesdurchschnitts.
+
+Schritt 2:
+Berechnung der dynamischen Schwelle:
+
+max( Durchschnitt × Peak-Faktor,
+     Durchschnitt + 0,03 € )
+
+Schritt 3:
+Vergleich mit aktuellem Preis.
+
+Liegt der aktuelle Preis oberhalb dieser Schwelle,
+wird eine Hochpreisphase erkannt.
+
+Diese Logik reagiert dynamisch auf:
+
+- volatile Märkte
+- flache Preisprofile
+- extreme Preisspitzen
+
+---
+
+# 7.5 Netzgeführter Delta-Regler
+
+Nach der strategischen Entscheidung wird die Entladeleistung dynamisch angepasst.
+
+Ziel:
+
+Netzbezug möglichst nahe 0 W.
+
+Der Regler berücksichtigt:
+
+- Aktuellen Netzimport
+- Ziel-Importwert (Geräteprofil)
+- Deadband
+- Regelverstärkung (KP_UP / KP_DOWN)
+- Maximale Schrittweite
+
+Das Ergebnis ist eine stabile Regelung ohne Überoszillation.
+
+---
+
+# 7.6 Geräteprofile
+
+Geräteprofile definieren:
+
+- Regelparameter
+- Ziel-Importwert
+- Deadband
+- Maximale Leistungsänderungen
+- Hardware-Grenzen
+
+Beispiele:
+
+- SF800Pro → konservativer
+- SF2400AC → dynamischer
+- SF1600AC+ → stärkerer Down-Regler
+
+Profile ermöglichen modellabhängige Optimierung,
+ohne dass der Nutzer selbst Reglerparameter ändern muss.
+
+---
+
+# 7.7 Wirtschaftlichkeitsberechnung
+
+Die Integration speichert:
+
+- Geladene kWh
+- Durchschnittlichen Ladepreis
+- Entladene kWh
+- Realisierten Gewinn
+
+Beim Entladen wird berechnet:
+
+(aktueller Preis − Durchschnittsladepreis) × entladene kWh
+
+Nur reale Entladung erzeugt Gewinn.
+
+---
+
+# 7.8 Hard-Sync mit der Hardware
+
+Die Integration liest den realen AC-Modus der Zendure-Hardware.
+
+Interner Zustand wird strikt vom Hardwarezustand abgeleitet:
+
+- INPUT → charging
+- OUTPUT → discharging
+- 0 W → idle
+
+Softwarezustand kann niemals Hardwarezustand überstimmen.
+
+Dies verhindert Inkonsistenzen.
+
+---
+
+# 7.9 Planungssystem (Price Planning 2.0)
+
+Die Planung analysiert:
+
+- Zukünftige Preisspitzen
+- Benötigte Energiemenge
+- Verfügbare Zeitfenster
+- Wirtschaftlichkeit
+
+Ziel:
+
+Vor einer Preisspitze ausreichend laden,
+aber nur wenn es wirtschaftlich sinnvoll ist.
+
+Das System vermeidet:
+
+- unnötiges Volladen
+- planungsbedingtes Hin-und-Her-Schalten
+- Überplanung in der Vergangenheit
+
+---
+
+# 7.10 Stabilitätsmechanismen
+
+Zur Vermeidung instabiler Zustände existieren:
+
+- Anti-Flutter-Logik
+- Mindestleistungsgrenzen
+- Deadband-Regelung
+- SoC-Schutz
+- Hardware-Clamping
+
+Das System priorisiert Stabilität vor maximaler Aggressivität.
+
+# Kapitel 8 – FAQ & typische Probleme
+
+Dieses Kapitel beschreibt häufige Fragen und typische Fehlerbilder.
+
+---
+
+## 8.1 Es wird kein adaptiver Peak erkannt
+
+Mögliche Ursachen:
+
+- Kein Preisverlauf-Sensor konfiguriert
+- Preisattribute enthalten keine zukünftigen Slots
+- Peak-Faktor zu hoch eingestellt
+- Tagesdurchschnitt zu nah am aktuellen Preis
+
+Prüfen:
+
+- Sensor „Ø Tagespreis“
+- Sensor „Aktuelle Peak-Schwelle“
+- Sensor „Adaptiver Peak erkannt“
+
+---
+
+## 8.2 Engine-Status zeigt „Keine Preisdaten“
+
+Ursache:
+
+- Preisprognose-Sensor liefert keine gültigen Daten
+- Attributstruktur wird nicht erkannt
+
+Lösung:
+
+- Entwicklerwerkzeuge → Zustände prüfen
+- Sicherstellen, dass zukünftige Preisslots vorhanden sind
+
+---
+
+## 8.3 Gewinn bleibt 0 €
+
+Gewinn wird nur berechnet, wenn:
+
+- Energie zuvor geladen wurde
+- Anschließend real entladen wird
+- Ein aktueller Strompreis verfügbar ist
+
+Keine Entladung → kein Gewinn.
+
+---
+
+## 8.4 Regelung wirkt instabil
+
+Mögliche Ursachen:
+
+- Falsch konfigurierte Netzsensoren
+- Sensor vertauscht (Import / Export)
+- Externe Automationen greifen ein
+- Zendure-App enthält zusätzliche Geräte
+
+Prüfen:
+
+- Netzmodus korrekt gewählt?
+- Split-Sensoren korrekt zugeordnet?
+- Keine parallele Steuerung aktiv?
+
+---
+
+## 8.5 Netzbezug bleibt dauerhaft bei 30–100 W
+
+Normaler Effekt bei:
+
+- konservativem Geräteprofil
+- Deadband-Regelung
+- sehr kleinen Lastschwankungen
+
+Feinjustierung erfolgt über das Geräteprofil.
+
+---
+
+## 8.6 Update von „Zendure SmartFlow AI“
+
+Da sich die Domain geändert hat, ist eine Neuinstallation erforderlich.
+
+Vorgehen:
+
+1. In HACS das alte benutzerdefinierte Repository entfernen  
+2. Home Assistant neu starten  
+3. Neues Repository hinzufügen:  
+   https://github.com/PalmManiac/battery-smartflow-ai  
+4. Integration neu installieren  
+5. Konfiguration neu durchführen  
+
+Eine automatische Datenübernahme ist nicht möglich.
+
+---
+
+# Kapitel 9 – Best Practices & empfohlene Einstellungen
+
+Dieses Kapitel beschreibt bewährte Einstellungen für verschiedene Szenarien.
+
+---
+
+## 9.1 Standard-Haushalt mit PV & dynamischem Tarif
+
+Empfohlen:
+
+- Modus: Automatik
+- Peak-Faktor: 1.30 – 1.40
+- Sehr-teuer-Schwelle leicht oberhalb Durchschnitt
+- SoC-Minimum: 10–20 %
+
+Ergebnis:
+
+- wirtschaftliche Entladung
+- stabile Regelung
+- geringe Netzspitzen
+
+---
+
+## 9.2 Haushalt ohne PV (reine Preisstrategie)
+
+Empfohlen:
+
+- Dummy-PV-Sensor (0 W)
+- Modus: Winter oder Automatik
+- Peak-Faktor moderat (1.25–1.35)
+- Gewinnmarge aktivieren
+
+Ziel:
+
+- günstig laden
+- teuer entladen
+
+---
+
+## 9.3 Maximale Autarkie
+
+Empfohlen:
+
+- Sommermodus
+- niedriger SoC-Minimum-Wert
+- Peak-Faktor weniger relevant
+- Netzsensor präzise konfigurieren
+
+Ziel:
+
+- Netzbezug minimieren
+
+---
+
+## 9.4 Volatile Strommärkte
+
+Empfohlen:
+
+- Peak-Faktor leicht reduzieren
+- Gewinnmarge aktivieren
+- Sehr-teuer-Schwelle nicht zu hoch setzen
+
+Dadurch werden auch moderate Preisspitzen genutzt.
+
+---
+
+## 9.5 Stabilität vor Aggressivität
+
+Wenn Regelung zu hektisch wirkt:
+
+- Peak-Faktor erhöhen
+- Gewinnmarge leicht erhöhen
+- Keine unnötigen manuellen Eingriffe
+
+---
+
+## 9.6 Allgemeine Empfehlungen
+
+- Keine parallelen Automationen für AC-Modus
+- Keine externen Geräte in Zendure-App
+- Preis- & Netzsensor regelmäßig prüfen
+- Kapazität korrekt hinterlegen
+- Geräteprofil passend wählen
+
+---
+
+Battery SmartFlow AI ist so konzipiert, dass es ohne manuelles Fein-Tuning stabil läuft.
+
+Feinanpassungen sind möglich – aber nicht zwingend erforderlich.
