@@ -113,6 +113,7 @@ class SelectedEntities:
     ac_mode: str
     input_limit: str
     output_limit: str
+    battery_ac_power: str
 
     soc_limit: str | None
 
@@ -145,6 +146,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.entities = SelectedEntities(
             soc=str(entry.data[CONF_SOC_ENTITY]),
             pv=str(entry.data[CONF_PV_ENTITY]),
+            battery_ac_power=str(entry.data[CONF_BATTERY_AC_POWER_ENTITY]),
             price_export=entry.data.get(CONF_PRICE_EXPORT_ENTITY),
             price_now=entry.data.get(CONF_PRICE_NOW_ENTITY),
             ac_mode=str(entry.data[CONF_AC_MODE_ENTITY]),
@@ -671,7 +673,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # house load estimate
             # -----------------------------
             # Eigenverbrauch = PV - Export (ohne Batteriemessung -> konservativ)
-            eigenverbrauch = max(0.0, pv_w - float(grid_export))
+            battery_w_raw = _to_float(self._state(self.entities.battery_ac_power), 0.0)
+            battery_w = float(battery_w_raw or 0.0)
+
+            # Falls Sensor negativ bei Entladung liefert → umdrehen
+            if battery_w < 0:
+                battery_w = abs(battery_w)
+
+            eigenverbrauch = max(0.0, pv_w + battery_w - float(grid_export))
             house_load = max(0.0, float(grid_import) + eigenverbrauch)
 
             # -----------------------------
