@@ -43,6 +43,7 @@ CONF_GRID_EXPORT_ENTITY = "grid_export_entity"    # export W
 
 # --- Config entry keys ---
 CONF_PACK_CAPACITY_KWH = "pack_capacity_kwh"
+CONF_BATTERY_AC_POWER_ENTITY = "battery_ac_power_entity"
 
 # --- Runtime settings ---
 SETTING_BATTERY_PACKS = "battery_packs"
