@@ -384,13 +384,13 @@ class DecisionEngine:
                 discharge_w = self._delta_discharge(ctx)
 
                 if discharge_w > 0:
-                   return DecisionResult(
+                    return DecisionResult(
                         action="discharge",
                         ac_mode="output",
                         charge_w=0.0,
                         discharge_w=discharge_w,
                         reason="summer_cover_deficit",
-                   )
+                    )
 
             # --- PV surplus charging ---
             if ctx.soc < ctx.soc_max:
