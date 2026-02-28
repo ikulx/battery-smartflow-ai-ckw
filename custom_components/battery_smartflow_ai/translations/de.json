@@ -261,6 +261,20 @@
           "emergency": "Notladung"
         }
       },
+
+      "next_action_state": {
+        "name": "Nächste Aktion",
+        "state": {
+          "none": "Keine Aktion geplant",
+          "planned_charge": "Geplantes Laden",
+          "planned_discharge": "Geplante Entladung",
+          "charging_active": "Ladevorgang aktiv",
+          "discharging_active": "Entladevorgang aktiv",
+          "manual_charge": "Manuelles Laden",
+          "manual_discharge": "Manuelle Entladung",
+          "emergency_charge": "Notladung"
+        }
+      },
       
       "next_action_time": { "name": "Startzeit nächste Aktion" },
 
