@@ -170,6 +170,10 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_PV_ENTITY, default=_val(CONF_PV_ENTITY)):
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
 
+                vol.Required(CONF_BATTERY_AC_POWER_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+
                 vol.Optional(CONF_PRICE_EXPORT_ENTITY, default=_val(CONF_PRICE_EXPORT_ENTITY)):
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
 
