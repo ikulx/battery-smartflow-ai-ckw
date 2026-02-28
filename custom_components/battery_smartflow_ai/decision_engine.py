@@ -376,7 +376,23 @@ class DecisionEngine:
             ctx.ai_mode == "summer"
             or (ctx.ai_mode == "automatic" and ctx.season == "summer")
         ):
-            if ctx.grid_import_w > 80 and ctx.soc > ctx.soc_min:
+            START_THRESHOLD = 100
+            STOP_THRESHOLD = 30
+
+            # Already discharging → allow stabilizing via delta controller
+            if ctx.prev_discharge_w > 0:
+                if ctx.grid_import_w > STOP_THRESHOLD and ctx.soc > ctx.soc_min:
+                    discharge_w = self._delta_discharge(ctx)
+                    return DecisionResult(
+                        action="discharge",
+                        ac_mode="output",
+                        charge_w=0.0,
+                        discharge_w=discharge_w,
+                        reason="summer_cover_deficit",
+                    )
+
+            # Fresh start
+            elif ctx.grid_import_w > START_THRESHOLD and ctx.soc > ctx.soc_min:
                 discharge_w = self._delta_discharge(ctx)
                 return DecisionResult(
                     action="discharge",
