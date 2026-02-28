@@ -119,7 +119,10 @@ class DecisionEngine:
         out_w = max(0.0, min(float(ctx.max_discharge_w), out_w))
 
         # Keep-alive
-        if ctx.grid_import_w <= KEEPALIVE_MIN_DEFICIT:
+        if (
+            ctx.prev_discharge_w > KEEPALIVE_MIN_OUTPUT
+            and ctx.grid_import_w <= KEEPALIVE_MIN_DEFICIT
+        ):
             out_w = max(out_w, KEEPALIVE_MIN_OUTPUT)
 
         return out_w
@@ -371,47 +374,37 @@ class DecisionEngine:
         if planning_result:
             return planning_result
 
-        # 5️⃣ Summer logic
+        # 5️⃣ Summer logic (fully delta-controlled)
         if (
             ctx.ai_mode == "summer"
             or (ctx.ai_mode == "automatic" and ctx.season == "summer")
         ):
-            START_THRESHOLD = 100
-            STOP_THRESHOLD = 30
+            # --- Discharge allowed ---
+            if ctx.soc > ctx.soc_min:
+                discharge_w = self._delta_discharge(ctx)
 
-            # Already discharging → allow stabilizing via delta controller
-            if ctx.prev_discharge_w > 0:
-                if ctx.grid_import_w > STOP_THRESHOLD and ctx.soc > ctx.soc_min:
-                    discharge_w = self._delta_discharge(ctx)
-                    return DecisionResult(
+                if discharge_w > 0:
+                   return DecisionResult(
                         action="discharge",
                         ac_mode="output",
                         charge_w=0.0,
                         discharge_w=discharge_w,
                         reason="summer_cover_deficit",
-                    )
+                   )
 
-            # Fresh start
-            elif ctx.grid_import_w > START_THRESHOLD and ctx.soc > ctx.soc_min:
-                discharge_w = self._delta_discharge(ctx)
-                return DecisionResult(
-                    action="discharge",
-                    ac_mode="output",
-                    charge_w=0.0,
-                    discharge_w=discharge_w,
-                    reason="summer_cover_deficit",
-                )
-
-            if ctx.grid_export_w > 80 and ctx.soc < ctx.soc_max:
+            # --- PV surplus charging ---
+            if ctx.soc < ctx.soc_max:
                 charge_w = self._delta_charge(ctx)
-                return DecisionResult(
-                    action="charge",
-                    ac_mode="input",
-                    charge_w=charge_w,
-                    discharge_w=0.0,
-                    reason="pv_surplus_charge",
-                )
 
+                if charge_w > 0:
+                    return DecisionResult(
+                        action="charge",
+                        ac_mode="input",
+                        charge_w=charge_w,
+                        discharge_w=0.0,
+                        reason="pv_surplus_charge",
+                    )
+                    
         # 6️⃣ Manual
         if ctx.ai_mode == "manual":
             if ctx.manual_action == "charge":
