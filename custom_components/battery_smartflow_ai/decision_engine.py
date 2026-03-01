@@ -374,6 +374,19 @@ class DecisionEngine:
         if planning_result:
             return planning_result
 
+        # 4.5️⃣ PV surplus charging (all modes)
+        if ctx.soc < ctx.soc_max:
+            charge_w = self._delta_charge(ctx)
+
+            if charge_w > 0:
+                return DecisionResult(
+                    action="charge",
+                    ac_mode="input",
+                    charge_w=charge_w,
+                    discharge_w=0.0,
+                    reason="pv_surplus_charge",
+                )
+
         # 5️⃣ Summer logic (fully delta-controlled)
         if (
             ctx.ai_mode == "summer"
@@ -390,19 +403,6 @@ class DecisionEngine:
                         charge_w=0.0,
                         discharge_w=discharge_w,
                         reason="summer_cover_deficit",
-                    )
-
-            # --- PV surplus charging ---
-            if ctx.soc < ctx.soc_max:
-                charge_w = self._delta_charge(ctx)
-
-                if charge_w > 0:
-                    return DecisionResult(
-                        action="charge",
-                        ac_mode="input",
-                        charge_w=charge_w,
-                        discharge_w=0.0,
-                        reason="pv_surplus_charge",
                     )
                     
         # 6️⃣ Manual
