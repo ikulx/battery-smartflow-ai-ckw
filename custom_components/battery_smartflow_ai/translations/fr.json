@@ -222,6 +222,8 @@
           "expensive_discharge": "Décharge à cause d’un prix élevé",
           "very_expensive_force_discharge": "Décharge forcée à cause d’un pic extrême",
           "emergency_latched_charge": "Charge d’urgence active (verrouillée)",
+          "summer_cover_deficit": "Été : couvrir charge",
+          "pv_surplus_charge": "Charge surplus PV",
           "soc_min_enforced": "Décharge arrêtée (SoC minimum atteint)",
           "soc_limit_upper": "Charge bloquée (limite SoC supérieure active)",
           "soc_limit_lower": "Décharge bloquée (limite SoC inférieure active)",
