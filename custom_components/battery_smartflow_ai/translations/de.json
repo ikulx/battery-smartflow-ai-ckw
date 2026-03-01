@@ -238,6 +238,8 @@
           "expensive_discharge": "Entladen wegen hohem Strompreis",
           "very_expensive_force_discharge": "Zwangsentladung wegen extremer Preisspitze",
           "emergency_latched_charge": "Notladung aktiv (verriegelt)",
+          "summer_cover_deficit": "Sommer: Hauslast decken",
+          "pv_surplus_charge": "PV-Überschuss laden",
           "soc_min_enforced": "Entladung gestoppt (SoC-Minimum erreicht)",
           "soc_limit_upper": "Laden blockiert (oberes SoC-Limit aktiv)",
           "soc_limit_lower": "Entladen blockiert (unteres SoC-Limit aktiv)",
