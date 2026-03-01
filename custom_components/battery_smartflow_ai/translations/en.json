@@ -222,6 +222,8 @@
           "expensive_discharge": "Discharging due to high electricity price",
           "very_expensive_force_discharge": "Forced discharge due to extreme price spike",
           "emergency_latched_charge": "Emergency charge active (latched)",
+          "summer_cover_deficit": "Summer: cover load",
+          "pv_surplus_charge": "Charge PV surplus",
           "soc_min_enforced": "Discharge stopped (SoC minimum reached)",
           "soc_limit_upper": "Charging blocked (upper SoC limit active)",
           "soc_limit_lower": "Discharging blocked (lower SoC limit active)",
