@@ -387,13 +387,12 @@ class DecisionEngine:
                     reason="pv_surplus_charge",
                 )
 
-        # 5️⃣ Summer logic (fully delta-controlled)
+        # 5️⃣ Summer logic (same delta engine as winter, no price logic)
         if (
             ctx.ai_mode == "summer"
             or (ctx.ai_mode == "automatic" and ctx.season == "summer")
         ):
-            # --- Discharge allowed ---
-            if ctx.soc > ctx.soc_min:
+            if ctx.soc > ctx.soc_min and ctx.grid_import_w > 0:
                 discharge_w = self._delta_discharge(ctx)
 
                 if discharge_w > 0:
@@ -403,6 +402,18 @@ class DecisionEngine:
                         charge_w=0.0,
                         discharge_w=discharge_w,
                         reason="summer_cover_deficit",
+                    )
+
+            if ctx.soc < ctx.soc_max and ctx.grid_export_w > 0:
+                charge_w = self._delta_charge(ctx)
+
+                if charge_w > 0:
+                    return DecisionResult(
+                        action="charge",
+                        ac_mode="input",
+                        charge_w=charge_w,
+                        discharge_w=0.0,
+                        reason="pv_surplus_charge",
                     )
                     
         # 6️⃣ Manual
