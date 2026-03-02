@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Literal, Optional
 
+from .power_controller import PowerController, PowerContext
+
 
 # --------------------------------------------------
 # TYPES
@@ -76,107 +78,29 @@ class DecisionResult:
 
 class DecisionEngine:
     # --------------------------------------------------
-    # Delta discharge controller (profile based)
+    # Delta controllers (delegated to PowerController)
     # --------------------------------------------------
+
+    def _to_power_ctx(self, ctx: DecisionContext) -> PowerContext:
+        # Keep this as a single mapping place → reduces error risk.
+        return PowerContext(
+            soc=float(ctx.soc),
+            soc_min=float(ctx.soc_min),
+            soc_max=float(ctx.soc_max),
+            max_charge_w=float(ctx.max_charge_w),
+            max_discharge_w=float(ctx.max_discharge_w),
+            grid_import_w=float(ctx.grid_import_w),
+            grid_export_w=float(ctx.grid_export_w),
+            prev_discharge_w=float(ctx.prev_discharge_w or 0.0),
+            prev_charge_w=float(ctx.prev_charge_w or 0.0),
+            profile=dict(ctx.profile or {}),
+        )
 
     def _delta_discharge(self, ctx: DecisionContext) -> float:
-        p = ctx.profile
-
-        TARGET_IMPORT = float(p["TARGET_IMPORT_W"])
-        DEADBAND = float(p["DEADBAND_W"])
-        EXPORT_GUARD = float(p["EXPORT_GUARD_W"])
-
-        KP_UP = float(p["KP_UP"])
-        KP_DOWN = float(p["KP_DOWN"])
-        MAX_STEP_UP = float(p["MAX_STEP_UP"])
-        MAX_STEP_DOWN = float(p["MAX_STEP_DOWN"])
-
-        KEEPALIVE_MIN_DEFICIT = float(p["KEEPALIVE_MIN_DEFICIT_W"])
-        KEEPALIVE_MIN_OUTPUT = float(p["KEEPALIVE_MIN_OUTPUT_W"])
-
-        if ctx.soc <= ctx.soc_min:
-            return 0.0
-
-        net = float(ctx.grid_import_w) - float(ctx.grid_export_w)
-        out_w = float(ctx.prev_discharge_w or 0.0)
-
-        # Anti-export guard
-        if net < -EXPORT_GUARD:
-            cut = (abs(net) + TARGET_IMPORT) * 1.4
-            out_w = max(0.0, out_w - cut)
-            return min(float(ctx.max_discharge_w), out_w)
-
-        err = net - TARGET_IMPORT
-
-        if err > DEADBAND:
-            step = min(MAX_STEP_UP, max(40.0, KP_UP * err))
-            
-            # Soft-start protection (prevent overshoot)
-            max_allowed = float(ctx.grid_import_w) + TARGET_IMPORT
-            out_w = min(out_w + step, max_allowed)
-
-        elif err < -DEADBAND:
-            step = min(MAX_STEP_DOWN, max(60.0, KP_DOWN * abs(err)))
-            out_w -= step
-
-        out_w = max(0.0, min(float(ctx.max_discharge_w), out_w))
-
-        # Keep-alive
-        if (
-            ctx.prev_discharge_w > KEEPALIVE_MIN_OUTPUT
-            and ctx.grid_import_w <= KEEPALIVE_MIN_DEFICIT
-        ):
-            out_w = max(out_w, KEEPALIVE_MIN_OUTPUT)
-
-        return out_w
-
-    # --------------------------------------------------
-    # Delta charge controller (NEW V2.0.1)
-    # --------------------------------------------------
+        return PowerController.delta_discharge(self._to_power_ctx(ctx))
 
     def _delta_charge(self, ctx: DecisionContext) -> float:
-        p = ctx.profile
-
-        TARGET_EXPORT = float(p.get("TARGET_EXPORT_W", 10.0))
-        DEADBAND = float(p["DEADBAND_W"])
-        EXPORT_GUARD = float(p["EXPORT_GUARD_W"])
-
-        KP_UP = float(p["KP_UP"])
-        KP_DOWN = float(p["KP_DOWN"])
-
-        MAX_STEP_UP = float(p["MAX_STEP_UP"]) * 0.5
-        MAX_STEP_DOWN = float(p["MAX_STEP_DOWN"]) * 0.5
-
-        if ctx.soc >= ctx.soc_max:
-            return 0.0
-
-        net = float(ctx.grid_import_w) - float(ctx.grid_export_w)
-        in_w = float(ctx.prev_charge_w or 0.0)
-
-        # Wenn Import entsteht → sofort reduzieren
-        if net > DEADBAND:
-            step = min(MAX_STEP_DOWN, max(60.0, KP_DOWN * abs(net)))
-            in_w -= step
-            return max(0.0, min(float(ctx.max_charge_w), in_w))
-
-        target_net = -TARGET_EXPORT
-        err = target_net - net
-
-        # Starkes Export-Signal → schneller hoch
-        if net < -(EXPORT_GUARD):
-            step = min(MAX_STEP_UP * 1.5, max(40.0, KP_UP * abs(err)))
-            in_w += step
-            return max(0.0, min(float(ctx.max_charge_w), in_w))
-
-        if err > DEADBAND:
-            step = min(MAX_STEP_UP, max(30.0, KP_UP * err))
-            in_w += step
-        elif err < -DEADBAND:
-            step = min(MAX_STEP_DOWN, max(40.0, KP_DOWN * abs(err)))
-            in_w -= step
-
-        in_w = max(0.0, min(float(ctx.max_charge_w), in_w))
-        return in_w
+        return PowerController.delta_charge(self._to_power_ctx(ctx))
 
     # --------------------------------------------------
     # Adaptive peak detection
@@ -196,9 +120,8 @@ class DecisionEngine:
 
         avg_price = sum(prices) / len(prices)
 
-        # ---- V2 Final Adaptive Peak Parameters ----
         peak_factor = float(ctx.peak_factor or 1.35)
-        MIN_PEAK_MARGIN_CT = 0.03   # at least +3ct above average
+        MIN_PEAK_MARGIN_CT = 0.03  # at least +3ct above average
 
         threshold = max(
             avg_price * peak_factor,
@@ -310,7 +233,7 @@ class DecisionEngine:
         return None
 
     # --------------------------------------------------
-    # MAIN EVALUATION
+    # MAIN EVALUATION (verhaltensneutral zu deiner letzten Version)
     # --------------------------------------------------
 
     def evaluate(self, ctx: DecisionContext) -> DecisionResult:
@@ -341,10 +264,7 @@ class DecisionEngine:
                     reason="adaptive_peak_discharge",
                 )
 
-            if (
-                ctx.price_now is not None
-                and ctx.price_now >= ctx.very_expensive_threshold
-            ):
+            if ctx.price_now is not None and ctx.price_now >= ctx.very_expensive_threshold:
                 discharge_w = self._delta_discharge(ctx)
                 return DecisionResult(
                     action="discharge",
@@ -380,7 +300,6 @@ class DecisionEngine:
         # 4.5️⃣ PV surplus charging (all modes)
         if ctx.soc < ctx.soc_max:
             charge_w = self._delta_charge(ctx)
-
             if charge_w > 0:
                 return DecisionResult(
                     action="charge",
@@ -390,14 +309,13 @@ class DecisionEngine:
                     reason="pv_surplus_charge",
                 )
 
-        # 5️⃣ Summer logic (same delta engine as winter, no price logic)
+        # 5️⃣ Summer logic (fully delta-controlled)
         if (
             ctx.ai_mode == "summer"
             or (ctx.ai_mode == "automatic" and ctx.season == "summer")
         ):
-            if ctx.soc > ctx.soc_min and ctx.grid_import_w > 0:
+            if ctx.soc > ctx.soc_min:
                 discharge_w = self._delta_discharge(ctx)
-
                 if discharge_w > 0:
                     return DecisionResult(
                         action="discharge",
@@ -407,18 +325,6 @@ class DecisionEngine:
                         reason="summer_cover_deficit",
                     )
 
-            if ctx.soc < ctx.soc_max and ctx.grid_export_w > 0:
-                charge_w = self._delta_charge(ctx)
-
-                if charge_w > 0:
-                    return DecisionResult(
-                        action="charge",
-                        ac_mode="input",
-                        charge_w=charge_w,
-                        discharge_w=0.0,
-                        reason="pv_surplus_charge",
-                    )
-                    
         # 6️⃣ Manual
         if ctx.ai_mode == "manual":
             if ctx.manual_action == "charge":
