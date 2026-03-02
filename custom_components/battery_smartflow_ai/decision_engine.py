@@ -110,7 +110,10 @@ class DecisionEngine:
 
         if err > DEADBAND:
             step = min(MAX_STEP_UP, max(40.0, KP_UP * err))
-            out_w += step
+            
+            # Soft-start protection (prevent overshoot)
+            max_allowed = float(ctx.grid_import_w) + TARGET_IMPORT
+            out_w = min(out_w + step, max_allowed)
 
         elif err < -DEADBAND:
             step = min(MAX_STEP_DOWN, max(60.0, KP_DOWN * abs(err)))
