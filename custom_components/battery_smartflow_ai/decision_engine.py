@@ -328,6 +328,52 @@ class DecisionEngine:
 
         latest_start = next_peak - timedelta(hours=hours_needed)
 
+        # ------------------------------------------------
+        # Peak energy sufficiency check (V3 strategic fix)
+        # ------------------------------------------------
+
+        # 1️⃣ Dauer des kommenden Peaks berechnen
+        # Wir betrachten alle zusammenhängenden Peak-Slots
+        peak_slots_sorted = sorted(peak_slots, key=lambda p: p.start)
+
+        contiguous_peak_duration_h = 0.0
+        current_block_start = None
+        current_block_end = None
+
+        for slot in peak_slots_sorted:
+            if slot.start <= next_peak:
+                if current_block_start is None:
+                    current_block_start = slot.start
+                    current_block_end = slot.end
+                elif slot.start <= current_block_end:
+                    current_block_end = max(current_block_end, slot.end)
+                else:
+                    break
+
+        if current_block_start and current_block_end:
+            contiguous_peak_duration_h = (
+                (current_block_end - current_block_start).total_seconds() / 3600.0
+            )
+
+        # 2️⃣ Maximal mögliche Entladeenergie während Peak
+        max_discharge_kw = ctx.max_discharge_w / 1000.0
+        required_peak_kwh = contiguous_peak_duration_h * max_discharge_kw
+
+        # Sicherheitsaufschlag 15 %
+        required_peak_kwh *= 1.15
+
+        # 3️⃣ Verfügbare Energie oberhalb soc_min
+        usable_pct = max(0.0, ctx.soc - ctx.soc_min)
+        available_kwh = ctx.battery_capacity_kwh * (usable_pct / 100.0)
+
+        # 4️⃣ Wenn Akku Peak bereits vollständig bedienen kann → NICHT laden
+        if available_kwh >= required_peak_kwh:
+            return None
+
+        # ------------------------------------------------
+        # Regulärer Latest-Start-Trigger
+        # ------------------------------------------------
+
         if ctx.now >= latest_start:
             return DecisionResult(
                 action="charge",
