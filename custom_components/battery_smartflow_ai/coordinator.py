@@ -671,19 +671,38 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 engine_health = "sensor_invalid"
 
             # -----------------------------
-            # house load estimate
+            # house load estimate (FIXED)
             # -----------------------------
-            # Eigenverbrauch = PV - Export (ohne Batteriemessung -> konservativ)
+            # Ziel: Hauslast = Netzbezug + Eigenverbrauch
+            # Eigenverbrauch basiert auf: PV + (Batterie-Entladung) - Einspeisung
+            # Zusätzlich: Batterie-Ladung ist ein Verbraucher und muss zur Hauslast addiert werden.
+            #
+            # Erwartung für battery_ac_power Sensor:
+            #  - Entladung:   positiver Wert (W)
+            #  - Ladung:      negativer Wert (W)
+            #
+            # Wenn dein Sensor umgekehrt ist, musst du ihn über einen Helfer invertieren
+            # (oder wir machen das später konfigurierbar).
+
             battery_w_raw = _to_float(self._state(self.entities.battery_ac_power), 0.0)
             battery_w = float(battery_w_raw or 0.0)
 
-            # Falls Sensor negativ bei Entladung liefert → umdrehen
-            if battery_w < 0:
-                battery_w = abs(battery_w)
+            # Richtungsauftrennung
+            battery_discharge_w = max(0.0, battery_w)             # Erzeugung durch Batterie
+            battery_charge_w = abs(min(0.0, battery_w))           # Verbrauch durch Batterie (Laden)
 
-            eigenverbrauch = max(0.0, pv_w + battery_w - float(grid_export))
-            house_load = max(0.0, float(grid_import) + eigenverbrauch)
+            # Eigenverbrauch = PV + Batterie-Entladung - Einspeisung
+            eigenverbrauch = max(
+                0.0,
+                float(pv_w) + float(battery_discharge_w) - float(grid_export),
+            )
 
+            # Hauslast = Netzbezug + Eigenverbrauch + Batterie-Ladung
+            house_load = max(
+                0.0,
+                float(grid_import) + float(eigenverbrauch) + float(battery_charge_w),
+            )
+            
             # -----------------------------
             # Season detection (Option A)
             # -----------------------------
