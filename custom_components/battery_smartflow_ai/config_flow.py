@@ -32,8 +32,6 @@ from .const import (
 
     # --- NEW SETTINGS ---
     SETTING_PEAK_FACTOR,
-    SETTING_VALLEY_FACTOR,
-    SETTING_VERY_CHEAP_PRICE,
 
     DEFAULT_PEAK_FACTOR,
     DEFAULT_VALLEY_FACTOR,
@@ -173,30 +171,6 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                     selector.NumberSelectorConfig(
                         min=1.0,
                         max=2.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-
-                vol.Optional(
-                    SETTING_VALLEY_FACTOR,
-                    default=options.get(SETTING_VALLEY_FACTOR, DEFAULT_VALLEY_FACTOR),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.5,
-                        max=1.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-
-                vol.Optional(
-                    SETTING_VERY_CHEAP_PRICE,
-                    default=options.get(SETTING_VERY_CHEAP_PRICE, DEFAULT_VERY_CHEAP_PRICE),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.0,
-                        max=1.0,
                         step=0.01,
                         mode=selector.NumberSelectorMode.BOX,
                     )
