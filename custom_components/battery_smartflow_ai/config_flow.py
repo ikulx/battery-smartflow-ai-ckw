@@ -29,10 +29,7 @@ from .const import (
     CONF_SOC_LIMIT_ENTITY,
     CONF_PACK_CAPACITY_KWH,
     DEFAULT_PACK_CAPACITY_KWH,
-
-    # --- NEW SETTINGS ---
     SETTING_PEAK_FACTOR,
-
     DEFAULT_PEAK_FACTOR,
 )
 
@@ -130,51 +127,11 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     # -----------------------------------------------------
-    # OPTIONS FLOW (NEW)
+    # OPTIONS FLOW
     # -----------------------------------------------------
     @staticmethod
     def async_get_options_flow(entry: config_entries.ConfigEntry):
         return ZendureSmartFlowOptionsFlow(entry)
-
-
-# -----------------------------------------------------
-# OPTIONS FLOW
-# -----------------------------------------------------
-class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
-    """Options flow for Battery SmartFlow AI."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry):
-        self.config_entry = config_entry
-
-    async def async_step_init(self, user_input: dict[str, Any] | None = None):
-
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=self._options_schema(),
-        )
-
-    def _options_schema(self):
-
-        options = self.config_entry.options
-
-        return vol.Schema(
-            {
-                vol.Optional(
-                    SETTING_PEAK_FACTOR,
-                    default=options.get(SETTING_PEAK_FACTOR, DEFAULT_PEAK_FACTOR),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1.0,
-                        max=2.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-            }
-        )
 
     # -----------------------------------------------------
     # SCHEMAS
@@ -260,6 +217,7 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         grid_mode: str,
         entry: config_entries.ConfigEntry | None = None,
     ) -> vol.Schema:
+
         def _val(key: str):
             if entry:
                 return entry.options.get(key, entry.data.get(key))
@@ -287,3 +245,36 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
             )
 
         return vol.Schema(schema)
+
+
+class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
+    """Options flow for Battery SmartFlow AI."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry):
+        self.config_entry = config_entry
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        options = self.config_entry.options
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        SETTING_PEAK_FACTOR,
+                        default=options.get(SETTING_PEAK_FACTOR, DEFAULT_PEAK_FACTOR),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=1.0,
+                            max=2.0,
+                            step=0.01,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                }
+            ),
+        )
