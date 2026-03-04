@@ -34,8 +34,6 @@ from .const import (
     SETTING_PEAK_FACTOR,
 
     DEFAULT_PEAK_FACTOR,
-    DEFAULT_VALLEY_FACTOR,
-    DEFAULT_VERY_CHEAP_PRICE,
 )
 
 from .device_profiles import DEVICE_PROFILES
