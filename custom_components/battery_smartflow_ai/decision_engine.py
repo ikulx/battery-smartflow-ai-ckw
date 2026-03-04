@@ -356,6 +356,34 @@ class DecisionEngine:
         latest_start = next_peak - timedelta(hours=hours_needed)
 
         # ------------------------------------------------
+        # Smart cheapest charging window
+        # ------------------------------------------------
+
+        future_prices = [
+            p for p in ctx.price_points
+            if ctx.now <= p.start <= next_peak
+        ]
+
+        if future_prices:
+
+            charge_power_kw = ctx.max_charge_w / 1000.0
+            energy_per_slot = charge_power_kw * 0.25
+
+            if energy_per_slot > 0:
+
+                required_slots = int(required_kwh / energy_per_slot) + 1
+
+                cheapest_slots = sorted(
+                    future_prices,
+                    key=lambda p: p.price
+                )[:required_slots]
+
+                cheapest_prices = [p.price for p in cheapest_slots]
+
+                if ctx.price_now > max(cheapest_prices):
+                    return None
+        
+        # ------------------------------------------------
         # Peak energy sufficiency check
         # ------------------------------------------------
 
