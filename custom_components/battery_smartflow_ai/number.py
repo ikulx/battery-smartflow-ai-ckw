@@ -16,12 +16,18 @@ from .const import (
     INTEGRATION_MANUFACTURER,
     INTEGRATION_MODEL,
     INTEGRATION_VERSION,
-   # DEFAULT_BATTERY_CAPACITY_KWH,
     SETTING_BATTERY_PACKS,
     DEFAULT_BATTERY_PACKS,
     SETTING_PEAK_FACTOR,
     DEFAULT_PEAK_FACTOR,
 )
+
+# --- NEW SETTINGS ---
+SETTING_VALLEY_FACTOR = "valley_factor"
+DEFAULT_VALLEY_FACTOR = 0.85
+
+SETTING_VERY_CHEAP_PRICE = "very_cheap_price"
+DEFAULT_VERY_CHEAP_PRICE = 0.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -51,7 +57,38 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         mode="box",
         icon="mdi:chart-bell-curve",
     ),
-    
+
+    # -----------------------------------------------------
+    # NEW: Valley Factor
+    # -----------------------------------------------------
+
+    ZendureNumberEntityDescription(
+        key=SETTING_VALLEY_FACTOR,
+        translation_key="valley_factor",
+        runtime_key=SETTING_VALLEY_FACTOR,
+        native_min_value=0.5,
+        native_max_value=1.0,
+        native_step=0.01,
+        mode="box",
+        icon="mdi:chart-bell-curve",
+    ),
+
+    # -----------------------------------------------------
+    # NEW: Very Cheap Price
+    # -----------------------------------------------------
+
+    ZendureNumberEntityDescription(
+        key=SETTING_VERY_CHEAP_PRICE,
+        translation_key="very_cheap_price",
+        runtime_key=SETTING_VERY_CHEAP_PRICE,
+        native_min_value=0.0,
+        native_max_value=1.0,
+        native_step=0.01,
+        native_unit_of_measurement="€/kWh",
+        mode="box",
+        icon="mdi:cash",
+    ),
+
     ZendureNumberEntityDescription(
         key="soc_min",
         translation_key="soc_min",
@@ -149,7 +186,7 @@ async def async_setup_entry(
 
     add_entities(entities)
 
-    # --- INITIALIZE RUNTIME SETTINGS ONCE (after entities exist) ---
+    # --- INITIALIZE RUNTIME SETTINGS ONCE ---
     for ent in entities:
         key = ent.entity_description.runtime_key
 
@@ -157,6 +194,10 @@ async def async_setup_entry(
 
             if key == SETTING_PEAK_FACTOR:
                 default_value = DEFAULT_PEAK_FACTOR
+            elif key == SETTING_VALLEY_FACTOR:
+                default_value = DEFAULT_VALLEY_FACTOR
+            elif key == SETTING_VERY_CHEAP_PRICE:
+                default_value = DEFAULT_VERY_CHEAP_PRICE
             else:
                 default_value = ent.entity_description.native_min_value
 
@@ -164,6 +205,7 @@ async def async_setup_entry(
                 key,
                 default_value,
             )
+
 
 class ZendureSmartFlowNumber(NumberEntity):
     _attr_has_entity_name = True
@@ -187,7 +229,7 @@ class ZendureSmartFlowNumber(NumberEntity):
             "sw_version": INTEGRATION_VERSION,
         }
 
-        # Ensure runtime key exists (defensive)
+        # Defensive init
         if description.runtime_key not in coordinator.runtime_settings:
             coordinator.runtime_settings[description.runtime_key] = entry.options.get(
                 description.runtime_key,
