@@ -657,6 +657,32 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
             )
 
+            # --------------------------------
+            # Valley factor (Peak-Valley tuning)
+            # --------------------------------
+
+            valley_factor = float(
+                self.runtime_settings.get(
+                    "valley_factor",
+                    0.85,
+                )
+            )
+
+            # --------------------------------
+            # Very cheap absolute price filter
+            # --------------------------------
+
+            very_cheap_price = self.runtime_settings.get(
+                "very_cheap_price",
+                None,
+            )
+
+            if very_cheap_price is not None:
+                try:
+                    very_cheap_price = float(very_cheap_price)
+                except Exception:
+                    very_cheap_price = None
+
             current_peak_threshold = None
             if daily_avg_price is not None:
                 current_peak_threshold = max(
