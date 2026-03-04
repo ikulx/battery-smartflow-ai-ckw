@@ -1,5 +1,281 @@
 # Battery SmartFlow AI
 
+**Intelligent, economic and stable control for Zendure SolarFlow systems in Home Assistant**
+
+---
+
+## What does this integration do?
+
+**Battery SmartFlow AI** automatically controls your Zendure SolarFlow system – based on:
+
+- ☀️ PV generation
+- 🏠 Real household load
+- 🔋 Battery SoC
+- 💶 Dynamic electricity prices (optional)
+- ⚙️ Device-specific control profiles
+
+The integration combines this data into a **physically stable and economically optimized charging and discharging strategy**.
+
+Goal:
+
+> Minimal grid import.  
+> Maximum economic efficiency.  
+> No hectic direction changes.
+
+---
+
+# 🧠 Core functions (V2 architecture)
+
+- Adaptive peak detection (individually configurable)
+- Price pre-planning with valley detection
+- Dynamic grid regulation (regulation instead of full power)
+- Device profiles per model
+- Hard-sync with real AC mode
+- Transparency sensors for price logic
+- Profit / savings calculation
+- Seasonal logic (summer/winter)
+
+---
+
+# ⚠️ Mandatory prerequisites
+
+For the integration to work correctly, the following points **must** be fulfilled:
+
+---
+
+## 1️⃣ Zendure original app
+
+In the Zendure app:
+
+- Charge power → Maximum
+- Discharge power → Maximum
+- HEMS → disabled
+- No parallel automations
+
+⚠️ Control takes place exclusively via Home Assistant.
+
+---
+
+## 2️⃣ Zendure Home Assistant integration
+
+The following settings are mandatory:
+
+- Do not select a P1 sensor
+- Energy export: **Allowed**
+- Zendure Manager → Operating mode **OFF**
+
+Incorrect settings lead to:
+
+- Blocked AC modes
+- Discharge interruptions
+- Unstable regulation
+
+---
+
+## 3️⃣ Configure grid sensor correctly
+
+Recommended:
+
+- Split mode with separate import & export  
+  (e.g. Shelly Pro 3EM)
+
+---
+
+## 4️⃣ Electricity price integration (optional)
+
+Supported:
+
+- Tibber
+- EPEX
+- Octopus (including German Forecast API)
+
+Without an electricity price, PV- and load-based control still works.
+
+---
+
+# 🛠 Installation (HACS)
+
+[![HACS Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=PalmManiac&repository=battery-smartflow-ai&category=integration)
+
+1. Open HACS  
+2. ⋮ → Custom repositories  
+3. Add repository:  
+   `https://github.com/PalmManiac/battery-smartflow-ai`  
+4. Type: Integration  
+5. Install  
+6. Restart Home Assistant
+
+---
+
+# ⚙️ Configuration
+
+After installation:
+
+**Settings → Devices & Services → Add Integration → Battery SmartFlow AI**
+
+---
+
+## 1️⃣ Main configuration
+
+<img width="635" height="1186" alt="Screenshot 2026-02-19 134834" src="https://github.com/user-attachments/assets/541d5438-d41f-4595-8456-b93a5f5f41b7" /><img width="633" height="1228" alt="Screenshot 2026-02-25 141115" src="https://github.com/user-attachments/assets/23c3cc0b-938d-44b7-800a-7ad5fdc11711" />
+
+Here you select:
+
+- Device profile
+- Battery SoC sensor
+- PV power
+- Electricity price (optional)
+- Price history (optional)
+- Zendure AC mode
+- Charge & discharge entities
+- Grid mode
+
+📖 Detailed explanations can be found in the **manual (V2)**.
+
+---
+
+## 2️⃣ Grid measurement
+
+<img width="631" height="708" alt="Screenshot 2026-02-25 141200" src="https://github.com/user-attachments/assets/c86a8dce-c792-426a-8b33-9b01ffbba776" />
+
+You can choose between:
+
+- No grid sensor
+- One combined sensor (+/-)
+- Two sensors (import & export)
+
+Recommended: **Two sensors**.
+
+---
+
+## 3️⃣ Split sensor selection
+
+<img width="421" height="475" alt="Screenshot 2026-02-25 141224" src="https://github.com/user-attachments/assets/d0dc939a-be84-4b70-8053-29207e3612ba" />
+
+Here you select:
+
+- Grid import
+- Grid export
+
+separately.
+
+---
+
+# ⚙️ Device profiles
+
+The integration uses model-dependent control parameters.
+
+Currently supported:
+
+- SF800Pro
+- SF1600AC+
+- SF2400AC
+
+The profile influences, among other things:
+
+- Target grid import
+- Regulation speed
+- Export tolerance
+- Hardware limits
+
+---
+
+# 🧠 Peak factor (Adaptive Peak)
+
+The peak factor can be adjusted via the GUI and influences the detection of price peaks.
+
+Formula:
+
+Peak threshold = max(
+Average price × Peak factor,
+Average price + €0.03
+)
+
+Default: **1.35**
+
+- Lower → detects more peaks (more sensitive)
+- Higher → detects only strong price peaks (more conservative)
+
+---
+
+# 📊 Transparency sensors (V2)
+
+V2 makes the price logic visible, e.g.:
+
+- Ø daily price
+- Current peak threshold
+- Engine status
+- Adaptive peak active
+
+---
+
+# 💶 Profit / savings
+
+The integration can show:
+
+- Ø charging price (weighted average)
+- Discharged energy
+- Price difference
+- Total profit in €
+
+Note: Details about the calculation are in the **manual (V2)**.
+
+---
+
+# 🔄 Operating modes
+
+## Automatic (recommended)
+
+Price + PV + load combined.
+
+## Summer
+
+Focus on autonomy, without price planning.
+
+## Winter
+
+Focus on economic efficiency, with price planning.
+
+## Manual
+
+No AI interventions, charging/discharging/standby manually.
+
+---
+
+# 🛡 Safety mechanisms
+
+- SoC minimum / SoC maximum
+- BMS limit detection (SoC limit status)
+- Emergency charging function
+- Hard-sync with real Zendure AC mode
+
+---
+
+# 📖 Documentation
+
+This README provides an overview.
+
+For details (including screenshots, examples, FAQ) see:
+
+- **Manual (V2)**
+
+---
+
+# Support & Contribution
+
+- GitHub Issues for bugs & feature requests
+- Pull Requests welcome
+
+---
+
+**Battery SmartFlow AI – understandable, stable, economical.**
+
+---
+
+**Deutsche Version**
+
+# Battery SmartFlow AI
+
 **Intelligente, wirtschaftliche und stabile Steuerung für Zendure SolarFlow Systeme in Home Assistant**
 
 ---
