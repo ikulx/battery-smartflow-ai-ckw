@@ -676,23 +676,15 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # -----------------------------
             # house load estimate (FINAL)
             # -----------------------------
-            # Physikalisch korrekt:
-            # house_load = pv + battery + import - export
-            # Erwartung für battery_ac_power:
-            #  - Entladung:   positiver Wert (W)
-            #  - Ladung:      negativer Wert (W)
 
-            battery_w_raw = _to_float(self._state(self.entities.battery_ac_power), 0.0)
-            battery_w = float(battery_w_raw or 0.0)
-
-            # Netzleistung berechnen (Import positiv, Export negativ)
-            grid_w = float(grid_import) - float(grid_export)
+            battery_discharge_w = max(0.0, float(battery_w_raw or 0.0))
 
             house_load = max(
                 0.0,
-                float(pv_w)
-                + float(grid_w)
-                + float(battery_w)
+                float(grid_import)
+                + float(pv_w)
+                + float(battery_discharge_w)
+                - float(grid_export)
             )
             
             # -----------------------------
