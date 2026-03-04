@@ -143,7 +143,7 @@
       "profit_margin_pct": { "name": "Gewinnmarge (%)" },
       "peak_factor": { "name": "Peak-Faktor" },
       "valley_factor": { "name": "Valley-Faktor" },
-      "very_cheap_price": { "name": "Sehr-Billig Schwelle" }
+      "very_cheap_price": { "name": "Sehr-billig Schwelle" }
     },
 
     "sensor": {
