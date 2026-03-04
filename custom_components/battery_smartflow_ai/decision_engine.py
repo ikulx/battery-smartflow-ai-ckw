@@ -58,8 +58,9 @@ class DecisionContext:
     prev_charge_w: float
 
     battery_capacity_kwh: float
-    peak_factor: float = 1.35
 
+    # --- Planning tuning ---
+    peak_factor: float = 1.35
     valley_factor: float = 0.85
     very_cheap_price: Optional[float] = None
 
@@ -241,9 +242,9 @@ class DecisionEngine:
             ManualRule(),
         ]
 
-    # -----------------------------
+    # -------------------------------------------------
     # Delta delegation
-    # -----------------------------
+    # -------------------------------------------------
 
     def _to_power_ctx(self, ctx: DecisionContext) -> PowerContext:
         return PowerContext(
@@ -265,9 +266,9 @@ class DecisionEngine:
     def _delta_charge(self, ctx: DecisionContext) -> float:
         return PowerController.delta_charge(self._to_power_ctx(ctx))
 
-    # -----------------------------
-    # Peak detection (unchanged)
-    # -----------------------------
+    # -------------------------------------------------
+    # Peak detection
+    # -------------------------------------------------
 
     def _detect_adaptive_peak(self, ctx: DecisionContext) -> bool:
         if not ctx.price_points or ctx.price_now is None:
@@ -279,14 +280,6 @@ class DecisionEngine:
 
         avg_price = sum(prices) / len(prices)
 
-        # -----------------------------------------
-        # Optional absolute cheap price filter
-        # -----------------------------------------
-
-        if ctx.very_cheap_price is not None:
-            if ctx.price_now > ctx.very_cheap_price:
-                return None
-
         threshold = max(
             avg_price * ctx.peak_factor,
             avg_price + 0.03,
@@ -294,11 +287,12 @@ class DecisionEngine:
 
         return ctx.price_now >= threshold
 
-    # -----------------------------
-    # Planning (unchanged)
-    # -----------------------------
+    # -------------------------------------------------
+    # Adaptive planning
+    # -------------------------------------------------
 
     def _evaluate_adaptive_planning(self, ctx: DecisionContext) -> Optional[DecisionResult]:
+
         if (
             ctx.ai_mode not in ("automatic", "winter")
             or not ctx.price_points
@@ -315,6 +309,27 @@ class DecisionEngine:
 
         avg_price = sum(prices) / len(prices)
 
+        # ------------------------------------------------
+        # Optional absolute cheap price filter
+        # ------------------------------------------------
+
+        if ctx.very_cheap_price is not None:
+            if ctx.price_now > ctx.very_cheap_price:
+                return None
+
+        # ------------------------------------------------
+        # Valley factor check
+        # ------------------------------------------------
+
+        valley_threshold = avg_price * ctx.valley_factor
+
+        if ctx.price_now > valley_threshold:
+            return None
+
+        # ------------------------------------------------
+        # Peak detection
+        # ------------------------------------------------
+
         peak_threshold = max(
             avg_price * ctx.peak_factor,
             avg_price + 0.03,
@@ -322,6 +337,7 @@ class DecisionEngine:
 
         peak_slots = [p for p in ctx.price_points if p.price >= peak_threshold]
         future_peaks = [p for p in peak_slots if p.start > ctx.now]
+
         if not future_peaks:
             return None
 
@@ -340,11 +356,9 @@ class DecisionEngine:
         latest_start = next_peak - timedelta(hours=hours_needed)
 
         # ------------------------------------------------
-        # Peak energy sufficiency check (V3 strategic fix)
+        # Peak energy sufficiency check
         # ------------------------------------------------
 
-        # 1️⃣ Dauer des kommenden Peaks berechnen
-        # Wir betrachten alle zusammenhängenden Peak-Slots
         peak_slots_sorted = sorted(peak_slots, key=lambda p: p.start)
 
         contiguous_peak_duration_h = 0.0
@@ -366,23 +380,19 @@ class DecisionEngine:
                 (current_block_end - current_block_start).total_seconds() / 3600.0
             )
 
-        # 2️⃣ Maximal mögliche Entladeenergie während Peak
         max_discharge_kw = ctx.max_discharge_w / 1000.0
         required_peak_kwh = contiguous_peak_duration_h * max_discharge_kw
 
-        # Sicherheitsaufschlag 15 %
         required_peak_kwh *= 1.15
 
-        # 3️⃣ Verfügbare Energie oberhalb soc_min
         usable_pct = max(0.0, ctx.soc - ctx.soc_min)
         available_kwh = ctx.battery_capacity_kwh * (usable_pct / 100.0)
 
-        # 4️⃣ Wenn Akku Peak bereits vollständig bedienen kann → NICHT laden
         if available_kwh >= required_peak_kwh:
             return None
 
         # ------------------------------------------------
-        # Regulärer Latest-Start-Trigger
+        # Latest start trigger
         # ------------------------------------------------
 
         if ctx.now >= latest_start:
@@ -397,9 +407,9 @@ class DecisionEngine:
 
         return None
 
-    # -----------------------------
+    # -------------------------------------------------
     # MAIN EVALUATION
-    # -----------------------------
+    # -------------------------------------------------
 
     def evaluate(self, ctx: DecisionContext) -> DecisionResult:
         for rule in self._rules:
