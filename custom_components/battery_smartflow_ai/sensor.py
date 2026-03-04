@@ -147,6 +147,7 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
     SensorEntityDescription(
         key="current_valley_threshold",
         translation_key="current_valley_threshold",
+        runtime_key="current_valley_threshold",
         native_unit_of_measurement="€/kWh",
         icon="mdi:chart-bell-curve-cumulative",
     ),
