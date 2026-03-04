@@ -690,6 +690,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     daily_avg_price + 0.03,
                 )
 
+            valley_factor = float(
+                self.runtime_settings.get(
+                    SETTING_VALLEY_FACTOR,
+                    DEFAULT_VALLEY_FACTOR,
+                )
+            )
+
+            current_valley_threshold = None
+            if daily_avg_price is not None:
+                current_valley_threshold = daily_avg_price * valley_factor
+
             # --- Engine health ---
             engine_health = "ok"
             if not price_points:
@@ -976,6 +987,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "fault_level_status": "normal",
                 "price_daily_average": daily_avg_price,
                 "current_peak_threshold": current_peak_threshold,
+                "current_valley_threshold": current_valley_threshold,
                 "engine_health": engine_health,
             }
 
