@@ -279,6 +279,14 @@ class DecisionEngine:
 
         avg_price = sum(prices) / len(prices)
 
+        # -----------------------------------------
+        # Optional absolute cheap price filter
+        # -----------------------------------------
+
+        if ctx.very_cheap_price is not None:
+            if ctx.price_now > ctx.very_cheap_price:
+                return None
+
         threshold = max(
             avg_price * ctx.peak_factor,
             avg_price + 0.03,
