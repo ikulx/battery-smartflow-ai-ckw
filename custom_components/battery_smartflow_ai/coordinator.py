@@ -671,36 +671,23 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 engine_health = "sensor_invalid"
 
             # -----------------------------
-            # house load estimate (FIXED)
+            # house load estimate (FINAL)
             # -----------------------------
-            # Ziel: Hauslast = Netzbezug + Eigenverbrauch
-            # Eigenverbrauch basiert auf: PV + (Batterie-Entladung) - Einspeisung
-            # Zusätzlich: Batterie-Ladung ist ein Verbraucher und muss zur Hauslast addiert werden.
-            #
-            # Erwartung für battery_ac_power Sensor:
+            # Physikalisch korrekt:
+            # house_load = pv + battery + import - export
+            # Erwartung für battery_ac_power:
             #  - Entladung:   positiver Wert (W)
             #  - Ladung:      negativer Wert (W)
-            #
-            # Wenn dein Sensor umgekehrt ist, musst du ihn über einen Helfer invertieren
-            # (oder wir machen das später konfigurierbar).
 
             battery_w_raw = _to_float(self._state(self.entities.battery_ac_power), 0.0)
             battery_w = float(battery_w_raw or 0.0)
 
-            # Richtungsauftrennung
-            battery_discharge_w = max(0.0, battery_w)             # Erzeugung durch Batterie
-            battery_charge_w = abs(min(0.0, battery_w))           # Verbrauch durch Batterie (Laden)
-
-            # Eigenverbrauch = PV + Batterie-Entladung - Einspeisung
-            eigenverbrauch = max(
-                0.0,
-                float(pv_w) + float(battery_discharge_w) - float(grid_export),
-            )
-
-            # Hauslast = Netzbezug + Eigenverbrauch + Batterie-Ladung
             house_load = max(
                 0.0,
-                float(grid_import) + float(eigenverbrauch) + float(battery_charge_w),
+                float(pv_w)
+                + float(battery_w)
+                + float(grid_import)
+                - float(grid_export)
             )
             
             # -----------------------------
