@@ -141,7 +141,9 @@
       "emergency_soc": { "name": "Notladung ab SoC" },
       "very_expensive_threshold": { "name": "Sehr-teuer-Schwelle" },
       "profit_margin_pct": { "name": "Gewinnmarge (%)" },
-      "peak_factor": { "name": "Peak-Faktor" }
+      "peak_factor": { "name": "Peak-Faktor" },
+      "valley_factor": { "name": "Valley-Faktor" },
+      "very_cheap_price": { "name": "Sehr-Billig Schwelle" }
     },
 
     "sensor": {
