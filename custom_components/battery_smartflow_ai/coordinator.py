@@ -812,11 +812,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # BMS SoC limit (directional block)
             # -----------------------------
             soc_limit = self._get_soc_limit()
-            if soc_limit == 1 and decision.ac_mode == "input" and decision.charge_w > 0:
+            if soc_limit == 1 and decision.ac_mode == "input" and float(decision.charge_w or 0.0) > 0:
                 decision.charge_w = 0.0
                 decision.action = "idle"
                 decision.reason = "soc_limit_upper"
-            elif soc_limit == 2 and decision.ac_mode == "output" and decision.discharge_w > 0:
+            elif soc_limit == 2 and decision.ac_mode == "output" and float(decision.discharge_w or 0.0) > 0:
                 decision.discharge_w = 0.0
                 decision.action = "idle"
                 decision.reason = "soc_limit_lower"
