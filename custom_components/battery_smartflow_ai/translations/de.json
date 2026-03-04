@@ -157,6 +157,9 @@
       "current_peak_threshold": {
         "name": "Aktuelle Peak-Schwelle"
       },
+      "current_valley_threshold": {
+        "name": "Aktuelle Tal-Schwelle"
+      },
       "engine_health": {
         "name": "Engine-Status",
         "state": {
