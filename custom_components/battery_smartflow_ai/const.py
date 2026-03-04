@@ -48,10 +48,15 @@ CONF_BATTERY_AC_POWER_ENTITY = "battery_ac_power_entity"
 # --- Runtime settings ---
 SETTING_BATTERY_PACKS = "battery_packs"
 
+SETTING_VALLEY_FACTOR = "valley_factor"
+SETTING_VERY_CHEAP_PRICE = "very_cheap_price"
+
 # Default
 DEFAULT_PACK_CAPACITY_KWH = 2.88
 DEFAULT_BATTERY_PACKS = 1
 
+DEFAULT_VALLEY_FACTOR = 0.85
+DEFAULT_VERY_CHEAP_PRICE = None
 
 # --------------------------------------------------
 # Device profiles (V1.5.x)
