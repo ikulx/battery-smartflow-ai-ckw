@@ -692,7 +692,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 0.0,
                 float(pv_w)
                 + float(grid_w)
-                + float(battery_w))
+                + float(battery_w)
             )
             
             # -----------------------------
