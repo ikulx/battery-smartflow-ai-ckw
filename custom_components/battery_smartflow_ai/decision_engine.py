@@ -60,6 +60,9 @@ class DecisionContext:
     battery_capacity_kwh: float
     peak_factor: float = 1.35
 
+    valley_factor: float = 0.85
+    very_cheap_price: Optional[float] = None
+
 
 @dataclass
 class DecisionResult:
