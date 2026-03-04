@@ -147,7 +147,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.entities = SelectedEntities(
             soc=str(entry.data[CONF_SOC_ENTITY]),
             pv=str(entry.data[CONF_PV_ENTITY]),
-            battery_ac_power=str(entry.data.get(CONF_BATTERY_AC_POWER_ENTITY, "")),
+            battery_ac_power=str(
+                entry.options.get(CONF_BATTERY_AC_POWER_ENTITY)
+                or entry.data.get(CONF_BATTERY_AC_POWER_ENTITY, "")
+            ),
             price_export=entry.data.get(CONF_PRICE_EXPORT_ENTITY),
             price_now=entry.data.get(CONF_PRICE_NOW_ENTITY),
             ac_mode=str(entry.data[CONF_AC_MODE_ENTITY]),
