@@ -29,9 +29,19 @@ from .const import (
     CONF_SOC_LIMIT_ENTITY,
     CONF_PACK_CAPACITY_KWH,
     DEFAULT_PACK_CAPACITY_KWH,
+
+    # --- NEW SETTINGS ---
+    SETTING_PEAK_FACTOR,
+    SETTING_VALLEY_FACTOR,
+    SETTING_VERY_CHEAP_PRICE,
+
+    DEFAULT_PEAK_FACTOR,
+    DEFAULT_VALLEY_FACTOR,
+    DEFAULT_VERY_CHEAP_PRICE,
 )
 
 from .device_profiles import DEVICE_PROFILES
+
 
 class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Battery SmartFlow AI."""
@@ -124,6 +134,77 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     # -----------------------------------------------------
+    # OPTIONS FLOW (NEW)
+    # -----------------------------------------------------
+    @staticmethod
+    def async_get_options_flow(entry: config_entries.ConfigEntry):
+        return ZendureSmartFlowOptionsFlow(entry)
+
+
+# -----------------------------------------------------
+# OPTIONS FLOW
+# -----------------------------------------------------
+class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
+    """Options flow for Battery SmartFlow AI."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry):
+        self.config_entry = config_entry
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self._options_schema(),
+        )
+
+    def _options_schema(self):
+
+        options = self.config_entry.options
+
+        return vol.Schema(
+            {
+                vol.Optional(
+                    SETTING_PEAK_FACTOR,
+                    default=options.get(SETTING_PEAK_FACTOR, DEFAULT_PEAK_FACTOR),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1.0,
+                        max=2.0,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+
+                vol.Optional(
+                    SETTING_VALLEY_FACTOR,
+                    default=options.get(SETTING_VALLEY_FACTOR, DEFAULT_VALLEY_FACTOR),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.5,
+                        max=1.0,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+
+                vol.Optional(
+                    SETTING_VERY_CHEAP_PRICE,
+                    default=options.get(SETTING_VERY_CHEAP_PRICE, DEFAULT_VERY_CHEAP_PRICE),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1.0,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+            }
+        )
+
+    # -----------------------------------------------------
     # SCHEMAS
     # -----------------------------------------------------
     def _base_schema(self, entry: config_entries.ConfigEntry | None = None) -> vol.Schema:
@@ -149,7 +230,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
-     
+
                 vol.Required(CONF_SOC_ENTITY, default=_val(CONF_SOC_ENTITY)):
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
 
@@ -171,7 +252,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_PV_ENTITY, default=_val(CONF_PV_ENTITY)):
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
 
-                vol.Required(CONF_BATTERY_AC_POWER_ENTITY, default=_val(CONF_BATTERY_AC_POWER_ENTITY)): 
+                vol.Required(CONF_BATTERY_AC_POWER_ENTITY, default=_val(CONF_BATTERY_AC_POWER_ENTITY)):
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
 
                 vol.Optional(CONF_PRICE_EXPORT_ENTITY, default=_val(CONF_PRICE_EXPORT_ENTITY)):
