@@ -744,6 +744,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 prev_charge_w=float(self._persist.get("prev_charge_w", 0.0)),
                 battery_capacity_kwh=battery_capacity_kwh,
                 peak_factor=peak_factor,
+
+                valley_factor=valley_factor,
+                very_cheap_price=very_cheap_price,
             )
 
             decision = self._engine.evaluate(ctx)
