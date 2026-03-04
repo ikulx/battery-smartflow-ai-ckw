@@ -685,12 +685,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             battery_w_raw = _to_float(self._state(self.entities.battery_ac_power), 0.0)
             battery_w = float(battery_w_raw or 0.0)
 
+            # Netzleistung berechnen (Import positiv, Export negativ)
+            grid_w = float(grid_import) - float(grid_export)
+
             house_load = max(
                 0.0,
                 float(pv_w)
-                + float(battery_w)
-                + float(grid_import)
-                - float(grid_export)
+                + float(grid_w)
+                + float(battery_w))
             )
             
             # -----------------------------
