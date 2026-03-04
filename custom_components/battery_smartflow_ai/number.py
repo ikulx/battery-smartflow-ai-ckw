@@ -85,7 +85,6 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         native_max_value=1.0,
         native_step=0.01,
         native_unit_of_measurement="€/kWh",
-        mode="box",
         icon="mdi:cash",
     ),
 
