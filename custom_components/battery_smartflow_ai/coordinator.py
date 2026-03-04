@@ -677,7 +677,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # house load estimate (FINAL)
             # -----------------------------
 
-            battery_discharge_w = max(0.0, float(battery_w_raw or 0.0))
+            battery_raw = self._state(self.entities.battery_ac_power)
+            battery_power = _to_float(battery_raw, 0.0)
+
+            if battery_power is None:
+                battery_power = 0.0
+
+            # Nur Entladung berücksichtigen
+            battery_discharge_w = max(0.0, float(battery_power))
 
             house_load = max(
                 0.0,
