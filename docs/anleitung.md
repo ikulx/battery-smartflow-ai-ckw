@@ -1234,4 +1234,331 @@ Wenn Regelung zu hektisch wirkt:
 
 Battery SmartFlow AI ist so konzipiert, dass es ohne manuelles Fein-Tuning stabil läuft.
 
+---
+
+## Anhang 1 – Geräteprofil-Parameter (Erweiterte Einstellungen)
+
+Battery SmartFlow AI verwendet **Geräteprofile**, um das Regelverhalten an unterschiedliche Zendure-SolarFlow-Geräte anzupassen.
+
+Diese Profile definieren unter anderem:
+
+* die **Regelstärke der Leistungssteuerung**
+* die **Stabilität gegenüber Netzimport und Einspeisung**
+* die **maximal zulässigen Lade- und Entladeleistungen**
+
+In den meisten Installationen müssen diese Werte **nicht verändert werden**.
+Fortgeschrittene Anwender können jedoch durch gezielte Anpassungen das Verhalten der Regelung an ihre Anlage optimieren.
+
+Dieser Abschnitt beschreibt die einzelnen Parameter sowie deren Auswirkungen.
+
+---
+
+## Überblick
+
+Die Parameter eines Geräteprofils beeinflussen drei zentrale Bereiche:
+
+1. **Regelverhalten der Leistung**
+2. **Stabilität gegenüber Netzimport und Einspeisung**
+3. **Gerätespezifische Leistungsgrenzen**
+
+---
+
+# Parameter der Leistungsregelung
+
+## KP_UP
+
+Proportionalfaktor für die **Erhöhung der Entladeleistung**.
+
+Dieser Wert bestimmt, wie stark der Regler auf einen Netzbezug reagiert.
+Je höher der Wert, desto schneller wird die Batterieentladung erhöht.
+
+**Höhere Werte**
+
+* schnellere Reaktion auf Laständerungen
+* Netzbezug wird aggressiver reduziert
+* kann bei ungünstigen Anlagen leichte Schwingungen verursachen
+
+**Niedrigere Werte**
+
+* ruhigeres Verhalten
+* langsamere Anpassung der Entladeleistung
+* kurzfristiger Netzbezug kann etwas länger bestehen bleiben
+
+Typischer Bereich:
+
+```
+0.4 – 0.8
+```
+
+---
+
+## KP_DOWN
+
+Proportionalfaktor für die **Reduzierung der Entladeleistung**.
+
+Dieser Parameter bestimmt, wie schnell die Entladeleistung reduziert wird, wenn die Hauslast sinkt.
+
+**Höhere Werte**
+
+* schnellere Leistungsreduzierung
+* Einspeisung wird stärker begrenzt
+
+**Niedrigere Werte**
+
+* sanftere Leistungsanpassung
+* geringfügige Einspeisespitzen möglich
+
+Typischer Bereich:
+
+```
+0.8 – 1.1
+```
+
+---
+
+# Stabilitätsparameter
+
+## DEADBAND_W
+
+Definiert eine **Toleranzzone um 0 W Netzleistung**.
+
+Innerhalb dieser Zone reagiert der Regler nicht auf kleine Messschwankungen.
+
+Beispiel:
+
+```
+DEADBAND_W = 40 W
+```
+
+Netzwerte zwischen **-40 W und +40 W** gelten als stabil und lösen keine Anpassung aus.
+
+**Höhere Werte**
+
+* stabileres Verhalten
+* weniger häufige Regelanpassungen
+* geringfügig größere Abweichung vom idealen Nullpunkt
+
+**Niedrigere Werte**
+
+* präzisere Netzregelung
+* häufigere Anpassungen möglich
+
+Typischer Bereich:
+
+```
+20 – 60 W
+```
+
+---
+
+## EXPORT_GUARD_W
+
+Zusätzlicher Schutz gegen **ungewollte Einspeisung ins Netz**.
+
+Wenn die Einspeiseleistung diesen Wert erreicht, reduziert der Regler schneller die Entladeleistung.
+
+**Höhere Werte**
+
+* Einspeiseschutz greift später
+* etwas mehr Einspeisung möglich
+
+**Niedrigere Werte**
+
+* stärkere Einspeisebegrenzung
+* frühere Reduzierung der Entladeleistung
+
+Typischer Bereich:
+
+```
+40 – 100 W
+```
+
+---
+
+# Begrenzung der Leistungsänderung
+
+## MAX_STEP_UP
+
+Maximale **Erhöhung der Entladeleistung pro Regelzyklus**.
+
+Dieser Wert begrenzt, wie schnell die Batterieleistung ansteigen darf.
+
+**Höhere Werte**
+
+* sehr schnelle Reaktion auf Lastspitzen
+* aggressivere Regelung
+
+**Niedrigere Werte**
+
+* sanftere Leistungssteigerung
+* stabileres Verhalten
+
+Typischer Bereich:
+
+```
+300 – 600 W
+```
+
+---
+
+## MAX_STEP_DOWN
+
+Maximale **Reduzierung der Entladeleistung pro Regelzyklus**.
+
+In der Regel höher als MAX_STEP_UP, da eine schnelle Leistungsreduktion unkritischer ist.
+
+**Höhere Werte**
+
+* sehr schnelle Reaktion auf Lastabfälle
+* Einspeisung wird schneller verhindert
+
+**Niedrigere Werte**
+
+* sanftere Leistungsreduktion
+
+Typischer Bereich:
+
+```
+600 – 1000 W
+```
+
+---
+
+# Stabilisierung der Betriebszustände
+
+## KEEPALIVE_MIN_DEFICIT_W
+
+Minimale Netzlast, bei der die Batterie weiterhin entlädt.
+
+Wenn der Netzbezug unter diesen Wert fällt, kann die Entladung beendet werden.
+
+Zweck:
+
+* verhindert unnötige Mini-Entladezyklen
+* stabilisiert den Regelbetrieb
+
+Typischer Bereich:
+
+```
+10 – 25 W
+```
+
+---
+
+## KEEPALIVE_MIN_OUTPUT_W
+
+Minimale Entladeleistung, sobald der Entladebetrieb aktiv ist.
+
+Dies verhindert ein ständiges Umschalten zwischen **Standby und Entladung**.
+
+Typischer Bereich:
+
+```
+40 – 80 W
+```
+
+---
+
+# Gerätespezifische Leistungsgrenzen
+
+## MAX_INPUT_W
+
+Maximale Ladeleistung des Systems.
+
+Dieser Wert wird durch das jeweilige Gerät vorgegeben.
+
+Beispiele:
+
+| Gerät          | Typischer Wert |
+| -------------- | -------------- |
+| SolarFlow 800  | 800 W          |
+| SolarFlow 1600 | 1600 W         |
+| SolarFlow 2400 | 2400 W         |
+
+---
+
+## MAX_OUTPUT_W
+
+Maximale Entladeleistung des Systems.
+
+Auch dieser Wert hängt vom jeweiligen Gerätemodell ab.
+
+Beispiele:
+
+```
+800 W
+1600 W
+2400 W
+```
+
+---
+
+# Hinweise zur Anpassung
+
+In den meisten Fällen sollten die Geräteprofile **nicht verändert werden**.
+
+Anpassungen können jedoch sinnvoll sein, wenn spezielle Bedingungen vorliegen.
+
+### System reagiert zu aggressiv oder schwankt
+
+Mögliche Maßnahmen:
+
+* **KP_UP reduzieren**
+* **DEADBAND_W erhöhen**
+
+---
+
+### Reaktion auf Laständerungen ist zu langsam
+
+Mögliche Maßnahmen:
+
+* **KP_UP erhöhen**
+* **MAX_STEP_UP erhöhen**
+
+---
+
+### Gelegentliche Einspeisespitzen
+
+Mögliche Maßnahmen:
+
+* **KP_DOWN erhöhen**
+* **EXPORT_GUARD_W reduzieren**
+
+---
+
+### Zu häufige kleine Leistungsanpassungen
+
+Mögliche Maßnahme:
+
+* **DEADBAND_W erhöhen**
+
+---
+
+# Wichtiger Hinweis
+
+Die Parameter eines Geräteprofils beeinflussen direkt die **Stabilität der Regelung**.
+
+Falsche Werte können zu folgenden Effekten führen:
+
+* schwankende Lade- und Entladeleistung
+* unnötiger Netzbezug oder Einspeisung
+* instabiles Regelverhalten
+
+Wenn Unsicherheit besteht, sollten immer die **Standardwerte des Geräteprofils** verwendet werden.
+
+---
+
+# Zukünftige Erweiterung
+
+In einer zukünftigen Version von Battery SmartFlow AI ist geplant, **Geräteprofile direkt über die Benutzeroberfläche anpassbar zu machen**.
+
+Dabei können Nutzer:
+
+* bestehende Profile duplizieren
+* Parameter über die GUI verändern
+* Profile jederzeit auf Standardwerte zurücksetzen
+
+Bis dahin sind Geräteprofile fest in der Integration definiert.
+
+
 Feinanpassungen sind möglich – aber nicht zwingend erforderlich.
