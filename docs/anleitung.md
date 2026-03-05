@@ -1562,3 +1562,213 @@ Bis dahin sind Geräteprofile fest in der Integration definiert.
 
 
 Feinanpassungen sind möglich – aber nicht zwingend erforderlich.
+
+---
+
+# Anhang 2 – Funktionsweise der AI-Entscheidungslogik
+
+Battery SmartFlow AI analysiert kontinuierlich mehrere Datenquellen, um zu entscheiden, ob der Batteriespeicher laden, entladen oder im Standby bleiben soll.
+
+Zu den wichtigsten Einflussfaktoren gehören:
+
+* aktueller Strompreis
+* erwartete zukünftige Strompreise
+* Batteriestand (SoC)
+* Hauslast
+* PV-Erzeugung
+* Gerätegrenzen und Sicherheitsparameter
+
+Die Entscheidung wird in mehreren aufeinanderfolgenden Regeln getroffen.
+
+Die Regeln sind nach Priorität geordnet.
+Sobald eine Regel zutrifft, wird die entsprechende Aktion ausgeführt.
+
+---
+
+# Entscheidungsreihenfolge der AI
+
+Die AI prüft die folgenden Regeln in dieser Reihenfolge:
+
+1. **Emergency-Regel**
+2. **Peak-Erkennung**
+3. **Preisbasierte Arbitrage**
+4. **Adaptive Ladeplanung**
+5. **PV-Überschussladung**
+6. **Sommermodus**
+7. **Manueller Modus**
+
+---
+
+# Emergency-Regel
+
+Diese Regel schützt die Batterie vor einer kritischen Entladung.
+
+Wenn der Batteriestand unter den definierten **Emergency-SoC** fällt, wird sofort eine Ladung gestartet.
+
+Eigenschaften:
+
+* hat **höchste Priorität**
+* ignoriert Preislogik
+* lädt mit definierter Sicherheitsleistung
+
+Ziel:
+
+Die Batterie soll niemals dauerhaft unter eine kritische Mindestladung fallen.
+
+---
+
+# Peak-Erkennung (Adaptive Peak Detection)
+
+Die AI erkennt automatisch besonders teure Strompreisphasen.
+
+Dazu wird der aktuelle Strompreis mit dem **durchschnittlichen Tagespreis** verglichen.
+
+Eine Peak-Phase wird erkannt, wenn:
+
+```id="e3ts69"
+Preis ≥ Durchschnittspreis × Peak-Faktor
+```
+
+Zusätzlich wird ein Mindestabstand zum Durchschnitt berücksichtigt.
+
+Wenn ein Peak erkannt wird:
+
+* beginnt die Batterie zu **entladen**
+* die Hauslast wird aus der Batterie gedeckt
+* teurer Netzstrom wird vermieden
+
+Ziel:
+
+Die Batterie wird gezielt während **teurer Preisphasen** genutzt.
+
+---
+
+# Preisbasierte Arbitrage
+
+Neben der Peak-Erkennung nutzt die AI auch eine **Preisvergleichsstrategie**.
+
+Wenn der aktuelle Preis deutlich über dem durchschnittlichen Ladepreis der Batterie liegt, kann sich eine Entladung wirtschaftlich lohnen.
+
+Die Entladung erfolgt, wenn:
+
+* aktueller Preis hoch ist
+* Batterieenergie zuvor günstiger geladen wurde
+* ausreichend Batteriekapazität verfügbar ist
+
+Ziel:
+
+Günstig geladene Energie wird bei höheren Preisen genutzt.
+
+---
+
+# Adaptive Ladeplanung
+
+Die AI analysiert zukünftige Strompreise und plant das Laden der Batterie.
+
+Wenn ein zukünftiger **Preis-Peak** erkannt wird, berechnet die AI:
+
+* wie viel Energie benötigt wird
+* wie lange die Batterie zum Laden braucht
+* wann spätestens mit dem Laden begonnen werden muss
+
+Die Planung berücksichtigt:
+
+* Batteriekapazität
+* maximale Ladeleistung
+* erwartete Dauer des Peaks
+
+Wenn die aktuelle Energie bereits ausreicht, wird **keine zusätzliche Ladung gestartet**.
+
+Ziel:
+
+Die Batterie soll **rechtzeitig vor teuren Preisphasen** geladen sein.
+
+---
+
+# PV-Überschussladung
+
+Wenn überschüssige PV-Energie vorhanden ist, wird diese bevorzugt zum Laden der Batterie verwendet.
+
+Dabei wird berücksichtigt:
+
+* aktueller Batteriestand
+* maximale Ladeleistung
+* verfügbare PV-Leistung
+
+Ziel:
+
+Eigenverbrauch erhöhen und Netzbezug minimieren.
+
+---
+
+# Sommermodus
+
+Im Sommermodus liegt der Fokus auf **Eigenverbrauch statt Arbitrage**.
+
+Die Batterie wird hauptsächlich genutzt, um die Hauslast zu decken.
+
+Preislogik spielt hier eine geringere Rolle.
+
+Typisches Verhalten:
+
+* Entladung bei Hauslast
+* PV-Überschussladung
+* wenig preisgesteuerte Aktionen
+
+Ziel:
+
+Maximaler Eigenverbrauch der erzeugten PV-Energie.
+
+---
+
+# Manueller Modus
+
+Im manuellen Modus wird die AI-Logik deaktiviert.
+
+Der Benutzer kann direkt bestimmen:
+
+* Laden
+* Entladen
+* Standby
+
+Die AI führt in diesem Modus keine automatischen Preis- oder Planungsentscheidungen aus.
+
+---
+
+# Dynamische Preisschwellen
+
+Die Integration berechnet automatisch zwei wichtige Preisgrenzen:
+
+### Aktuelle Peak-Schwelle
+
+Preisgrenze, ab der die Batterie bevorzugt **entlädt**.
+
+Diese wird aus dem durchschnittlichen Tagespreis und dem Peak-Faktor berechnet.
+
+---
+
+### Aktuelle Valley-Schwelle
+
+Preisgrenze, unter der ein Laden besonders wirtschaftlich ist.
+
+Sie wird aus dem Durchschnittspreis und dem Valley-Faktor berechnet.
+
+---
+
+# Zusammenfassung der Strategie
+
+Die AI verfolgt drei zentrale Ziele:
+
+1. **Netzstromkosten reduzieren**
+2. **PV-Eigenverbrauch erhöhen**
+3. **Batterie intelligent nutzen**
+
+Dabei werden kontinuierlich folgende Fragen bewertet:
+
+* Ist der aktuelle Strompreis hoch oder niedrig?
+* Wird später ein teurer Preis erwartet?
+* Reicht der aktuelle Batteriestand aus?
+* Ist PV-Überschuss verfügbar?
+
+Durch die Kombination dieser Faktoren entsteht eine adaptive und wirtschaftliche Steuerung des Batteriespeichers.
+
