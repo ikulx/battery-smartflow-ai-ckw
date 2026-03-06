@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+import statistics
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Literal, Optional
@@ -80,7 +82,11 @@ class DecisionResult:
 # ==================================================
 
 class BaseRule:
-    def evaluate(self, engine: "DecisionEngine", ctx: DecisionContext) -> Optional[DecisionResult]:
+    def evaluate(
+        self,
+        engine: "DecisionEngine",
+        ctx: DecisionContext,
+    ) -> Optional[DecisionResult]:
         raise NotImplementedError
 
 
@@ -158,10 +164,56 @@ class PlanningRule(BaseRule):
         return engine._evaluate_adaptive_planning(ctx)
 
 
+class ValleyBoostRule(BaseRule):
+    def evaluate(self, engine, ctx):
+        # Nur im Wintermodus
+        if ctx.ai_mode not in ("winter", "automatic") or ctx.season != "winter":
+            return None
+
+        if ctx.price_now is None:
+            return None
+
+        if ctx.soc >= ctx.soc_max:
+            return None
+
+        if not ctx.price_points:
+            return None
+
+        prices = [p.price for p in ctx.price_points]
+        if not prices:
+            return None
+
+        base_price = engine._compute_base_price(prices)
+        valley_threshold = base_price * ctx.valley_factor
+
+        # Kein Valley → kein Boost
+        if ctx.price_now > valley_threshold:
+            return None
+
+        # Nur wenn tatsächlich PV vorhanden ist
+        if ctx.pv_w < 100:
+            return None
+
+        return DecisionResult(
+            action="charge",
+            ac_mode="input",
+            charge_w=ctx.max_charge_w,
+            discharge_w=0.0,
+            reason="valley_boost_charge",
+        )
+
+
 class PvRule(BaseRule):
     def evaluate(self, engine, ctx):
+        # Wenn wir gerade aktiv planen zu laden,
+        # soll PV diese Entscheidung nicht überschreiben
+        planning = engine._evaluate_adaptive_planning(ctx)
+        if planning is not None:
+            return None
+
         if ctx.soc < ctx.soc_max:
             charge_w = engine._delta_charge(ctx)
+
             if charge_w > 0:
                 return DecisionResult(
                     action="charge",
@@ -170,6 +222,7 @@ class PvRule(BaseRule):
                     discharge_w=0.0,
                     reason="pv_surplus_charge",
                 )
+
         return None
 
 
@@ -230,17 +283,37 @@ class ManualRule(BaseRule):
 # ==================================================
 
 class DecisionEngine:
-
     def __init__(self):
         self._rules = [
             EmergencyRule(),
             PeakRule(),
             ArbitrageRule(),
             PlanningRule(),
+            ValleyBoostRule(),
             PvRule(),
             SummerRule(),
             ManualRule(),
         ]
+
+    # -------------------------------------------------
+    # Helper methods
+    # -------------------------------------------------
+
+    def _compute_base_price(self, prices: List[float]) -> float:
+        avg_price = sum(prices) / len(prices)
+        median_price = statistics.median(prices)
+        return min(avg_price, median_price)
+
+    def _compute_peak_threshold(self, prices: List[float], peak_factor: float) -> float:
+        base_price = self._compute_base_price(prices)
+        return max(
+            base_price * peak_factor,
+            base_price + 0.03,
+        )
+
+    def _compute_valley_threshold(self, prices: List[float], valley_factor: float) -> float:
+        base_price = self._compute_base_price(prices)
+        return base_price * valley_factor
 
     # -------------------------------------------------
     # Delta delegation
@@ -278,21 +351,36 @@ class DecisionEngine:
         if not prices:
             return False
 
-        avg_price = sum(prices) / len(prices)
+        threshold = self._compute_peak_threshold(prices, ctx.peak_factor)
 
-        threshold = max(
-            avg_price * ctx.peak_factor,
-            avg_price + 0.03,
+        # Normal peak detection
+        if ctx.price_now >= threshold:
+            return True
+
+        # ------------------------------------------------
+        # Early spike detection
+        # ------------------------------------------------
+        future_slots = sorted(
+            [p for p in ctx.price_points if p.start > ctx.now],
+            key=lambda p: p.start,
         )
 
-        return ctx.price_now >= threshold
+        for slot in future_slots:
+            minutes_ahead = (slot.start - ctx.now).total_seconds() / 60
+
+            if minutes_ahead > 60:
+                break
+
+            if slot.price >= threshold * 1.15:
+                return True
+
+        return False
 
     # -------------------------------------------------
     # Adaptive planning
     # -------------------------------------------------
 
     def _evaluate_adaptive_planning(self, ctx: DecisionContext) -> Optional[DecisionResult]:
-
         if (
             ctx.ai_mode not in ("automatic", "winter")
             or not ctx.price_points
@@ -307,21 +395,16 @@ class DecisionEngine:
         if not prices:
             return None
 
-        avg_price = sum(prices) / len(prices)
-
         # ------------------------------------------------
         # Optional absolute cheap price filter
         # ------------------------------------------------
-
-        if ctx.very_cheap_price is not None:
-            if ctx.price_now > ctx.very_cheap_price:
-                return None
+        if ctx.very_cheap_price is not None and ctx.price_now > ctx.very_cheap_price:
+            return None
 
         # ------------------------------------------------
         # Valley factor check
         # ------------------------------------------------
-
-        valley_threshold = avg_price * ctx.valley_factor
+        valley_threshold = self._compute_valley_threshold(prices, ctx.valley_factor)
 
         if ctx.price_now > valley_threshold:
             return None
@@ -329,11 +412,7 @@ class DecisionEngine:
         # ------------------------------------------------
         # Peak detection
         # ------------------------------------------------
-
-        peak_threshold = max(
-            avg_price * ctx.peak_factor,
-            avg_price + 0.03,
-        )
+        peak_threshold = self._compute_peak_threshold(prices, ctx.peak_factor)
 
         peak_slots = [p for p in ctx.price_points if p.price >= peak_threshold]
         future_peaks = [p for p in peak_slots if p.start > ctx.now]
@@ -341,10 +420,40 @@ class DecisionEngine:
         if not future_peaks:
             return None
 
+        # ------------------------------------------------
+        # Expected peak price
+        # ------------------------------------------------
+        expected_peak_price = max(p.price for p in future_peaks)
+
+        # ------------------------------------------------
+        # Profitability check
+        # ------------------------------------------------
+        min_profit_factor = 1 + (ctx.profit_margin_pct / 100)
+        required_peak_price = ctx.price_now * min_profit_factor
+
+        if expected_peak_price < required_peak_price:
+            return None
+
         next_peak = min(p.start for p in future_peaks)
+
+        # ------------------------------------------------
+        # Detect second peak (multi-peak protection)
+        # ------------------------------------------------
+        future_peaks_sorted = sorted(future_peaks, key=lambda p: p.start)
+        second_peak = future_peaks_sorted[1].start if len(future_peaks_sorted) >= 2 else None
 
         soc_gap_pct = max(0.0, ctx.soc_max - ctx.soc)
         required_kwh = ctx.battery_capacity_kwh * (soc_gap_pct / 100.0)
+
+        # ------------------------------------------------
+        # Multi-peak protection
+        # ------------------------------------------------
+        if second_peak is not None:
+            hours_between_peaks = (second_peak - next_peak).total_seconds() / 3600.0
+
+            # Wenn Peaks sehr dicht sind → mehr Energie reservieren
+            if hours_between_peaks < 6:
+                required_kwh *= 1.4
 
         charge_power_kw = ctx.max_charge_w / 1000.0
         if charge_power_kw <= 0:
@@ -358,35 +467,33 @@ class DecisionEngine:
         # ------------------------------------------------
         # Smart cheapest charging window
         # ------------------------------------------------
-
         future_prices = [
             p for p in ctx.price_points
             if ctx.now <= p.start <= next_peak
         ]
 
         if future_prices:
-
-            charge_power_kw = ctx.max_charge_w / 1000.0
-            energy_per_slot = charge_power_kw * 0.25
+            energy_per_slot = charge_power_kw * 0.25  # 15 Minuten
 
             if energy_per_slot > 0:
-
-                required_slots = int(required_kwh / energy_per_slot) + 1
+                required_slots = max(1, math.ceil(required_kwh / energy_per_slot))
 
                 cheapest_slots = sorted(
                     future_prices,
-                    key=lambda p: p.price
+                    key=lambda p: p.price,
                 )[:required_slots]
+
+                if not cheapest_slots:
+                    return None
 
                 cheapest_prices = [p.price for p in cheapest_slots]
 
                 if ctx.price_now > max(cheapest_prices):
                     return None
-        
+
         # ------------------------------------------------
         # Latest start trigger
         # ------------------------------------------------
-
         if ctx.now >= latest_start:
             return DecisionResult(
                 action="charge",
