@@ -21,6 +21,7 @@ from .const import (
     CONF_GRID_POWER_ENTITY,
     CONF_GRID_IMPORT_ENTITY,
     CONF_GRID_EXPORT_ENTITY,
+    CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY,
     GRID_MODE_NONE,
     GRID_MODE_SINGLE,
     GRID_MODE_SPLIT,
@@ -201,6 +202,9 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_BATTERY_AC_POWER_ENTITY,
                     default=_val(CONF_BATTERY_AC_POWER_ENTITY),
                 ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY, default=_val(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY) or ""): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 ),
                 vol.Optional(
