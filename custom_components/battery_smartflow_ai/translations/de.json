@@ -10,6 +10,7 @@
           "soc_limit_entity": "SoC-Limit Status (optional)",
           "pack_capacity_kwh": "Kapazität pro Akku-Pack (kWh)",
           "battery_ac_power_entity": "Batterie Leistungssensor (W)",
+          "additional_battery_charge_entity": "Zusatzakku Ladeleistung (optional)",
           "capacity_entity": "Kapazitätssensor (optional)",
           "pv_entity": "PV-Leistung Sensor",
           "price_now_entity": "Aktueller Strompreis",
@@ -28,6 +29,7 @@
           "soc_limit_entity": "Optionaler Sensor aus der Zendure-Integration, der aktive BMS-Grenzen meldet (z. B. Lade- oder Entladesperre).",
           "pack_capacity_kwh": "Nutzbare Kapazität eines einzelnen Akku-Packs in kWh. Wird mit der Anzahl der installierten Packs multipliziert, um die Gesamtkapazität zu berechnen.",
           "battery_ac_power_entity": "Sensor für die AC-Leistung der Batterie. Der Wert muss bei Entladung positiv sein. Empfohlen: sensor.solarflow_2400_ac_bat_in_out",
+          "additional_battery_charge_entity": "Optionaler Sensor eines zweiten Akkusystems. Wenn dieser Sensor eine positive Ladeleistung meldet, wird die Entladung von Battery SmartFlow AI blockiert.",
           "capacity_entity": "Optionaler Sensor mit der automatisch berechneten verfügbaren Batteriekapazität in kWh (z. B. aus der Zendure-Integration). Falls gesetzt, überschreibt er die manuelle Berechnung.",
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt. Wird zur Erkennung von Überschuss verwendet.",
           "price_now_entity": "Sensor mit dem aktuellen Strompreis (z. B. Tibber). Wird für wirtschaftliche Entscheidungen genutzt.",
@@ -78,6 +80,7 @@
           "soc_limit_entity": "SoC-Limit Status (optional)",
           "pack_capacity_kwh": "Kapazität pro Akku-Pack (kWh)",
           "battery_ac_power_entity": "Batterie Leistungssensor (W)",
+          "additional_battery_charge_entity": "Zusatzakku Ladeleistung (optional)",
           "capacity_entity": "Kapazitätssensor (optional)",
           "pv_entity": "PV-Leistung Sensor",
           "price_now_entity": "Aktueller Strompreis",
@@ -96,6 +99,7 @@
           "soc_limit_entity": "Optionaler Statussensor aus der Zendure-Integration zur Erkennung aktiver BMS-Sperren.",
           "pack_capacity_kwh": "Nutzbare Kapazität eines einzelnen Akku-Packs in kWh. Wird mit der Anzahl der installierten Packs multipliziert, um die Gesamtkapazität zu berechnen.",
           "battery_ac_power_entity": "Sensor für die AC-Leistung der Batterie. Der Wert muss bei Entladung positiv sein. Empfohlen: sensor.solarflow_2400_ac_bat_in_out",
+          "additional_battery_charge_entity": "Optionaler Sensor eines zweiten Akkusystems. Wenn dieser Sensor eine positive Ladeleistung meldet, wird die Entladung von Battery SmartFlow AI blockiert.",
           "capacity_entity": "Optionaler Sensor mit der automatisch berechneten verfügbaren Batteriekapazität in kWh (z. B. aus der Zendure-Integration). Falls gesetzt, überschreibt er die manuelle Berechnung.",
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt.",
           "price_now_entity": "Aktueller Strompreis. Ermöglicht preisabhängige Entladung.",
@@ -111,7 +115,6 @@
       }
     }
   },
-
   "entity": {
     "select": {
       "ai_mode": {
@@ -132,24 +135,48 @@
         }
       }
     },
-
     "number": {
-      "battery_packs": { "name": "Anzahl Akku-Packs" }, 
-      "soc_min": { "name": "SoC Minimum" },
-      "soc_max": { "name": "SoC Maximum" },
-      "max_charge": { "name": "Max. Ladeleistung" },
-      "max_discharge": { "name": "Max. Entladeleistung" },
-      "emergency_charge": { "name": "Notladeleistung" },
-      "emergency_soc": { "name": "Notladung ab SoC" },
-      "very_expensive_threshold": { "name": "Sehr-teuer-Schwelle" },
-      "profit_margin_pct": { "name": "Gewinnmarge (%)" },
-      "peak_factor": { "name": "Peak-Faktor" },
-      "valley_factor": { "name": "Tal-Faktor" },
-      "very_cheap_price": { "name": "Sehr-billig Schwelle" }
+      "battery_packs": {
+        "name": "Anzahl Akku-Packs"
+      },
+      "soc_min": {
+        "name": "SoC Minimum"
+      },
+      "soc_max": {
+        "name": "SoC Maximum"
+      },
+      "max_charge": {
+        "name": "Max. Ladeleistung"
+      },
+      "max_discharge": {
+        "name": "Max. Entladeleistung"
+      },
+      "emergency_charge": {
+        "name": "Notladeleistung"
+      },
+      "emergency_soc": {
+        "name": "Notladung ab SoC"
+      },
+      "very_expensive_threshold": {
+        "name": "Sehr-teuer-Schwelle"
+      },
+      "profit_margin_pct": {
+        "name": "Gewinnmarge (%)"
+      },
+      "peak_factor": {
+        "name": "Peak-Faktor"
+      },
+      "valley_factor": {
+        "name": "Tal-Faktor"
+      },
+      "very_cheap_price": {
+        "name": "Sehr-billig Schwelle"
+      }
     },
-
     "sensor": {
-      "device_profile": { "name": "Aktives Geräteprofil" },
+      "device_profile": {
+        "name": "Aktives Geräteprofil"
+      },
       "adaptive_peak_active": {
         "name": "Adaptiver Peak erkannt"
       },
@@ -171,7 +198,6 @@
           "sensor_invalid": "Ungültige Sensordaten"
         }
       },
-
       "season_mode": {
         "name": "Erkannter Betriebsmodus",
         "state": {
@@ -180,7 +206,6 @@
           "manual": "Manueller Betrieb"
         }
       },
-
       "soc_limit_status": {
         "name": "SoC-Limit Status",
         "state": {
@@ -190,7 +215,6 @@
           "lower_limit_active": "Unteres SoC-Limit aktiv (Entladen gesperrt)"
         }
       },
-
       "fault_level_status": {
         "name": "Fehlerstatus",
         "state": {
@@ -199,7 +223,6 @@
           "error": "Fehler / Schutz aktiv"
         }
       },
-
       "status": {
         "name": "Systemstatus",
         "state": {
@@ -209,7 +232,6 @@
           "price_invalid": "Preisdaten ungültig"
         }
       },
-
       "ai_status": {
         "name": "KI-Status",
         "state": {
@@ -222,7 +244,6 @@
           "manual": "Manueller Modus"
         }
       },
-
       "recommendation": {
         "name": "KI-Empfehlung",
         "state": {
@@ -232,7 +253,6 @@
           "emergency": "Notladung"
         }
       },
-
       "decision_reason": {
         "name": "Entscheidungsgrund",
         "state": {
@@ -258,10 +278,10 @@
           "idle": "Bereit",
           "adaptive_peak_discharge": "Entladen wegen Preisspitze",
           "price_based_discharge": "Preisbasierte Entladung",
-          "valley_boost_charge": "Preis-Tal erkannt. Maximalladung"
+          "valley_boost_charge": "Preis-Tal erkannt. Maximalladung",
+          "additional_battery_charging_block": "Zusatzakku lädt: Entladung blockiert"
         }
       },
-
       "next_planned_action": {
         "name": "Geplante nächste Aktion",
         "state": {
@@ -272,7 +292,6 @@
           "emergency": "Notladung"
         }
       },
-
       "next_action_state": {
         "name": "Nächste Aktion",
         "state": {
@@ -286,14 +305,24 @@
           "emergency_charge": "Notladung"
         }
       },
-      
-      "next_action_time": { "name": "Startzeit nächste Aktion" },
-
-      "ai_debug": { "name": "KI-Debug" },
-      "house_load": { "name": "Hauslast" },
-      "price_now": { "name": "Aktueller Strompreis" },
-      "avg_charge_price": { "name": "Ø Ladepreis Akku" },
-      "profit_eur": { "name": "Ersparnis / Gewinn (gesamt)" }
+      "next_action_time": {
+        "name": "Startzeit nächste Aktion"
+      },
+      "ai_debug": {
+        "name": "KI-Debug"
+      },
+      "house_load": {
+        "name": "Hauslast"
+      },
+      "price_now": {
+        "name": "Aktueller Strompreis"
+      },
+      "avg_charge_price": {
+        "name": "Ø Ladepreis Akku"
+      },
+      "profit_eur": {
+        "name": "Ersparnis / Gewinn (gesamt)"
+      }
     }
   }
 }
