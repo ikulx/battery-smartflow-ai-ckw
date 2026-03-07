@@ -62,8 +62,17 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._user_input.update(user_input)
 
             if grid_mode == GRID_MODE_SPLIT:
-                if not user_input.get(CONF_GRID_IMPORT_ENTITY) or not user_input.get(CONF_GRID_EXPORT_ENTITY):
+                if (
+                    not user_input.get(CONF_GRID_IMPORT_ENTITY)
+                    or not user_input.get(CONF_GRID_EXPORT_ENTITY)
+                ):
                     errors["base"] = "grid_split_missing"
+
+            if not self._user_input.get(CONF_PRICE_EXPORT_ENTITY):
+                self._user_input.pop(CONF_PRICE_EXPORT_ENTITY, None)
+
+            if not self._user_input.get(CONF_PRICE_NOW_ENTITY):
+                self._user_input.pop(CONF_PRICE_NOW_ENTITY, None)
 
             if not errors:
                 return self.async_create_entry(
@@ -110,8 +119,17 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 cleaned.pop(CONF_GRID_EXPORT_ENTITY, None)
 
             if grid_mode == GRID_MODE_SPLIT:
-                if not cleaned.get(CONF_GRID_IMPORT_ENTITY) or not cleaned.get(CONF_GRID_EXPORT_ENTITY):
+                if (
+                    not cleaned.get(CONF_GRID_IMPORT_ENTITY)
+                    or not cleaned.get(CONF_GRID_EXPORT_ENTITY)
+                ):
                     errors["base"] = "grid_split_missing"
+
+            if not cleaned.get(CONF_PRICE_EXPORT_ENTITY):
+                cleaned.pop(CONF_PRICE_EXPORT_ENTITY, None)
+
+            if not cleaned.get(CONF_PRICE_NOW_ENTITY):
+                cleaned.pop(CONF_PRICE_NOW_ENTITY, None)
 
             if not errors:
                 return self.async_update_reload_and_abort(
@@ -159,13 +177,12 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
-
-                vol.Required(CONF_SOC_ENTITY, default=_val(CONF_SOC_ENTITY)):
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-
-                vol.Optional(CONF_SOC_LIMIT_ENTITY, default=_val(CONF_SOC_LIMIT_ENTITY)):
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-
+                vol.Required(CONF_SOC_ENTITY, default=_val(CONF_SOC_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_SOC_LIMIT_ENTITY, default=_val(CONF_SOC_LIMIT_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
                 vol.Required(
                     CONF_PACK_CAPACITY_KWH,
                     default=_val(CONF_PACK_CAPACITY_KWH) or DEFAULT_PACK_CAPACITY_KWH,
@@ -177,38 +194,51 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
-
-                vol.Required(CONF_PV_ENTITY, default=_val(CONF_PV_ENTITY)):
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-
-                vol.Required(CONF_BATTERY_AC_POWER_ENTITY, default=_val(CONF_BATTERY_AC_POWER_ENTITY)):
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-
-                vol.Optional(CONF_PRICE_EXPORT_ENTITY, default=_val(CONF_PRICE_EXPORT_ENTITY) or ""):
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-
-                vol.Optional(CONF_PRICE_NOW_ENTITY, default=_val(CONF_PRICE_NOW_ENTITY) or ""):
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-
-                vol.Required(CONF_AC_MODE_ENTITY, default=_val(CONF_AC_MODE_ENTITY)):
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain="select")),
-
-                vol.Required(CONF_INPUT_LIMIT_ENTITY, default=_val(CONF_INPUT_LIMIT_ENTITY)):
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain="number")),
-
-                vol.Required(CONF_OUTPUT_LIMIT_ENTITY, default=_val(CONF_OUTPUT_LIMIT_ENTITY)):
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain="number")),
-
-                vol.Required(CONF_GRID_MODE, default=_val(CONF_GRID_MODE) or GRID_MODE_SINGLE):
-                    selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                {"value": GRID_MODE_NONE, "label": "Kein Netzsensor"},
-                                {"value": GRID_MODE_SINGLE, "label": "Ein Sensor (+ / −)"},
-                                {"value": GRID_MODE_SPLIT, "label": "Zwei Sensoren (Bezug & Einspeisung)"},
-                            ]
-                        )
-                    ),
+                vol.Required(CONF_PV_ENTITY, default=_val(CONF_PV_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Required(
+                    CONF_BATTERY_AC_POWER_ENTITY,
+                    default=_val(CONF_BATTERY_AC_POWER_ENTITY),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(
+                    CONF_PRICE_EXPORT_ENTITY,
+                    default=_val(CONF_PRICE_EXPORT_ENTITY) or "",
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(
+                    CONF_PRICE_NOW_ENTITY,
+                    default=_val(CONF_PRICE_NOW_ENTITY) or "",
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Required(CONF_AC_MODE_ENTITY, default=_val(CONF_AC_MODE_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="select")
+                ),
+                vol.Required(CONF_INPUT_LIMIT_ENTITY, default=_val(CONF_INPUT_LIMIT_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="number")
+                ),
+                vol.Required(CONF_OUTPUT_LIMIT_ENTITY, default=_val(CONF_OUTPUT_LIMIT_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="number")
+                ),
+                vol.Required(
+                    CONF_GRID_MODE,
+                    default=_val(CONF_GRID_MODE) or GRID_MODE_SINGLE,
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {"value": GRID_MODE_NONE, "label": "Kein Netzsensor"},
+                            {"value": GRID_MODE_SINGLE, "label": "Ein Sensor (+ / −)"},
+                            {
+                                "value": GRID_MODE_SPLIT,
+                                "label": "Zwei Sensoren (Bezug & Einspeisung)",
+                            },
+                        ]
+                    )
+                ),
             }
         )
 
@@ -217,7 +247,6 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         grid_mode: str,
         entry: config_entries.ConfigEntry | None = None,
     ) -> vol.Schema:
-
         def _val(key: str):
             if entry:
                 return entry.options.get(key, entry.data.get(key))
@@ -227,19 +256,28 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if grid_mode == GRID_MODE_SINGLE:
             schema[
-                vol.Required(CONF_GRID_POWER_ENTITY, default=_val(CONF_GRID_POWER_ENTITY))
+                vol.Required(
+                    CONF_GRID_POWER_ENTITY,
+                    default=_val(CONF_GRID_POWER_ENTITY),
+                )
             ] = selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor")
             )
 
         if grid_mode == GRID_MODE_SPLIT:
             schema[
-                vol.Required(CONF_GRID_IMPORT_ENTITY, default=_val(CONF_GRID_IMPORT_ENTITY))
+                vol.Required(
+                    CONF_GRID_IMPORT_ENTITY,
+                    default=_val(CONF_GRID_IMPORT_ENTITY),
+                )
             ] = selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor")
             )
             schema[
-                vol.Required(CONF_GRID_EXPORT_ENTITY, default=_val(CONF_GRID_EXPORT_ENTITY))
+                vol.Required(
+                    CONF_GRID_EXPORT_ENTITY,
+                    default=_val(CONF_GRID_EXPORT_ENTITY),
+                )
             ] = selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor")
             )
@@ -254,7 +292,6 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         self.config_entry = config_entry
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
-
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
