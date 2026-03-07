@@ -61,6 +61,9 @@ class DecisionContext:
 
     battery_capacity_kwh: float
 
+    # Zusatzakku
+    additional_battery_charge_w: float = 0.0
+
     # --- Planning tuning ---
     peak_factor: float = 1.35
     valley_factor: float = 0.85
@@ -103,6 +106,19 @@ class EmergencyRule(BaseRule):
                 charge_w=min(ctx.max_charge_w, ctx.emergency_charge_w),
                 discharge_w=0.0,
                 reason="emergency_latched_charge",
+            )
+        return None
+
+
+class AdditionalBatteryBlockRule(BaseRule):
+    def evaluate(self, engine, ctx):
+        if float(ctx.additional_battery_charge_w or 0.0) > 0.0:
+            return DecisionResult(
+                action="idle",
+                ac_mode="input",
+                charge_w=0.0,
+                discharge_w=0.0,
+                reason="additional_battery_charging_block",
             )
         return None
 
@@ -186,7 +202,7 @@ class ValleyBoostRule(BaseRule):
         base_price = engine._compute_base_price(prices)
         valley_threshold = base_price * ctx.valley_factor
 
-        # Kein Valley → kein Boost
+        # Kein Valley -> kein Boost
         if ctx.price_now > valley_threshold:
             return None
 
@@ -286,6 +302,7 @@ class DecisionEngine:
     def __init__(self):
         self._rules = [
             EmergencyRule(),
+            AdditionalBatteryBlockRule(),
             PeakRule(),
             ArbitrageRule(),
             PlanningRule(),
@@ -451,7 +468,7 @@ class DecisionEngine:
         if second_peak is not None:
             hours_between_peaks = (second_peak - next_peak).total_seconds() / 3600.0
 
-            # Wenn Peaks sehr dicht sind → mehr Energie reservieren
+            # Wenn Peaks sehr dicht sind -> mehr Energie reservieren
             if hours_between_peaks < 6:
                 required_kwh *= 1.4
 
