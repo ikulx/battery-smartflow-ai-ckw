@@ -12,6 +12,7 @@ from .const import (
     CONF_SOC_ENTITY,
     CONF_PV_ENTITY,
     CONF_BATTERY_AC_POWER_ENTITY,
+    CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY,
     CONF_PRICE_EXPORT_ENTITY,
     CONF_PRICE_NOW_ENTITY,
     CONF_AC_MODE_ENTITY,
@@ -21,7 +22,6 @@ from .const import (
     CONF_GRID_POWER_ENTITY,
     CONF_GRID_IMPORT_ENTITY,
     CONF_GRID_EXPORT_ENTITY,
-    CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY,
     GRID_MODE_NONE,
     GRID_MODE_SINGLE,
     GRID_MODE_SPLIT,
@@ -74,6 +74,9 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not self._user_input.get(CONF_PRICE_NOW_ENTITY):
                 self._user_input.pop(CONF_PRICE_NOW_ENTITY, None)
+
+            if not self._user_input.get(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY):
+                self._user_input.pop(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY, None)
 
             if not errors:
                 return self.async_create_entry(
@@ -131,6 +134,9 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not cleaned.get(CONF_PRICE_NOW_ENTITY):
                 cleaned.pop(CONF_PRICE_NOW_ENTITY, None)
+
+            if not cleaned.get(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY):
+                cleaned.pop(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY, None)
 
             if not errors:
                 return self.async_update_reload_and_abort(
@@ -204,7 +210,10 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 ),
-                vol.Optional(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY, default=_val(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY) or ""): selector.EntitySelector(
+                vol.Optional(
+                    CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY,
+                    default=_val(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY) or "",
+                ): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 ),
                 vol.Optional(
