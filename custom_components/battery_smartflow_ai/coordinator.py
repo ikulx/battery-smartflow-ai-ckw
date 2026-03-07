@@ -26,9 +26,10 @@ from .const import (
     CONF_GRID_POWER_ENTITY,
     CONF_GRID_IMPORT_ENTITY,
     CONF_GRID_EXPORT_ENTITY,
-    CONF_SOC_LIMIT_ENTITY,         
+    CONF_SOC_LIMIT_ENTITY,
     CONF_PACK_CAPACITY_KWH,
     CONF_BATTERY_AC_POWER_ENTITY,
+    CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY,
     GRID_MODE_NONE,
     GRID_MODE_SINGLE,
     GRID_MODE_SPLIT,
@@ -87,7 +88,7 @@ from .const import (
 )
 
 from .device_profiles import DEVICE_PROFILES
-from .decision_engine import DecisionEngine, DecisionContext, PricePoint  # <-- neu
+from .decision_engine import DecisionEngine, DecisionContext, PricePoint
 
 _LOGGER = logging.getLogger(__name__)
 STORE_VERSION = 1
@@ -117,6 +118,7 @@ class SelectedEntities:
     input_limit: str
     output_limit: str
     battery_ac_power: str
+    additional_battery_charge: str | None
 
     soc_limit: str | None
 
@@ -153,6 +155,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 entry.options.get(CONF_BATTERY_AC_POWER_ENTITY)
                 or entry.data.get(CONF_BATTERY_AC_POWER_ENTITY, "")
             ),
+            additional_battery_charge=entry.data.get(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY),
             price_export=entry.data.get(CONF_PRICE_EXPORT_ENTITY),
             price_now=entry.data.get(CONF_PRICE_NOW_ENTITY),
             ac_mode=str(entry.data[CONF_AC_MODE_ENTITY]),
@@ -199,7 +202,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "last_ts": None,
 
             # season detection (Option A)
-            "season_mode": "winter",        # winter|summer
+            "season_mode": "winter",  # winter|summer
             "season_counter": 0,
 
             # debug
@@ -340,9 +343,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
 
     def _get_battery_capacity(self) -> float:
-        pack_capacity = float(
-            self.entry.data.get(CONF_PACK_CAPACITY_KWH, 0)
-        )
+        pack_capacity = float(self.entry.data.get(CONF_PACK_CAPACITY_KWH, 0))
 
         packs = self._get_setting(
             SETTING_BATTERY_PACKS,
@@ -385,9 +386,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         attrs = st.attributes or {}
 
-        # --------------------------------------------
-        # 1️⃣ Prefer Octopus "rates" if available
-        # --------------------------------------------
         raw = (
             attrs.get("rates")
             or attrs.get("data")
@@ -420,9 +418,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not isinstance(item, dict):
                 continue
 
-            # ==================================================
-            # 🟢 Octopus Germany unit_rate_forecast format
-            # ==================================================
+            # Octopus Germany unit_rate_forecast format
             if "validFrom" in item and "validTo" in item:
                 start = item.get("validFrom")
                 end = item.get("validTo")
@@ -445,20 +441,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if not t_start or not t_end:
                     continue
 
-                # Skip broken slots (Octopus DST bug)
                 if t_end <= t_start:
                     continue
 
                 if t_end <= now:
                     continue
 
-                price = float(cents) / 100.0  # cents → €
+                price = float(cents) / 100.0  # cents -> €
                 out.append(PricePoint(start=t_start, end=t_end, price=price))
                 continue
 
-            # ==================================================
-            # 🔵 Generic / Tibber / Octopus "rates" format
-            # ==================================================
+            # Generic / Tibber / Octopus "rates" format
             start = (
                 item.get("start_time")
                 or item.get("starts_at")
@@ -495,7 +488,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 t_end = t_start + timedelta(minutes=15)
 
-            # Skip broken slots
             if t_end <= t_start:
                 continue
 
@@ -504,11 +496,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             out.append(PricePoint(start=t_start, end=t_end, price=float(p)))
 
-        # Final safety: sort chronologically
         out.sort(key=lambda x: x.start)
-
         return out
-    
+
     def _season_detection(self, pv_w: float, export_w: float) -> str:
         """
         Option A: Season detection stays here.
@@ -530,10 +520,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elif counter < 0:
                 counter += 1
 
-        THRESH = 30
-        if counter > THRESH:
+        thresh = 30
+        if counter > thresh:
             season = "summer"
-        elif counter < -THRESH:
+        elif counter < -thresh:
             season = "winter"
 
         self._persist["season_mode"] = season
@@ -597,7 +587,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             pv_w = float(pv)
 
             # -----------------------------
-            # Battery capacity (Hybrid detection)
+            # Battery capacity
             # -----------------------------
             battery_capacity_kwh = self._get_battery_capacity()
 
@@ -615,11 +605,23 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             profile = self._device_profile_cfg
 
-            soc_min = self._get_setting(SETTING_SOC_MIN, profile.get("SOC_MIN", DEFAULT_SOC_MIN))
-            soc_max = self._get_setting(SETTING_SOC_MAX, profile.get("SOC_MAX", DEFAULT_SOC_MAX))
+            soc_min = self._get_setting(
+                SETTING_SOC_MIN,
+                profile.get("SOC_MIN", DEFAULT_SOC_MIN),
+            )
+            soc_max = self._get_setting(
+                SETTING_SOC_MAX,
+                profile.get("SOC_MAX", DEFAULT_SOC_MAX),
+            )
 
-            max_charge = self._get_setting(SETTING_MAX_CHARGE, profile.get("MAX_CHARGE_W", DEFAULT_MAX_CHARGE))
-            max_discharge = self._get_setting(SETTING_MAX_DISCHARGE, profile.get("MAX_DISCHARGE_W", DEFAULT_MAX_DISCHARGE))
+            max_charge = self._get_setting(
+                SETTING_MAX_CHARGE,
+                profile.get("MAX_CHARGE_W", DEFAULT_MAX_CHARGE),
+            )
+            max_discharge = self._get_setting(
+                SETTING_MAX_DISCHARGE,
+                profile.get("MAX_DISCHARGE_W", DEFAULT_MAX_DISCHARGE),
+            )
 
             # Clamp against profile hard limits
             profile_max_in = float(profile.get("MAX_INPUT_W", max_charge))
@@ -628,10 +630,16 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             max_discharge = min(float(max_discharge), profile_max_out)
 
             expensive = self._get_setting(SETTING_PRICE_THRESHOLD, DEFAULT_PRICE_THRESHOLD)
-            very_expensive = self._get_setting(SETTING_VERY_EXPENSIVE_THRESHOLD, DEFAULT_VERY_EXPENSIVE_THRESHOLD)
+            very_expensive = self._get_setting(
+                SETTING_VERY_EXPENSIVE_THRESHOLD,
+                DEFAULT_VERY_EXPENSIVE_THRESHOLD,
+            )
             emergency_soc = self._get_setting(SETTING_EMERGENCY_SOC, DEFAULT_EMERGENCY_SOC)
             emergency_w = self._get_setting(SETTING_EMERGENCY_CHARGE, DEFAULT_EMERGENCY_CHARGE)
-            profit_margin_pct = self._get_setting(SETTING_PROFIT_MARGIN_PCT, DEFAULT_PROFIT_MARGIN_PCT)
+            profit_margin_pct = self._get_setting(
+                SETTING_PROFIT_MARGIN_PCT,
+                DEFAULT_PROFIT_MARGIN_PCT,
+            )
 
             ai_mode = str(self.runtime_mode.get("ai_mode", AI_MODE_AUTOMATIC))
             manual_action = str(self.runtime_mode.get("manual_action", MANUAL_STANDBY))
@@ -644,14 +652,20 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             price_now = self._get_price_now()
             price_points = self._parse_price_points(now)
 
+            # Zusatzakku-Ladung
+            additional_battery_charge_w = _to_float(
+                self._state(self.entities.additional_battery_charge),
+                0.0,
+            )
+            additional_battery_charge_w = float(additional_battery_charge_w or 0.0)
+
             # --- Daily price average ---
             daily_avg_price = None
             if price_points:
                 prices = [p.price for p in price_points]
                 if prices:
-                     daily_avg_price = sum(prices) / len(prices)
+                    daily_avg_price = sum(prices) / len(prices)
 
-            # --- Current peak threshold ---
             peak_factor = float(
                 self.runtime_settings.get(
                     SETTING_PEAK_FACTOR,
@@ -659,26 +673,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
             )
 
-            # --------------------------------
-            # Valley factor (Peak-Valley tuning)
-            # --------------------------------
-
             valley_factor = float(
                 self.runtime_settings.get(
-                    "valley_factor",
-                    0.85,
-                )
+                    SETTING_VALLEY_FACTOR,
+                    DEFAULT_VALLEY_FACTOR,
+                ) or DEFAULT_VALLEY_FACTOR
             )
 
-            # --------------------------------
-            # Very cheap absolute price filter
-            # --------------------------------
-
-            very_cheap_price = self.runtime_settings.get(
-                "very_cheap_price",
-                None,
-            )
-
+            very_cheap_price = self.runtime_settings.get("very_cheap_price", None)
             if very_cheap_price is not None:
                 try:
                     very_cheap_price = float(very_cheap_price)
@@ -692,13 +694,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     daily_avg_price + 0.03,
                 )
 
-            valley_factor = float(
-                self.runtime_settings.get(
-                    SETTING_VALLEY_FACTOR,
-                    DEFAULT_VALLEY_FACTOR,
-                )
-            )
-
             current_valley_threshold = None
             if daily_avg_price is not None:
                 current_valley_threshold = daily_avg_price * valley_factor
@@ -709,21 +704,16 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 engine_health = "no_price_data"
             elif price_now is None:
                 engine_health = "no_current_price"
-            elif soc is None or pv is None:
-                engine_health = "sensor_invalid"
 
             # -----------------------------
-            # house load estimate (FINAL)
+            # House load estimate
             # -----------------------------
-
             battery_raw = self._state(self.entities.battery_ac_power)
             battery_power = _to_float(battery_raw, 0.0)
-
-            if battery_power is None:
-                battery_power = 0.0
+            battery_power = float(battery_power or 0.0)
 
             # Nur Entladung berücksichtigen
-            battery_discharge_w = max(0.0, float(battery_power))
+            battery_discharge_w = max(0.0, battery_power)
 
             house_load = max(
                 0.0,
@@ -732,60 +722,48 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 + float(battery_discharge_w)
                 - float(grid_export)
             )
-            
-            # -----------------------------
-            # Season detection (Option A)
-            # -----------------------------
-            season = self._season_detection(pv_w=pv_w, export_w=float(grid_export))
 
-            peak_factor = float(
-                self.runtime_settings.get(
-                    SETTING_PEAK_FACTOR,
-                    DEFAULT_PEAK_FACTOR,
-                )
+            # -----------------------------
+            # Season detection
+            # -----------------------------
+            season = self._season_detection(
+                pv_w=pv_w,
+                export_w=float(grid_export),
             )
-            
+
             # -----------------------------
             # Engine Context
             # -----------------------------
             ctx = DecisionContext(
                 now=now,
-
                 soc=soc,
                 soc_min=float(soc_min),
                 soc_max=float(soc_max),
-
                 emergency_soc=float(emergency_soc),
                 emergency_charge_w=float(emergency_w),
-
                 max_charge_w=float(max_charge),
                 max_discharge_w=float(max_discharge),
-
                 grid_import_w=float(grid_import),
                 grid_export_w=float(grid_export),
                 pv_w=float(pv_w),
                 house_load_w=float(house_load),
-
                 price_now=price_now,
                 avg_charge_price=self._persist.get("trade_avg_charge_price"),
                 expensive_threshold=float(expensive),
                 very_expensive_threshold=float(very_expensive),
                 profit_margin_pct=float(profit_margin_pct),
                 price_points=price_points,
-
                 ai_mode=ai_mode,
                 manual_action=manual_action,
                 season=season,
-
-                # --- V2 additions ---
                 profile=profile,
                 prev_discharge_w=float(self._persist.get("prev_discharge_w", 0.0)),
                 prev_charge_w=float(self._persist.get("prev_charge_w", 0.0)),
                 battery_capacity_kwh=battery_capacity_kwh,
                 peak_factor=peak_factor,
-
                 valley_factor=valley_factor,
                 very_cheap_price=very_cheap_price,
+                additional_battery_charge_w=additional_battery_charge_w,
             )
 
             decision = self._engine.evaluate(ctx)
@@ -802,7 +780,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if avg_price is None:
                     new_avg = price_now
                 else:
-                    new_avg = ((avg_price * charged_kwh + price_now * delta_kwh) / new_total_kwh)
+                    new_avg = (
+                        (avg_price * charged_kwh + price_now * delta_kwh)
+                        / new_total_kwh
+                    )
 
                 self._persist["trade_charged_kwh"] = new_total_kwh
                 self._persist["trade_avg_charge_price"] = new_avg
@@ -843,7 +824,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Persist previous discharge for delta controller
             self._persist["prev_discharge_w"] = float(decision.discharge_w or 0.0)
 
-            # charge memory for delta controller
+            # Charge memory for delta controller
             if decision.ac_mode == "input" and float(decision.charge_w or 0.0) > 0.0:
                 self._persist["prev_charge_w"] = float(decision.charge_w)
             else:
@@ -871,7 +852,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # -----------------------------
             # Apply setpoints
             # -----------------------------
-            ac_mode = ZENDURE_MODE_INPUT if decision.ac_mode == "input" else ZENDURE_MODE_OUTPUT
+            ac_mode = (
+                ZENDURE_MODE_INPUT
+                if decision.ac_mode == "input"
+                else ZENDURE_MODE_OUTPUT
+            )
             in_w = float(decision.charge_w) if ac_mode == ZENDURE_MODE_INPUT else 0.0
             out_w = float(decision.discharge_w) if ac_mode == ZENDURE_MODE_OUTPUT else 0.0
 
@@ -882,11 +867,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             await self._set_ac_mode(ac_mode)
 
-            # set limits
             await self._set_input_limit(in_w)
             await self._set_output_limit(out_w)
 
-            # Persist discharge memory for delta controller
             self._persist["last_set_output_w"] = out_w
 
             is_charging = ac_mode == ZENDURE_MODE_INPUT and in_w > 0.0
@@ -899,7 +882,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 self._persist["power_state"] = "idle"
 
-            # next_action_time (top-level sensor expects ISO or None)
             if is_charging or is_discharging:
                 self._persist["next_action_time"] = now.isoformat()
             else:
@@ -908,7 +890,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # -----------------------------
             # AI status + recommendation
             # -----------------------------
-            ai_status = self._map_ai_status(ai_mode=ai_mode, action=decision.action, reason=decision.reason)
+            ai_status = self._map_ai_status(
+                ai_mode=ai_mode,
+                action=decision.action,
+                reason=decision.reason,
+            )
             recommendation = self._map_reco(decision.action)
 
             # -----------------------------
@@ -941,6 +927,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "profile_max_input_w": profile_max_in,
                 "profile_max_output_w": profile_max_out,
                 "soc_limit": soc_limit,
+                "additional_battery_charge_w": additional_battery_charge_w,
                 "soc_limit_status": (
                     "not_configured"
                     if soc_limit is None
@@ -952,7 +939,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ),
             }
 
-            # --- top-level values used by sensor.py ---
             def _iso_or_none(val):
                 try:
                     if not val:
@@ -965,8 +951,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             next_action_time_state = _iso_or_none(self._persist.get("next_action_time"))
 
             next_action_state = (
-                "charging_active" if self._persist.get("power_state") == "charging"
-                else "discharging_active" if self._persist.get("power_state") == "discharging"
+                "charging_active"
+                if self._persist.get("power_state") == "charging"
+                else "discharging_active"
+                if self._persist.get("power_state") == "discharging"
                 else "none"
             )
 
@@ -981,9 +969,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "next_action_state": next_action_state,
                 "device_profile": self.device_profile_key,
                 "season_mode": (
-                    "manual" if ai_mode == AI_MODE_MANUAL
-                    else "summer" if ai_mode == AI_MODE_SUMMER
-                    else "winter" if ai_mode == AI_MODE_WINTER
+                    "manual"
+                    if ai_mode == AI_MODE_MANUAL
+                    else "summer"
+                    if ai_mode == AI_MODE_SUMMER
+                    else "winter"
+                    if ai_mode == AI_MODE_WINTER
                     else self._persist.get("season_mode", "winter")
                 ),
                 "fault_level_status": "normal",
