@@ -42,9 +42,6 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 2
 
-    # -----------------------------------------------------
-    # INITIAL SETUP
-    # -----------------------------------------------------
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
             self._user_input = user_input
@@ -75,6 +72,9 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not self._user_input.get(CONF_PRICE_NOW_ENTITY):
                 self._user_input.pop(CONF_PRICE_NOW_ENTITY, None)
 
+            if not self._user_input.get(CONF_SOC_LIMIT_ENTITY):
+                self._user_input.pop(CONF_SOC_LIMIT_ENTITY, None)
+
             if not self._user_input.get(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY):
                 self._user_input.pop(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY, None)
 
@@ -90,9 +90,6 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    # -----------------------------------------------------
-    # RECONFIGURE
-    # -----------------------------------------------------
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None):
         entry = self._get_reconfigure_entry()
 
@@ -135,6 +132,9 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not cleaned.get(CONF_PRICE_NOW_ENTITY):
                 cleaned.pop(CONF_PRICE_NOW_ENTITY, None)
 
+            if not cleaned.get(CONF_SOC_LIMIT_ENTITY):
+                cleaned.pop(CONF_SOC_LIMIT_ENTITY, None)
+
             if not cleaned.get(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY):
                 cleaned.pop(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY, None)
 
@@ -151,109 +151,167 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    # -----------------------------------------------------
-    # OPTIONS FLOW
-    # -----------------------------------------------------
     @staticmethod
     def async_get_options_flow(entry: config_entries.ConfigEntry):
         return ZendureSmartFlowOptionsFlow(entry)
 
-    # -----------------------------------------------------
-    # SCHEMAS
-    # -----------------------------------------------------
     def _base_schema(self, entry: config_entries.ConfigEntry | None = None) -> vol.Schema:
         def _val(key: str):
             if entry:
                 return entry.options.get(key, entry.data.get(key))
             return None
 
-        return vol.Schema(
-            {
-                vol.Required(
-                    CONF_DEVICE_PROFILE,
-                    default=_val(CONF_DEVICE_PROFILE) or DEFAULT_DEVICE_PROFILE,
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            {
-                                "value": key,
-                                "label": DEVICE_PROFILES[key].get("label", key),
-                            }
-                            for key in DEVICE_PROFILES
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(CONF_SOC_ENTITY, default=_val(CONF_SOC_ENTITY)): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Optional(CONF_SOC_LIMIT_ENTITY, default=_val(CONF_SOC_LIMIT_ENTITY)): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Required(
-                    CONF_PACK_CAPACITY_KWH,
-                    default=_val(CONF_PACK_CAPACITY_KWH) or DEFAULT_PACK_CAPACITY_KWH,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=20.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Required(CONF_PV_ENTITY, default=_val(CONF_PV_ENTITY)): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Required(
-                    CONF_BATTERY_AC_POWER_ENTITY,
-                    default=_val(CONF_BATTERY_AC_POWER_ENTITY),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
+        schema: dict[Any, Any] = {}
+
+        schema[
+            vol.Required(
+                CONF_DEVICE_PROFILE,
+                default=_val(CONF_DEVICE_PROFILE) or DEFAULT_DEVICE_PROFILE,
+            )
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    {
+                        "value": key,
+                        "label": DEVICE_PROFILES[key].get("label", key),
+                    }
+                    for key in DEVICE_PROFILES
+                ],
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
+
+        schema[
+            vol.Required(CONF_SOC_ENTITY, default=_val(CONF_SOC_ENTITY))
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor")
+        )
+
+        soc_limit_val = _val(CONF_SOC_LIMIT_ENTITY)
+        if soc_limit_val:
+            schema[
+                vol.Optional(CONF_SOC_LIMIT_ENTITY, default=soc_limit_val)
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+        else:
+            schema[
+                vol.Optional(CONF_SOC_LIMIT_ENTITY)
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+
+        schema[
+            vol.Required(
+                CONF_PACK_CAPACITY_KWH,
+                default=_val(CONF_PACK_CAPACITY_KWH) or DEFAULT_PACK_CAPACITY_KWH,
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0.1,
+                max=20.0,
+                step=0.01,
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+
+        schema[
+            vol.Required(CONF_PV_ENTITY, default=_val(CONF_PV_ENTITY))
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor")
+        )
+
+        schema[
+            vol.Required(
+                CONF_BATTERY_AC_POWER_ENTITY,
+                default=_val(CONF_BATTERY_AC_POWER_ENTITY),
+            )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor")
+        )
+
+        additional_battery_val = _val(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY)
+        if additional_battery_val:
+            schema[
                 vol.Optional(
                     CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY,
-                    default=_val(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY) or "",
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Optional(
-                    CONF_PRICE_EXPORT_ENTITY,
-                    default=_val(CONF_PRICE_EXPORT_ENTITY) or "",
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Optional(
-                    CONF_PRICE_NOW_ENTITY,
-                    default=_val(CONF_PRICE_NOW_ENTITY) or "",
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Required(CONF_AC_MODE_ENTITY, default=_val(CONF_AC_MODE_ENTITY)): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="select")
-                ),
-                vol.Required(CONF_INPUT_LIMIT_ENTITY, default=_val(CONF_INPUT_LIMIT_ENTITY)): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="number")
-                ),
-                vol.Required(CONF_OUTPUT_LIMIT_ENTITY, default=_val(CONF_OUTPUT_LIMIT_ENTITY)): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="number")
-                ),
-                vol.Required(
-                    CONF_GRID_MODE,
-                    default=_val(CONF_GRID_MODE) or GRID_MODE_SINGLE,
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            {"value": GRID_MODE_NONE, "label": "Kein Netzsensor"},
-                            {"value": GRID_MODE_SINGLE, "label": "Ein Sensor (+ / −)"},
-                            {
-                                "value": GRID_MODE_SPLIT,
-                                "label": "Zwei Sensoren (Bezug & Einspeisung)",
-                            },
-                        ]
-                    )
-                ),
-            }
+                    default=additional_battery_val,
+                )
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+        else:
+            schema[
+                vol.Optional(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY)
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+
+        price_export_val = _val(CONF_PRICE_EXPORT_ENTITY)
+        if price_export_val:
+            schema[
+                vol.Optional(CONF_PRICE_EXPORT_ENTITY, default=price_export_val)
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+        else:
+            schema[
+                vol.Optional(CONF_PRICE_EXPORT_ENTITY)
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+
+        price_now_val = _val(CONF_PRICE_NOW_ENTITY)
+        if price_now_val:
+            schema[
+                vol.Optional(CONF_PRICE_NOW_ENTITY, default=price_now_val)
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+        else:
+            schema[
+                vol.Optional(CONF_PRICE_NOW_ENTITY)
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+
+        schema[
+            vol.Required(CONF_AC_MODE_ENTITY, default=_val(CONF_AC_MODE_ENTITY))
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="select")
         )
+
+        schema[
+            vol.Required(CONF_INPUT_LIMIT_ENTITY, default=_val(CONF_INPUT_LIMIT_ENTITY))
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="number")
+        )
+
+        schema[
+            vol.Required(CONF_OUTPUT_LIMIT_ENTITY, default=_val(CONF_OUTPUT_LIMIT_ENTITY))
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="number")
+        )
+
+        schema[
+            vol.Required(
+                CONF_GRID_MODE,
+                default=_val(CONF_GRID_MODE) or GRID_MODE_SINGLE,
+            )
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    {"value": GRID_MODE_NONE, "label": "Kein Netzsensor"},
+                    {"value": GRID_MODE_SINGLE, "label": "Ein Sensor (+ / −)"},
+                    {
+                        "value": GRID_MODE_SPLIT,
+                        "label": "Zwei Sensoren (Bezug & Einspeisung)",
+                    },
+                ]
+            )
+        )
+
+        return vol.Schema(schema)
 
     def _grid_schema(
         self,
