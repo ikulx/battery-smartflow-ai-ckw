@@ -1,3 +1,9 @@
+![GitHub Release](https://img.shields.io/github/v/release/PalmManiac/battery-smartflow-ai)
+![GitHub Downloads](https://img.shields.io/github/downloads/PalmManiac/battery-smartflow-ai/total)
+![GitHub Stars](https://img.shields.io/github/stars/PalmManiac/battery-smartflow-ai)
+![License](https://img.shields.io/github/license/PalmManiac/battery-smartflow-ai)
+![HACS Default](https://img.shields.io/badge/HACS-Default-blue)
+
 # Battery SmartFlow AI
 
 **Intelligent, economic and stable control for Zendure SolarFlow systems in Home Assistant**
