@@ -1,14 +1,27 @@
-![GitHub Release](https://img.shields.io/github/v/release/PalmManiac/battery-smartflow-ai)
-![GitHub Downloads](https://img.shields.io/github/downloads/PalmManiac/battery-smartflow-ai/total)
-![GitHub Stars](https://img.shields.io/github/stars/PalmManiac/battery-smartflow-ai)
-![License](https://img.shields.io/github/license/PalmManiac/battery-smartflow-ai)
-![HACS Default](https://img.shields.io/badge/HACS-Default-blue)
-
 # Battery SmartFlow AI
 
 **Intelligent, economic and stable control for Zendure SolarFlow systems in Home Assistant**
 
 ---
+
+![GitHub Release](https://img.shields.io/github/v/release/PalmManiac/battery-smartflow-ai?style=for-the-badge)
+![GitHub Downloads](https://img.shields.io/github/downloads/PalmManiac/battery-smartflow-ai/total?style=for-the-badge)
+![GitHub Stars](https://img.shields.io/github/stars/PalmManiac/battery-smartflow-ai?style=for-the-badge)
+![GitHub Issues](https://img.shields.io/github/issues/PalmManiac/battery-smartflow-ai?style=for-the-badge)
+![License](https://img.shields.io/github/license/PalmManiac/battery-smartflow-ai?style=for-the-badge)
+
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.1.0%2B-blue?style=for-the-badge)
+![HACS](https://img.shields.io/badge/HACS-Default-blue?style=for-the-badge)
+
+---
+
+# 🌍 Language
+
+- 🇬🇧 English
+- 🇩🇪 Deutsch
+
+---
+
 
 ## What does this integration do?
 
