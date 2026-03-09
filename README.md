@@ -3,12 +3,13 @@
 ---
 
 ![GitHub Release](https://img.shields.io/github/v/release/PalmManiac/battery-smartflow-ai?style=for-the-badge)
+![Maintained](https://img.shields.io/badge/Maintained-Yes-green?style=for-the-badge)
+![GitHub Repo Size](https://img.shields.io/github/repo-size/PalmManiac/battery-smartflow-ai?style=for-the-badge)
 ![GitHub Downloads](https://img.shields.io/github/downloads/PalmManiac/battery-smartflow-ai/total?style=for-the-badge)
+![HACS Installs](https://img.shields.io/badge/dynamic/json?color=blue&label=HACS%20Installs&query=$.downloads&url=https://analytics.hacs.xyz/data/integrations/battery-smartflow-ai&style=for-the-badge)
 ![GitHub Stars](https://img.shields.io/github/stars/PalmManiac/battery-smartflow-ai?style=for-the-badge)
 ![GitHub Issues](https://img.shields.io/github/issues/PalmManiac/battery-smartflow-ai?style=for-the-badge)
 ![License](https://img.shields.io/github/license/PalmManiac/battery-smartflow-ai?style=for-the-badge)
-
-![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.1.0%2B-blue?style=for-the-badge)
 ![HACS](https://img.shields.io/badge/HACS-Default-blue?style=for-the-badge)
 
 ---
