@@ -5,6 +5,7 @@
 ![GitHub Release](https://img.shields.io/github/v/release/PalmManiac/battery-smartflow-ai?style=for-the-badge)
 ![Maintained](https://img.shields.io/badge/Maintained-Yes-green?style=for-the-badge)
 ![GitHub Repo Size](https://img.shields.io/github/repo-size/PalmManiac/battery-smartflow-ai?style=for-the-badge)
+[![Active installations](https://badge.t-haber.de/badge/battery_smartflow_ai?kill_cache=1)](https://github.com/PalmManiac/battery-smartflow-ai/)
 ![GitHub Downloads](https://img.shields.io/github/downloads/PalmManiac/battery-smartflow-ai/total?style=for-the-badge)
 ![GitHub Stars](https://img.shields.io/github/stars/PalmManiac/battery-smartflow-ai?style=for-the-badge)
 ![License](https://img.shields.io/github/license/PalmManiac/battery-smartflow-ai?style=for-the-badge)
