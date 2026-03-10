@@ -80,7 +80,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not errors:
                 return self.async_create_entry(
-                    title="Zendure SmartFlow AI",
+                    title="Battery SmartFlow AI",
                     data=self._user_input,
                 )
 
