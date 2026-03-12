@@ -517,16 +517,36 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _season_detection(self, pv_w: float, export_w: float) -> str:
         """
-        V3.1.x logic retained for now.
-        V3.2.0 foundation: installed_pv_wp is already available for later use.
+        Season detection based on installed PV power.
+        Slow anti-flip counter with relative thresholds.
         """
-        _installed_pv_wp = self._get_installed_pv_wp()
-
         season = self._persist.get("season_mode", "winter")
         counter = int(self._persist.get("season_counter", 0))
 
-        summer_signal = (pv_w > 800.0 and export_w > 300.0)
-        winter_signal = (pv_w < 400.0 and export_w < 100.0)
+        installed_pv_wp = self._get_installed_pv_wp()
+
+        # Fallback for users without configured PV size yet
+        if installed_pv_wp <= 0:
+            summer_pv_threshold = 1100.0
+            summer_export_threshold = 350.0
+            winter_pv_threshold = 500.0
+            winter_export_threshold = 140.0
+        else:
+            summer_pv_threshold = max(900.0, installed_pv_wp * 0.46)
+            summer_export_threshold = max(300.0, installed_pv_wp * 0.15)
+
+            winter_pv_threshold = max(450.0, installed_pv_wp * 0.22)
+            winter_export_threshold = max(120.0, installed_pv_wp * 0.06)
+
+        summer_signal = (
+            pv_w > summer_pv_threshold
+            and export_w > summer_export_threshold
+        )
+
+        winter_signal = (
+            pv_w < winter_pv_threshold
+            and export_w < winter_export_threshold
+        )
 
         if summer_signal:
             counter += 1
@@ -546,6 +566,16 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._persist["season_mode"] = season
         self._persist["season_counter"] = counter
+
+        self._persist["season_thresholds"] = {
+            "installed_pv_wp": installed_pv_wp,
+            "summer_pv_threshold": summer_pv_threshold,
+            "summer_export_threshold": summer_export_threshold,
+            "winter_pv_threshold": winter_pv_threshold,
+            "winter_export_threshold": winter_export_threshold,
+            "counter": counter,
+        }
+
         return season
 
     def _map_ai_status(self, ai_mode: str, action: str, reason: str) -> str:
