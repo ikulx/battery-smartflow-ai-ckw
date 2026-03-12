@@ -45,7 +45,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
-            self._user_input = user_input
+            self._user_input = dict(user_input)
             return await self.async_step_grid()
 
         return self.async_show_form(
@@ -79,6 +79,13 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not self._user_input.get(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY):
                 self._user_input.pop(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY, None)
 
+            if grid_mode != GRID_MODE_SINGLE:
+                self._user_input.pop(CONF_GRID_POWER_ENTITY, None)
+
+            if grid_mode != GRID_MODE_SPLIT:
+                self._user_input.pop(CONF_GRID_IMPORT_ENTITY, None)
+                self._user_input.pop(CONF_GRID_EXPORT_ENTITY, None)
+
             if not errors:
                 return self.async_create_entry(
                     title="Battery SmartFlow AI",
@@ -104,7 +111,10 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=self._base_schema(entry),
         )
 
-    async def async_step_reconfigure_grid(self, user_input: dict[str, Any] | None = None):
+    async def async_step_reconfigure_grid(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ):
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
 
@@ -116,6 +126,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if grid_mode != GRID_MODE_SINGLE:
                 cleaned.pop(CONF_GRID_POWER_ENTITY, None)
+
             if grid_mode != GRID_MODE_SPLIT:
                 cleaned.pop(CONF_GRID_IMPORT_ENTITY, None)
                 cleaned.pop(CONF_GRID_EXPORT_ENTITY, None)
@@ -156,10 +167,13 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry: config_entries.ConfigEntry):
         return ZendureSmartFlowOptionsFlow(config_entry)
 
-    def _base_schema(self, entry: config_entries.ConfigEntry | None = None) -> vol.Schema:
+    def _base_schema(
+        self,
+        entry: config_entries.ConfigEntry | None = None,
+    ) -> vol.Schema:
         def _val(key: str):
             if entry:
-                return entry.options.get(key, entry.data.get(key))
+                return entry.data.get(key)
             return None
 
         schema: dict[Any, Any] = {}
@@ -283,13 +297,19 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         schema[
-            vol.Required(CONF_INPUT_LIMIT_ENTITY, default=_val(CONF_INPUT_LIMIT_ENTITY))
+            vol.Required(
+                CONF_INPUT_LIMIT_ENTITY,
+                default=_val(CONF_INPUT_LIMIT_ENTITY),
+            )
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(domain="number")
         )
 
         schema[
-            vol.Required(CONF_OUTPUT_LIMIT_ENTITY, default=_val(CONF_OUTPUT_LIMIT_ENTITY))
+            vol.Required(
+                CONF_OUTPUT_LIMIT_ENTITY,
+                default=_val(CONF_OUTPUT_LIMIT_ENTITY),
+            )
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(domain="number")
         )
@@ -321,7 +341,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> vol.Schema:
         def _val(key: str):
             if entry:
-                return entry.options.get(key, entry.data.get(key))
+                return entry.data.get(key)
             return None
 
         schema: dict[Any, Any] = {}
@@ -376,7 +396,10 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
 
     def _build_schema(self) -> vol.Schema:
         profile_key = self._current_profile_key()
-        profile = DEVICE_PROFILES.get(profile_key, DEVICE_PROFILES[DEFAULT_DEVICE_PROFILE])
+        profile = DEVICE_PROFILES.get(
+            profile_key,
+            DEVICE_PROFILES[DEFAULT_DEVICE_PROFILE],
+        )
         overrides = self._current_profile_overrides()
 
         schema: dict[Any, Any] = {}
@@ -386,7 +409,10 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                 CONF_INSTALLED_PV_WP,
                 default=self.config_entry.options.get(
                     CONF_INSTALLED_PV_WP,
-                    self.config_entry.data.get(CONF_INSTALLED_PV_WP, DEFAULT_INSTALLED_PV_WP),
+                    self.config_entry.data.get(
+                        CONF_INSTALLED_PV_WP,
+                        DEFAULT_INSTALLED_PV_WP,
+                    ),
                 ),
             )
         ] = selector.NumberSelector(
@@ -419,7 +445,10 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             merged_options = dict(self.config_entry.options)
 
-            installed_pv_wp = user_input.pop(CONF_INSTALLED_PV_WP, DEFAULT_INSTALLED_PV_WP)
+            installed_pv_wp = user_input.pop(
+                CONF_INSTALLED_PV_WP,
+                DEFAULT_INSTALLED_PV_WP,
+            )
 
             profile_overrides: dict[str, float] = {}
             for key in PROFILE_OVERRIDE_FIELDS:
