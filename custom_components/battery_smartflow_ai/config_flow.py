@@ -443,7 +443,7 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
-            merged_options = dict(self.config_entry.options)
+            merged_options = dict(self._config_entry.options)
 
             installed_pv_wp = user_input.pop(
                 CONF_INSTALLED_PV_WP,
