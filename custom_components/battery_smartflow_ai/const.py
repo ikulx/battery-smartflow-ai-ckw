@@ -10,7 +10,7 @@ DOMAIN = "battery_smartflow_ai"
 INTEGRATION_NAME = "Battery SmartFlow AI"
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "3.1.1"
+INTEGRATION_VERSION = "3.2.0"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -47,6 +47,13 @@ CONF_GRID_EXPORT_ENTITY = "grid_export_entity"    # export W
 CONF_PACK_CAPACITY_KWH = "pack_capacity_kwh"
 CONF_BATTERY_AC_POWER_ENTITY = "battery_ac_power_entity"
 
+# --- New for V3.2.0 ---
+CONF_INSTALLED_PV_WP = "installed_pv_wp"
+CONF_PROFILE_OVERRIDES = "profile_overrides"
+
+# --- Helper constants for dynamic GUI profile override entities ---
+PROFILE_OVERRIDE_PREFIX = "profile_override_"
+
 # --- Runtime settings ---
 SETTING_BATTERY_PACKS = "battery_packs"
 
@@ -60,14 +67,19 @@ DEFAULT_BATTERY_PACKS = 1
 DEFAULT_VALLEY_FACTOR = 0.85
 DEFAULT_VERY_CHEAP_PRICE = None
 
+# --- New default for V3.2.0 ---
+DEFAULT_INSTALLED_PV_WP = 0.0
+
 # --------------------------------------------------
-# Device profiles (V1.5.x)
+# Device profiles (V1.5.x / V3.2.0 overrides)
 # --------------------------------------------------
 
 CONF_DEVICE_PROFILE = "device_profile"
 
 DEVICE_PROFILE_SF2400AC = "SF2400AC"
 DEVICE_PROFILE_SF800PRO = "SF800Pro"
+DEVICE_PROFILE_SF1600AC = "SF1600AC"
+DEVICE_PROFILE_HYPER2000 = "Hyper 2000"
 
 DEFAULT_DEVICE_PROFILE = DEVICE_PROFILE_SF2400AC
 
