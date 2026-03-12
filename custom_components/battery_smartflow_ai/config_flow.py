@@ -30,11 +30,12 @@ from .const import (
     CONF_SOC_LIMIT_ENTITY,
     CONF_PACK_CAPACITY_KWH,
     DEFAULT_PACK_CAPACITY_KWH,
-    SETTING_PEAK_FACTOR,
-    DEFAULT_PEAK_FACTOR,
+    CONF_PROFILE_OVERRIDES,
+    CONF_INSTALLED_PV_WP,
+    DEFAULT_INSTALLED_PV_WP,
 )
 
-from .device_profiles import DEVICE_PROFILES
+from .device_profiles import DEVICE_PROFILES, PROFILE_OVERRIDE_FIELDS
 
 
 class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -150,6 +151,10 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=self._grid_schema(grid_mode, entry),
             errors=errors,
         )
+
+    @staticmethod
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
+        return ZendureSmartFlowOptionsFlow(config_entry)
 
     def _base_schema(self, entry: config_entries.ConfigEntry | None = None) -> vol.Schema:
         def _val(key: str):
@@ -351,3 +356,90 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return vol.Schema(schema)
 
+
+class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
+    """Options flow for profile overrides and expert settings."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self.config_entry = config_entry
+
+    def _current_profile_key(self) -> str:
+        return (
+            self.config_entry.options.get(CONF_DEVICE_PROFILE)
+            or self.config_entry.data.get(CONF_DEVICE_PROFILE)
+            or DEFAULT_DEVICE_PROFILE
+        )
+
+    def _current_profile_overrides(self) -> dict[str, float]:
+        overrides = self.config_entry.options.get(CONF_PROFILE_OVERRIDES, {})
+        return overrides if isinstance(overrides, dict) else {}
+
+    def _build_schema(self) -> vol.Schema:
+        profile_key = self._current_profile_key()
+        profile = DEVICE_PROFILES.get(profile_key, DEVICE_PROFILES[DEFAULT_DEVICE_PROFILE])
+        overrides = self._current_profile_overrides()
+
+        schema: dict[Any, Any] = {}
+
+        schema[
+            vol.Optional(
+                CONF_INSTALLED_PV_WP,
+                default=self.config_entry.options.get(
+                    CONF_INSTALLED_PV_WP,
+                    self.config_entry.data.get(CONF_INSTALLED_PV_WP, DEFAULT_INSTALLED_PV_WP),
+                ),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=50000,
+                step=10,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="Wp",
+            )
+        )
+
+        for key, meta in PROFILE_OVERRIDE_FIELDS.items():
+            default_value = overrides.get(key, profile.get(key))
+            schema[
+                vol.Optional(key, default=default_value)
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=meta["min"],
+                    max=meta["max"],
+                    step=meta["step"],
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement=meta["unit"] or None,
+                )
+            )
+
+        return vol.Schema(schema)
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+        if user_input is not None:
+            merged_options = dict(self.config_entry.options)
+
+            installed_pv_wp = user_input.pop(CONF_INSTALLED_PV_WP, DEFAULT_INSTALLED_PV_WP)
+
+            profile_overrides: dict[str, float] = {}
+            for key in PROFILE_OVERRIDE_FIELDS:
+                value = user_input.get(key)
+                if value is None:
+                    continue
+                try:
+                    profile_overrides[key] = float(value)
+                except (TypeError, ValueError):
+                    continue
+
+            merged_options[CONF_INSTALLED_PV_WP] = float(installed_pv_wp)
+            merged_options[CONF_PROFILE_OVERRIDES] = profile_overrides
+
+            return self.async_create_entry(
+                title="",
+                data=merged_options,
+            )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self._build_schema(),
+        )
