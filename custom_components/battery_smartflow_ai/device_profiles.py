@@ -1,3 +1,86 @@
+from __future__ import annotations
+
+PROFILE_OVERRIDE_FIELDS = {
+    "TARGET_IMPORT_W": {
+        "label": "Ziel-Netzbezug",
+        "min": 0.0,
+        "max": 300.0,
+        "step": 5.0,
+        "unit": "W",
+        "icon": "mdi:transmission-tower-import",
+    },
+    "DEADBAND_W": {
+        "label": "Deadband",
+        "min": 0.0,
+        "max": 200.0,
+        "step": 5.0,
+        "unit": "W",
+        "icon": "mdi:arrow-expand-horizontal",
+    },
+    "EXPORT_GUARD_W": {
+        "label": "Export-Schutz",
+        "min": 0.0,
+        "max": 300.0,
+        "step": 5.0,
+        "unit": "W",
+        "icon": "mdi:shield-outline",
+    },
+    "KP_UP": {
+        "label": "KP Hochregeln",
+        "min": 0.10,
+        "max": 2.00,
+        "step": 0.01,
+        "unit": "",
+        "icon": "mdi:chart-line-variant",
+    },
+    "KP_DOWN": {
+        "label": "KP Runterregeln",
+        "min": 0.10,
+        "max": 2.00,
+        "step": 0.01,
+        "unit": "",
+        "icon": "mdi:chart-line-variant",
+    },
+    "MAX_STEP_UP": {
+        "label": "Max. Schritt Hochregeln",
+        "min": 50.0,
+        "max": 2000.0,
+        "step": 10.0,
+        "unit": "W",
+        "icon": "mdi:arrow-up-bold",
+    },
+    "MAX_STEP_DOWN": {
+        "label": "Max. Schritt Runterregeln",
+        "min": 50.0,
+        "max": 2000.0,
+        "step": 10.0,
+        "unit": "W",
+        "icon": "mdi:arrow-down-bold",
+    },
+    "KEEPALIVE_MIN_DEFICIT_W": {
+        "label": "Keepalive Mindestdefizit",
+        "min": 0.0,
+        "max": 200.0,
+        "step": 5.0,
+        "unit": "W",
+        "icon": "mdi:flash-outline",
+    },
+    "KEEPALIVE_MIN_OUTPUT_W": {
+        "label": "Keepalive Mindestleistung",
+        "min": 0.0,
+        "max": 300.0,
+        "step": 5.0,
+        "unit": "W",
+        "icon": "mdi:flash",
+    },
+}
+
+# Optional: diese Felder sollen zwar sichtbar, aber nicht editierbar sein
+PROFILE_FIXED_FIELDS = {
+    "MAX_INPUT_W",
+    "MAX_OUTPUT_W",
+}
+
 SF800PRO_PROFILE = {
     # --- UI ---
     "label": "Zendure SF800Pro",
@@ -17,7 +100,6 @@ SF800PRO_PROFILE = {
     "MAX_INPUT_W": 1000.0,
     "MAX_OUTPUT_W": 800.0,
 }
-
 
 SF2400AC_PROFILE = {
     # --- UI ---
@@ -39,7 +121,6 @@ SF2400AC_PROFILE = {
     "MAX_OUTPUT_W": 2400.0,
 }
 
-
 SF1600AC_PROFILE = {
     # --- UI ---
     "label": "Zendure SF1600AC+",
@@ -59,7 +140,6 @@ SF1600AC_PROFILE = {
     "MAX_INPUT_W": 1600.0,
     "MAX_OUTPUT_W": 1600.0,
 }
-
 
 HYPER2000_PROFILE = {
     # --- UI ---
@@ -87,3 +167,31 @@ DEVICE_PROFILES = {
     "SF1600AC": SF1600AC_PROFILE,
     "Hyper 2000": HYPER2000_PROFILE,
 }
+
+
+def get_profile_config(profile_key: str) -> dict:
+    return DEVICE_PROFILES.get(profile_key, DEVICE_PROFILES["SF2400AC"])
+
+
+def get_profile_defaults(profile_key: str) -> dict:
+    profile = get_profile_config(profile_key)
+    return {
+        key: value
+        for key, value in profile.items()
+        if key in PROFILE_OVERRIDE_FIELDS
+    }
+
+
+def merge_profile_with_overrides(profile_key: str, overrides: dict | None) -> dict:
+    profile = dict(get_profile_config(profile_key))
+    if not overrides:
+        return profile
+
+    for key in PROFILE_OVERRIDE_FIELDS:
+        if key in overrides and overrides[key] is not None:
+            try:
+                profile[key] = float(overrides[key])
+            except (TypeError, ValueError):
+                continue
+
+    return profile
