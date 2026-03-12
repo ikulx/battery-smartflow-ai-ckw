@@ -112,7 +112,11 @@
           "input_limit_entity": "Einstellbare Ladeleistung in Watt.",
           "output_limit_entity": "Einstellbare Entladeleistung in Watt."
         }
-      },
+      }
+    }
+  },
+  "options": {
+    "step": {
       "init": {
         "title": "Regelprofil bearbeiten",
         "description": "Experteneinstellungen für das aktive Geräteprofil. Diese Werte ändern das interne Regelverhalten und sollten nur angepasst werden, wenn du die Wirkung kennst.",
