@@ -381,17 +381,17 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
     """Options flow for profile overrides and expert settings."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
+        self._config_entry = config_entry
 
     def _current_profile_key(self) -> str:
         return (
-            self.config_entry.options.get(CONF_DEVICE_PROFILE)
-            or self.config_entry.data.get(CONF_DEVICE_PROFILE)
+            self._config_entry.options.get(CONF_DEVICE_PROFILE)
+            or self._config_entry.data.get(CONF_DEVICE_PROFILE)
             or DEFAULT_DEVICE_PROFILE
         )
 
     def _current_profile_overrides(self) -> dict[str, float]:
-        overrides = self.config_entry.options.get(CONF_PROFILE_OVERRIDES, {})
+        overrides = self._config_entry.options.get(CONF_PROFILE_OVERRIDES, {})
         return overrides if isinstance(overrides, dict) else {}
 
     def _build_schema(self) -> vol.Schema:
@@ -407,9 +407,9 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         schema[
             vol.Optional(
                 CONF_INSTALLED_PV_WP,
-                default=self.config_entry.options.get(
+                default=self._config_entry.options.get(
                     CONF_INSTALLED_PV_WP,
-                    self.config_entry.data.get(
+                    self._config_entry.data.get(
                         CONF_INSTALLED_PV_WP,
                         DEFAULT_INSTALLED_PV_WP,
                     ),
