@@ -317,9 +317,7 @@ class DecisionEngine:
     # -------------------------------------------------
 
     def _compute_base_price(self, prices: List[float]) -> float:
-        avg_price = sum(prices) / len(prices)
-        median_price = statistics.median(prices)
-        return min(avg_price, median_price)
+        return sum(prices) / len(prices)
 
     def _compute_peak_threshold(self, prices: List[float], peak_factor: float) -> float:
         base_price = self._compute_base_price(prices)
