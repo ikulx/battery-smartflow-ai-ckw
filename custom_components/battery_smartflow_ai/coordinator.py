@@ -943,6 +943,15 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if soc_limit == 1
                     else "lower_limit_active"
                 ),
+                "effective_target_import_w": profile.get("TARGET_IMPORT_W"),
+                "effective_deadband_w": profile.get("DEADBAND_W"),
+                "effective_export_guard_w": profile.get("EXPORT_GUARD_W"),
+                "effective_kp_up": profile.get("KP_UP"),
+                "effective_kp_down": profile.get("KP_DOWN"),
+                "effective_max_step_up": profile.get("MAX_STEP_UP"),
+                "effective_max_step_down": profile.get("MAX_STEP_DOWN"),
+                "effective_keepalive_min_deficit_w": profile.get("KEEPALIVE_MIN_DEFICIT_W"),
+                "effective_keepalive_min_output_w": profile.get("KEEPALIVE_MIN_OUTPUT_W"),
             }
 
             def _iso_or_none(val):
