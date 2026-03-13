@@ -995,7 +995,7 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                 options=merged_options,
             )
 
-            return self.async_create_entry(title="", data={})
+            return self.async_create_entry(title="", data=merged_options)
 
         options_schema = vol.Schema(
             {
