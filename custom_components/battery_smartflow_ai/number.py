@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from homeassistant.components.number import (
-    NumberEntity,
-    NumberEntityDescription,
-)
+from homeassistant.components.number import NumberEntity, NumberEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -20,6 +17,22 @@ from .const import (
     DEFAULT_BATTERY_PACKS,
     SETTING_PEAK_FACTOR,
     DEFAULT_PEAK_FACTOR,
+    SETTING_SOC_MIN,
+    SETTING_SOC_MAX,
+    SETTING_MAX_CHARGE,
+    SETTING_MAX_DISCHARGE,
+    SETTING_EMERGENCY_CHARGE,
+    SETTING_EMERGENCY_SOC,
+    SETTING_PROFIT_MARGIN_PCT,
+    SETTING_VERY_EXPENSIVE_THRESHOLD,
+    DEFAULT_SOC_MIN,
+    DEFAULT_SOC_MAX,
+    DEFAULT_MAX_CHARGE,
+    DEFAULT_MAX_DISCHARGE,
+    DEFAULT_EMERGENCY_CHARGE,
+    DEFAULT_EMERGENCY_SOC,
+    DEFAULT_PROFIT_MARGIN_PCT,
+    DEFAULT_VERY_EXPENSIVE_THRESHOLD,
 )
 
 # --- NEW SETTINGS ---
@@ -36,7 +49,6 @@ class ZendureNumberEntityDescription(NumberEntityDescription):
 
 
 NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
-
     ZendureNumberEntityDescription(
         key=SETTING_BATTERY_PACKS,
         translation_key="battery_packs",
@@ -46,7 +58,6 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         native_step=1,
         mode="box",
     ),
-
     ZendureNumberEntityDescription(
         key=SETTING_PEAK_FACTOR,
         translation_key="peak_factor",
@@ -57,11 +68,6 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         mode="box",
         icon="mdi:chart-bell-curve",
     ),
-
-    # -----------------------------------------------------
-    # NEW: Valley Factor
-    # -----------------------------------------------------
-
     ZendureNumberEntityDescription(
         key=SETTING_VALLEY_FACTOR,
         translation_key="valley_factor",
@@ -72,11 +78,6 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         mode="box",
         icon="mdi:chart-bell-curve",
     ),
-
-    # -----------------------------------------------------
-    # NEW: Very Cheap Price
-    # -----------------------------------------------------
-
     ZendureNumberEntityDescription(
         key=SETTING_VERY_CHEAP_PRICE,
         translation_key="very_cheap_price",
@@ -87,11 +88,10 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         native_unit_of_measurement="€/kWh",
         icon="mdi:cash",
     ),
-
     ZendureNumberEntityDescription(
-        key="soc_min",
+        key=SETTING_SOC_MIN,
         translation_key="soc_min",
-        runtime_key="soc_min",
+        runtime_key=SETTING_SOC_MIN,
         native_min_value=0,
         native_max_value=100,
         native_step=1,
@@ -99,9 +99,9 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         icon="mdi:battery-alert",
     ),
     ZendureNumberEntityDescription(
-        key="soc_max",
+        key=SETTING_SOC_MAX,
         translation_key="soc_max",
-        runtime_key="soc_max",
+        runtime_key=SETTING_SOC_MAX,
         native_min_value=0,
         native_max_value=100,
         native_step=1,
@@ -109,9 +109,9 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         icon="mdi:battery-check",
     ),
     ZendureNumberEntityDescription(
-        key="max_charge",
+        key=SETTING_MAX_CHARGE,
         translation_key="max_charge",
-        runtime_key="max_charge",
+        runtime_key=SETTING_MAX_CHARGE,
         native_min_value=0,
         native_max_value=2400,
         native_step=50,
@@ -119,9 +119,9 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         icon="mdi:battery-arrow-up",
     ),
     ZendureNumberEntityDescription(
-        key="max_discharge",
+        key=SETTING_MAX_DISCHARGE,
         translation_key="max_discharge",
-        runtime_key="max_discharge",
+        runtime_key=SETTING_MAX_DISCHARGE,
         native_min_value=0,
         native_max_value=2400,
         native_step=50,
@@ -129,9 +129,9 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         icon="mdi:battery-arrow-down",
     ),
     ZendureNumberEntityDescription(
-        key="emergency_charge",
+        key=SETTING_EMERGENCY_CHARGE,
         translation_key="emergency_charge",
-        runtime_key="emergency_charge",
+        runtime_key=SETTING_EMERGENCY_CHARGE,
         native_min_value=0,
         native_max_value=2400,
         native_step=50,
@@ -139,9 +139,9 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         icon="mdi:flash-alert",
     ),
     ZendureNumberEntityDescription(
-        key="emergency_soc",
+        key=SETTING_EMERGENCY_SOC,
         translation_key="emergency_soc",
-        runtime_key="emergency_soc",
+        runtime_key=SETTING_EMERGENCY_SOC,
         native_min_value=0,
         native_max_value=100,
         native_step=1,
@@ -149,9 +149,9 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         icon="mdi:alert-circle",
     ),
     ZendureNumberEntityDescription(
-        key="profit_margin_pct",
+        key=SETTING_PROFIT_MARGIN_PCT,
         translation_key="profit_margin_pct",
-        runtime_key="profit_margin_pct",
+        runtime_key=SETTING_PROFIT_MARGIN_PCT,
         native_min_value=0,
         native_max_value=1000,
         native_step=1,
@@ -159,9 +159,9 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         icon="mdi:chart-line",
     ),
     ZendureNumberEntityDescription(
-        key="very_expensive_threshold",
+        key=SETTING_VERY_EXPENSIVE_THRESHOLD,
         translation_key="very_expensive_threshold",
-        runtime_key="very_expensive_threshold",
+        runtime_key=SETTING_VERY_EXPENSIVE_THRESHOLD,
         native_min_value=0,
         native_max_value=2,
         native_step=0.01,
@@ -169,6 +169,24 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         icon="mdi:currency-eur",
     ),
 )
+
+
+def _default_for_key(key: str) -> float:
+    defaults: dict[str, float] = {
+        SETTING_BATTERY_PACKS: DEFAULT_BATTERY_PACKS,
+        SETTING_PEAK_FACTOR: DEFAULT_PEAK_FACTOR,
+        SETTING_VALLEY_FACTOR: DEFAULT_VALLEY_FACTOR,
+        SETTING_VERY_CHEAP_PRICE: DEFAULT_VERY_CHEAP_PRICE,
+        SETTING_SOC_MIN: DEFAULT_SOC_MIN,
+        SETTING_SOC_MAX: DEFAULT_SOC_MAX,
+        SETTING_MAX_CHARGE: DEFAULT_MAX_CHARGE,
+        SETTING_MAX_DISCHARGE: DEFAULT_MAX_DISCHARGE,
+        SETTING_EMERGENCY_CHARGE: DEFAULT_EMERGENCY_CHARGE,
+        SETTING_EMERGENCY_SOC: DEFAULT_EMERGENCY_SOC,
+        SETTING_PROFIT_MARGIN_PCT: DEFAULT_PROFIT_MARGIN_PCT,
+        SETTING_VERY_EXPENSIVE_THRESHOLD: DEFAULT_VERY_EXPENSIVE_THRESHOLD,
+    }
+    return float(defaults.get(key, 0.0))
 
 
 async def async_setup_entry(
@@ -185,24 +203,14 @@ async def async_setup_entry(
 
     add_entities(entities)
 
-    # --- INITIALIZE RUNTIME SETTINGS ONCE ---
+    # --- Initialize runtime settings once ---
     for ent in entities:
         key = ent.entity_description.runtime_key
 
         if key not in coordinator.runtime_settings:
-
-            if key == SETTING_PEAK_FACTOR:
-                default_value = DEFAULT_PEAK_FACTOR
-            elif key == SETTING_VALLEY_FACTOR:
-                default_value = DEFAULT_VALLEY_FACTOR
-            elif key == SETTING_VERY_CHEAP_PRICE:
-                default_value = DEFAULT_VERY_CHEAP_PRICE
-            else:
-                default_value = ent.entity_description.native_min_value
-
             coordinator.runtime_settings[key] = entry.options.get(
                 key,
-                default_value,
+                _default_for_key(key),
             )
 
 
@@ -228,29 +236,31 @@ class ZendureSmartFlowNumber(NumberEntity):
             "sw_version": INTEGRATION_VERSION,
         }
 
-        # Defensive init
         if description.runtime_key not in coordinator.runtime_settings:
             coordinator.runtime_settings[description.runtime_key] = entry.options.get(
                 description.runtime_key,
-                description.native_min_value,
+                _default_for_key(description.runtime_key),
             )
 
     @property
     def native_value(self) -> float:
         return float(
             self.coordinator.runtime_settings.get(
-                self.entity_description.runtime_key, 0
+                self.entity_description.runtime_key,
+                _default_for_key(self.entity_description.runtime_key),
             )
         )
 
     async def async_set_native_value(self, value: float) -> None:
-        self.coordinator.runtime_settings[self.entity_description.runtime_key] = float(value)
+        value = float(value)
+
+        self.coordinator.runtime_settings[self.entity_description.runtime_key] = value
 
         self.hass.config_entries.async_update_entry(
             self._entry,
             options={
                 **self._entry.options,
-                self.entity_description.runtime_key: float(value),
+                self.entity_description.runtime_key: value,
             },
         )
 
