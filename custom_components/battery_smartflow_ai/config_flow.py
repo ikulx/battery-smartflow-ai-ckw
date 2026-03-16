@@ -231,6 +231,21 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         schema[
+            vol.Optional(
+                CONF_INSTALLED_PV_WP, 
+                default =_val(CONF_INSTALLED_PV_WP) or DEFAULT_INSTALLED_PV_WP,
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=50000,
+                step=10,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="Wp",
+            )
+        )
+        
+        schema[
             vol.Required(CONF_PV_ENTITY, default=_val(CONF_PV_ENTITY))
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor")
@@ -428,15 +443,6 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
 
         options_schema = vol.Schema(
             {
-                vol.Optional(CONF_INSTALLED_PV_WP): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=50000,
-                        step=10,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="Wp",
-                    )
-                ),
                 vol.Optional("TARGET_IMPORT_W"): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.0,
