@@ -12,6 +12,7 @@
           "battery_ac_power_entity": "Batterie Leistungssensor (W)",
           "additional_battery_charge_entity": "Zusatzakku Ladeleistung (optional)",
           "capacity_entity": "Kapazitätssensor (optional)",
+          "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "pv_entity": "PV-Leistung Sensor",
           "price_now_entity": "Aktueller Strompreis",
           "price_export_entity": "Preisverlauf (z. B. Tibber / EPEX)",
@@ -31,6 +32,7 @@
           "battery_ac_power_entity": "Sensor für die AC-Leistung der Batterie. Der Wert muss bei Entladung positiv sein. Empfohlen: sensor.solarflow_2400_ac_bat_in_out",
           "additional_battery_charge_entity": "Optionaler Sensor eines zweiten Akkusystems. Wenn dieser Sensor eine positive Ladeleistung meldet, wird die Entladung von Battery SmartFlow AI blockiert.",
           "capacity_entity": "Optionaler Sensor mit der automatisch berechneten verfügbaren Batteriekapazität in kWh (z. B. aus der Zendure-Integration). Falls gesetzt, überschreibt er die manuelle Berechnung.",
+          "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird künftig für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt. Wird zur Erkennung von Überschuss verwendet.",
           "price_now_entity": "Sensor mit dem aktuellen Strompreis (z. B. Tibber). Wird für wirtschaftliche Entscheidungen genutzt.",
           "price_export_entity": "Sensor mit Preisprognosedaten (z. B. Tibber / EPEX). Ermöglicht Preis-Vorplanung.",
@@ -82,6 +84,7 @@
           "battery_ac_power_entity": "Batterie Leistungssensor (W)",
           "additional_battery_charge_entity": "Zusatzakku Ladeleistung (optional)",
           "capacity_entity": "Kapazitätssensor (optional)",
+          "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "pv_entity": "PV-Leistung Sensor",
           "price_now_entity": "Aktueller Strompreis",
           "price_export_entity": "Preisverlauf (z. B. Tibber / EPEX)",
@@ -101,6 +104,7 @@
           "battery_ac_power_entity": "Sensor für die AC-Leistung der Batterie. Der Wert muss bei Entladung positiv sein. Empfohlen: sensor.solarflow_2400_ac_bat_in_out",
           "additional_battery_charge_entity": "Optionaler Sensor eines zweiten Akkusystems. Wenn dieser Sensor eine positive Ladeleistung meldet, wird die Entladung von Battery SmartFlow AI blockiert.",
           "capacity_entity": "Optionaler Sensor mit der automatisch berechneten verfügbaren Batteriekapazität in kWh (z. B. aus der Zendure-Integration). Falls gesetzt, überschreibt er die manuelle Berechnung.",
+          "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird künftig für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt.",
           "price_now_entity": "Aktueller Strompreis. Ermöglicht preisabhängige Entladung.",
           "price_export_entity": "Preisprognosedaten für die nächsten Stunden. Ermöglicht intelligente Ladeplanung.",
@@ -121,7 +125,6 @@
         "title": "Regelprofil bearbeiten",
         "description": "Experteneinstellungen für das aktive Geräteprofil. Diese Werte ändern das interne Regelverhalten und sollten nur angepasst werden, wenn du die Wirkung kennst.",
         "data": {
-          "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "TARGET_IMPORT_W": "Ziel-Netzbezug",
           "DEADBAND_W": "Deadband",
           "EXPORT_GUARD_W": "Export-Schutz",
@@ -133,7 +136,6 @@
           "KEEPALIVE_MIN_OUTPUT_W": "Keepalive Mindestleistung"
         },
         "data_description": {
-          "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird künftig für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
           "TARGET_IMPORT_W": "Zielwert für einen kleinen gewollten Netzbezug. Ein höherer Wert reduziert das Risiko ungewollter Einspeisung, erhöht aber den Netzverbrauch leicht.",
           "DEADBAND_W": "Toleranzbereich, in dem nicht nachgeregelt wird. Ein höherer Wert macht die Regelung ruhiger, ein niedrigerer aggressiver und präziser.",
           "EXPORT_GUARD_W": "Zusätzliche Schutzreserve gegen ungewollte Einspeisung. Höhere Werte machen die Regelung vorsichtiger.",
