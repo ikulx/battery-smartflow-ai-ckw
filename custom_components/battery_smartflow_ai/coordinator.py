@@ -378,7 +378,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return pack_capacity * packs
 
-        def _is_effective_grid_charge(
+    def _is_effective_grid_charge(
         self,
         delta_kwh: float,
         grid_import_w: float,
