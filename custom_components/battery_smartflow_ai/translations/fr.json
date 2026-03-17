@@ -165,7 +165,8 @@
         "state": {
           "standby": "Veille",
           "charge": "Charge",
-          "discharge": "Décharge"
+          "discharge": "Décharge",
+          "constant_discharge": "Décharge constante"
         }
       }
     },
@@ -308,6 +309,7 @@
           "manual_standby": "Veille manuelle",
           "manual_charge": "Charge manuelle",
           "manual_discharge": "Décharge manuelle",
+          "manual_constant_discharge": "Décharge constante active",
           "manual_idle": "Veille manuelle",
           "idle": "Prêt",
           "adaptive_peak_discharge": "Décharge en raison d’un pic de prix",

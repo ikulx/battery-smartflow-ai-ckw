@@ -165,7 +165,8 @@
         "state": {
           "standby": "Standby",
           "charge": "Charge",
-          "discharge": "Discharge"
+          "discharge": "Discharge",
+          "constant_discharge": "Constant discharge"
         }
       }
     },
@@ -308,6 +309,7 @@
           "manual_standby": "Manual standby",
           "manual_charge": "Manual charging",
           "manual_discharge": "Manual discharging",
+          "manual_constant_discharge": "Constant discharge active",
           "manual_idle": "Manual standby",
           "idle": "Ready",
           "adaptive_peak_discharge": "Discharging due to price peak",

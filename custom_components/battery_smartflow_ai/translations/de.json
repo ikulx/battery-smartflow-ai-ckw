@@ -165,7 +165,8 @@
         "state": {
           "standby": "Standby",
           "charge": "Laden",
-          "discharge": "Entladen"
+          "discharge": "Entladen",
+          "constant_discharge": "Konstante Entladung"
         }
       }
     },
@@ -308,6 +309,7 @@
           "manual_standby": "Manueller Standby",
           "manual_charge": "Manuelles Laden",
           "manual_discharge": "Manuelles Entladen",
+          "manual_constant_discharge": "Konstante Entladung aktiv",
           "manual_idle": "Manuelle Bereitschaft",
           "idle": "Bereit",
           "adaptive_peak_discharge": "Entladen wegen Preisspitze",

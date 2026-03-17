@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Literal, Optional
 
+from .const import MANUAL_CONST_DISCHARGE
 from .power_controller import PowerController, PowerContext
 
 
@@ -273,6 +274,15 @@ class ManualRule(BaseRule):
                 charge_w=ctx.max_charge_w,
                 discharge_w=0.0,
                 reason="manual_charge",
+            )
+
+        if ctx.manual_action == MANUAL_CONST_DISCHARGE:
+            return DecisionResult(
+                action="discharge",
+                ac_mode="output",
+                charge_w=0.0,
+                discharge_w=float(ctx.max_discharge_w),
+                reason="manual_constant_discharge",
             )
 
         if ctx.manual_action == "discharge":

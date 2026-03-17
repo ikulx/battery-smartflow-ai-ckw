@@ -100,8 +100,9 @@ AI_MODES = [AI_MODE_AUTOMATIC, AI_MODE_SUMMER, AI_MODE_WINTER, AI_MODE_MANUAL]
 MANUAL_STANDBY = "standby"
 MANUAL_CHARGE = "charge"
 MANUAL_DISCHARGE = "discharge"
+MANUAL_CONST_DISCHARGE = "constant_discharge"
 
-MANUAL_ACTIONS = [MANUAL_STANDBY, MANUAL_CHARGE, MANUAL_DISCHARGE]
+MANUAL_ACTIONS = [MANUAL_STANDBY, MANUAL_CHARGE, MANUAL_DISCHARGE, MANUAL_CONST_DISCHARGE]
 
 # ==================================================
 # Settings (Number entities) – entity keys
@@ -198,6 +199,7 @@ NEXT_ACTION_STATE_ENUMS = [
     "discharging_active",
     "manual_charge",
     "manual_discharge",
+    "manual_constant_discharge",
     "emergency_charge",
 ]
 
