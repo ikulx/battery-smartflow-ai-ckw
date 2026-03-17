@@ -378,38 +378,61 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return pack_capacity * packs
 
-    def _is_effective_grid_charge(
+    def _classify_charge_source(
         self,
         delta_kwh: float,
         grid_import_w: float,
+        grid_export_w: float,
         decision_charge_w: float,
         decision_ac_mode: str,
         price_now: float | None,
-    ) -> bool:
-        """Return True if the current battery charge should be treated as paid grid charge.
+    ) -> tuple[bool, float, str]:
+        """Classify the source of a positive battery charge delta.
 
-        PV/surplus charging must be priced at 0 €/kWh.
-        This is intentionally conservative: only treat charging as grid charge
-        when there is a real charging command plus meaningful grid import.
+        Returns:
+            (is_grid_charge, applied_price, charge_source)
+
+        Notes:
+        - PV / surplus charging must be counted as a real charge event with 0 €/kWh.
+        - The logic intentionally biases towards PV/free charging unless there is
+          strong evidence that the battery is really being charged from grid.
         """
         if delta_kwh <= 0:
-            return False
-
-        if price_now is None:
-            return False
+            return False, 0.0, "no_charge_delta"
 
         if decision_ac_mode != "input":
-            return False
+            return False, 0.0, "not_in_input_mode"
 
-        if float(decision_charge_w or 0.0) <= 0.0:
-            return False
+        charge_cmd_w = max(0.0, float(decision_charge_w or 0.0))
+        if charge_cmd_w <= 0.0:
+            return False, 0.0, "no_charge_command"
 
-        # Small imports can be measurement noise or transient balancing effects.
-        # Only treat it as real grid charge above a small threshold.
-        if float(grid_import_w or 0.0) <= 50.0:
-            return False
+        import_w = max(0.0, float(grid_import_w or 0.0))
+        export_w = max(0.0, float(grid_export_w or 0.0))
 
-        return True
+        # Helpful thresholds:
+        # - export_threshold: if we still export meaningfully, PV surplus is clearly available
+        # - noise_import_threshold: tiny imports are often noise / balancing jitter
+        # - strong_import_threshold: only above this do we classify as paid grid charging
+        export_threshold = 40.0
+        noise_import_threshold = 60.0
+        strong_import_threshold = max(120.0, min(charge_cmd_w * 0.35, 500.0))
+
+        if export_w >= export_threshold:
+            return False, 0.0, "pv_surplus_export"
+
+        if import_w <= noise_import_threshold:
+            return False, 0.0, "pv_or_free_low_import"
+
+        if price_now is None:
+            return False, 0.0, "price_missing_assume_free"
+
+        if import_w >= strong_import_threshold:
+            return True, float(price_now), "grid_charge"
+
+        # Mixed / unclear situation:
+        # Prefer PV/free so we do not falsely increase the average charge price.
+        return False, 0.0, "mixed_bias_pv"
 
     def _parse_price_points(self, now) -> list[PricePoint]:
         """
@@ -781,6 +804,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             battery_power = float(battery_power or 0.0)
 
             battery_discharge_w = max(0.0, battery_power)
+            battery_charge_w = max(0.0, -battery_power)
 
             house_load = max(
                 0.0,
@@ -829,32 +853,32 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             decision = self._engine.evaluate(ctx)
 
-                        charge_price_applied = None
+            charge_price_applied = None
+            charge_source = "no_charge_delta"
             is_grid_charge = False
 
             if delta_kwh > 0:
                 charged_kwh = float(self._persist.get("trade_charged_kwh", 0.0) or 0.0)
                 avg_price = self._persist.get("trade_avg_charge_price")
 
-                is_grid_charge = self._is_effective_grid_charge(
+                is_grid_charge, applied_price, charge_source = self._classify_charge_source(
                     delta_kwh=float(delta_kwh),
                     grid_import_w=float(grid_import or 0.0),
+                    grid_export_w=float(grid_export or 0.0),
                     decision_charge_w=float(decision.charge_w or 0.0),
                     decision_ac_mode=str(decision.ac_mode),
                     price_now=price_now,
                 )
 
-                applied_price = float(price_now) if is_grid_charge and price_now is not None else 0.0
-                charge_price_applied = applied_price
-
+                charge_price_applied = float(applied_price)
                 new_total_kwh = charged_kwh + float(delta_kwh)
 
                 if new_total_kwh > 0:
                     if avg_price is None:
-                        new_avg = applied_price
+                        new_avg = float(applied_price)
                     else:
                         new_avg = (
-                            (float(avg_price) * charged_kwh + applied_price * float(delta_kwh))
+                            (float(avg_price) * charged_kwh + float(applied_price) * float(delta_kwh))
                             / new_total_kwh
                         )
                 else:
@@ -971,7 +995,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "profit_eur": float(self._persist.get("profit_eur") or 0.0),
                 "delta_kwh": float(delta_kwh),
                 "is_grid_charge": is_grid_charge,
+                "charge_source": charge_source,
                 "charge_price_applied": charge_price_applied,
+                "battery_ac_power_raw": battery_power,
+                "battery_charge_w_est": battery_charge_w,
+                "battery_discharge_w_est": battery_discharge_w,
                 "max_charge": max_charge,
                 "max_discharge": max_discharge,
                 "set_mode": ac_mode,
