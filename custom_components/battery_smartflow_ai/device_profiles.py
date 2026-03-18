@@ -95,6 +95,7 @@ SF800PRO_PROFILE = {
     "MAX_STEP_DOWN": 400.0,
     "KEEPALIVE_MIN_DEFICIT_W": 15.0,
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
+    "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
 
     # --- Hardware limits (safety clamp) ---
     "MAX_INPUT_W": 1000.0,
@@ -115,6 +116,7 @@ SF2400AC_PROFILE = {
     "MAX_STEP_DOWN": 800.0,
     "KEEPALIVE_MIN_DEFICIT_W": 15.0,
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
+    "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
 
     # --- Hardware limits (safety clamp) ---
     "MAX_INPUT_W": 2400.0,
@@ -135,6 +137,7 @@ SF1600AC_PROFILE = {
     "MAX_STEP_DOWN": 900.0,
     "KEEPALIVE_MIN_DEFICIT_W": 15.0,
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
+    "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
 
     # --- Hardware limits (safety clamp) ---
     "MAX_INPUT_W": 1600.0,
@@ -155,6 +158,7 @@ HYPER2000_PROFILE = {
     "MAX_STEP_DOWN": 800.0,
     "KEEPALIVE_MIN_DEFICIT_W": 15.0,
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
+    "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
 
     # --- Hardware limits (safety clamp) ---
     "MAX_INPUT_W": 1200.0,
