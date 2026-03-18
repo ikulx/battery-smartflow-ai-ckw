@@ -73,6 +73,14 @@ PROFILE_OVERRIDE_FIELDS = {
         "unit": "W",
         "icon": "mdi:flash",
     },
+    "SOC_DISCHARGE_RESUME_MARGIN": {
+        "label": "SoC Wiederfreigabe-Margin",
+        "min": 0.0,
+        "max": 15.0,
+        "step": 0.5,
+        "unit": "%",
+        "icon": "mdi:battery-sync",
+    },
 }
 
 # Optional: diese Felder sollen zwar sichtbar, aber nicht editierbar sein
