@@ -121,6 +121,8 @@ SETTING_PROFIT_MARGIN_PCT = "profit_margin_pct"   # Arbitrage/Planung
 
 SETTING_PEAK_FACTOR = "peak_factor"
 
+SETTING_SOC_DISCHARGE_RESUME_MARGIN = "soc_discharge_resume_margin"
+
 # ==================================================
 # Defaults
 # ==================================================
@@ -141,6 +143,8 @@ DEFAULT_EMERGENCY_CHARGE = 1200.0
 DEFAULT_PROFIT_MARGIN_PCT = 27.0
 
 DEFAULT_PEAK_FACTOR = 1.35
+
+DEFAULT_SOC_DISCHARGE_RESUME_MARGIN = 3.0
 
 # ==================================================
 # Status / Enum values (internal)
