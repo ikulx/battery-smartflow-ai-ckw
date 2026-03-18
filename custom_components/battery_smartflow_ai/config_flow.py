@@ -232,8 +232,8 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema[
             vol.Optional(
-                CONF_INSTALLED_PV_WP, 
-                default =_val(CONF_INSTALLED_PV_WP) or DEFAULT_INSTALLED_PV_WP,
+                CONF_INSTALLED_PV_WP,
+                default=_val(CONF_INSTALLED_PV_WP) or DEFAULT_INSTALLED_PV_WP,
             )
         ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
@@ -244,7 +244,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 unit_of_measurement="Wp",
             )
         )
-        
+
         schema[
             vol.Required(CONF_PV_ENTITY, default=_val(CONF_PV_ENTITY))
         ] = selector.EntitySelector(
@@ -522,6 +522,15 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                         unit_of_measurement="W",
                     )
                 ),
+                vol.Optional("SOC_DISCHARGE_RESUME_MARGIN"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=15.0,
+                        step=0.5,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="%",
+                    )
+                ),
             }
         )
 
@@ -562,6 +571,10 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
             "KEEPALIVE_MIN_OUTPUT_W": current_overrides.get(
                 "KEEPALIVE_MIN_OUTPUT_W",
                 profile.get("KEEPALIVE_MIN_OUTPUT_W"),
+            ),
+            "SOC_DISCHARGE_RESUME_MARGIN": current_overrides.get(
+                "SOC_DISCHARGE_RESUME_MARGIN",
+                profile.get("SOC_DISCHARGE_RESUME_MARGIN", 3.0),
             ),
         }
 
