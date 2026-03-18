@@ -133,7 +133,8 @@
           "MAX_STEP_UP": "Max. Schritt Hochregeln",
           "MAX_STEP_DOWN": "Max. Schritt Runterregeln",
           "KEEPALIVE_MIN_DEFICIT_W": "Keepalive Mindestdefizit",
-          "KEEPALIVE_MIN_OUTPUT_W": "Keepalive Mindestleistung"
+          "KEEPALIVE_MIN_OUTPUT_W": "Keepalive Mindestleistung",
+          "SOC_DISCHARGE_RESUME_MARGIN": "Entlade-Wiederfreigabe oberhalb SoC-Minimum"
         },
         "data_description": {
           "TARGET_IMPORT_W": "Zielwert für einen kleinen gewollten Netzbezug. Ein höherer Wert reduziert das Risiko ungewollter Einspeisung, erhöht aber den Netzverbrauch leicht.",
@@ -144,7 +145,8 @@
           "MAX_STEP_UP": "Maximaler Leistungsschritt pro Regelzyklus beim Hochregeln. Höhere Werte machen die Regelung schneller, aber potenziell aggressiver.",
           "MAX_STEP_DOWN": "Maximaler Leistungsschritt pro Regelzyklus beim Runterregeln. Höhere Werte bremsen schneller ab, können aber stärker springen.",
           "KEEPALIVE_MIN_DEFICIT_W": "Mindestdefizit, ab dem die Entladung aktiv gehalten wird. Hilft gegen Flattern bei sehr kleinen Lasten.",
-          "KEEPALIVE_MIN_OUTPUT_W": "Mindest-Entladeleistung zum stabilen Aktivhalten der Entladung. Verhindert unnötiges Ein- und Ausschalten."
+          "KEEPALIVE_MIN_OUTPUT_W": "Mindest-Entladeleistung zum stabilen Aktivhalten der Entladung. Verhindert unnötiges Ein- und Ausschalten.",
+          "SOC_DISCHARGE_RESUME_MARGIN": "Zusätzlicher SoC-Abstand oberhalb des eingestellten Mindest-SoC, der erreicht werden muss, bevor die Entladung nach einer SoC-Sperre wieder freigegeben wird. Verhindert Flattern zwischen Laden und Entladen bei knappem Akkustand, besonders morgens bei schwankender PV-Leistung."
         }
       }
     }
@@ -313,7 +315,8 @@
           "adaptive_peak_discharge": "Entladen wegen Preisspitze",
           "price_based_discharge": "Preisbasierte Entladung",
           "valley_boost_charge": "Preis-Tal erkannt. Maximalladung",
-          "additional_battery_charging_block": "Zusatzakku lädt: Entladung blockiert"
+          "additional_battery_charging_block": "Zusatzakku lädt: Entladung blockiert",
+          "soc_min_resume_block": "Entladung blockiert (Wiederfreigabe-Schwelle noch nicht erreicht)"
         }
       },
       "next_planned_action": {
