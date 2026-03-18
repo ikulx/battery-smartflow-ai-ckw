@@ -49,7 +49,6 @@ from .const import (
     SETTING_BATTERY_PACKS,
     SETTING_PEAK_FACTOR,
     SETTING_VALLEY_FACTOR,
-    SETTING_SOC_DISCHARGE_RESUME_MARGIN,
     # defaults
     DEFAULT_SOC_MIN,
     DEFAULT_SOC_MAX,
@@ -65,7 +64,6 @@ from .const import (
     DEFAULT_VALLEY_FACTOR,
     DEFAULT_DEVICE_PROFILE,
     DEFAULT_INSTALLED_PV_WP,
-    DEFAULT_SOC_DISCHARGE_RESUME_MARGIN,
     # modes
     AI_MODE_AUTOMATIC,
     AI_MODE_SUMMER,
@@ -728,10 +726,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 SETTING_SOC_MAX,
                 profile.get("SOC_MAX", DEFAULT_SOC_MAX),
             )
-            resume_margin = self._get_setting(
-                SETTING_SOC_DISCHARGE_RESUME_MARGIN,
-                DEFAULT_SOC_DISCHARGE_RESUME_MARGIN,
-            )
+            resume_margin = float(profile.get("SOC_DISCHARGE_RESUME_MARGIN", 3.0))
 
             max_charge = self._get_setting(
                 SETTING_MAX_CHARGE,
@@ -1065,6 +1060,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "effective_max_step_down": profile.get("MAX_STEP_DOWN"),
                 "effective_keepalive_min_deficit_w": profile.get("KEEPALIVE_MIN_DEFICIT_W"),
                 "effective_keepalive_min_output_w": profile.get("KEEPALIVE_MIN_OUTPUT_W"),
+                "effective_soc_discharge_resume_margin": profile.get("SOC_DISCHARGE_RESUME_MARGIN"),
             }
 
             def _iso_or_none(val):
