@@ -49,6 +49,7 @@ from .const import (
     SETTING_BATTERY_PACKS,
     SETTING_PEAK_FACTOR,
     SETTING_VALLEY_FACTOR,
+    SETTING_SOC_DISCHARGE_RESUME_MARGIN,
     # defaults
     DEFAULT_SOC_MIN,
     DEFAULT_SOC_MAX,
@@ -64,6 +65,7 @@ from .const import (
     DEFAULT_VALLEY_FACTOR,
     DEFAULT_DEVICE_PROFILE,
     DEFAULT_INSTALLED_PV_WP,
+    DEFAULT_SOC_DISCHARGE_RESUME_MARGIN,
     # modes
     AI_MODE_AUTOMATIC,
     AI_MODE_SUMMER,
@@ -191,6 +193,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # basic state
             "power_state": "idle",  # idle|charging|discharging
             "emergency_active": False,
+            "discharge_blocked_by_soc_min": False,
+            "discharge_resume_soc": None,
 
             # analytics
             "trade_avg_charge_price": None,
@@ -378,6 +382,26 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return pack_capacity * packs
 
+    def _update_discharge_resume_hysteresis(
+        self,
+        soc: float,
+        soc_min: float,
+        resume_margin: float,
+    ) -> bool:
+        """Maintain hysteresis for discharge re-enable around soc_min."""
+        blocked = bool(self._persist.get("discharge_blocked_by_soc_min", False))
+        effective_resume_soc = float(soc_min) + max(0.0, float(resume_margin))
+
+        if float(soc) <= float(soc_min):
+            blocked = True
+        elif float(soc) >= effective_resume_soc:
+            blocked = False
+
+        self._persist["discharge_blocked_by_soc_min"] = blocked
+        self._persist["discharge_resume_soc"] = effective_resume_soc
+
+        return blocked
+
     def _classify_charge_source(
         self,
         delta_kwh: float,
@@ -410,10 +434,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         import_w = max(0.0, float(grid_import_w or 0.0))
         export_w = max(0.0, float(grid_export_w or 0.0))
 
-        # Helpful thresholds:
-        # - export_threshold: if we still export meaningfully, PV surplus is clearly available
-        # - noise_import_threshold: tiny imports are often noise / balancing jitter
-        # - strong_import_threshold: only above this do we classify as paid grid charging
         export_threshold = 40.0
         noise_import_threshold = 60.0
         strong_import_threshold = max(120.0, min(charge_cmd_w * 0.35, 500.0))
@@ -430,8 +450,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if import_w >= strong_import_threshold:
             return True, float(price_now), "grid_charge"
 
-        # Mixed / unclear situation:
-        # Prefer PV/free so we do not falsely increase the average charge price.
         return False, 0.0, "mixed_bias_pv"
 
     def _parse_price_points(self, now) -> list[PricePoint]:
@@ -520,7 +538,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if t_end <= now:
                     continue
 
-                price = float(cents) / 100.0  # cents -> €
+                price = float(cents) / 100.0
                 out.append(PricePoint(start=t_start, end=t_end, price=price))
                 continue
 
@@ -581,7 +599,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         installed_pv_wp = self._get_installed_pv_wp()
 
-        # Fallback for users without configured PV size yet
         if installed_pv_wp <= 0:
             summer_pv_threshold = 1100.0
             summer_export_threshold = 350.0
@@ -711,6 +728,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 SETTING_SOC_MAX,
                 profile.get("SOC_MAX", DEFAULT_SOC_MAX),
             )
+            resume_margin = self._get_setting(
+                SETTING_SOC_DISCHARGE_RESUME_MARGIN,
+                DEFAULT_SOC_DISCHARGE_RESUME_MARGIN,
+            )
 
             max_charge = self._get_setting(
                 SETTING_MAX_CHARGE,
@@ -817,6 +838,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             season = self._season_detection(
                 pv_w=pv_w,
                 export_w=float(grid_export),
+            )
+
+            discharge_blocked_by_soc_min = self._update_discharge_resume_hysteresis(
+                soc=float(soc),
+                soc_min=float(soc_min),
+                resume_margin=float(resume_margin),
             )
 
             ctx = DecisionContext(
@@ -934,10 +961,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 decision.action = "idle"
                 decision.reason = "soc_limit_lower"
 
-            if decision.ac_mode == "output" and soc <= float(soc_min):
+            if decision.ac_mode == "output" and discharge_blocked_by_soc_min:
                 decision.discharge_w = 0.0
                 decision.action = "idle"
-                decision.reason = "soc_min_enforced"
+                decision.reason = "soc_min_resume_block"
 
             ac_mode = (
                 ZENDURE_MODE_INPUT
@@ -1000,6 +1027,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "battery_ac_power_raw": battery_power,
                 "battery_charge_w_est": battery_charge_w,
                 "battery_discharge_w_est": battery_discharge_w,
+                "discharge_blocked_by_soc_min": discharge_blocked_by_soc_min,
+                "soc_discharge_resume_margin": float(resume_margin),
+                "discharge_resume_soc": float(
+                    self._persist.get("discharge_resume_soc", float(soc_min))
+                ),
                 "max_charge": max_charge,
                 "max_discharge": max_discharge,
                 "set_mode": ac_mode,
