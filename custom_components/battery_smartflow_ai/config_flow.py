@@ -452,54 +452,11 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                         unit_of_measurement="W",
                     )
                 ),
-                vol.Optional("DEADBAND_W"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.0,
-                        max=200.0,
-                        step=5.0,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="W",
-                    )
-                ),
                 vol.Optional("EXPORT_GUARD_W"): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.0,
                         max=300.0,
                         step=5.0,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="W",
-                    )
-                ),
-                vol.Optional("KP_UP"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.10,
-                        max=2.00,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional("KP_DOWN"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.10,
-                        max=2.00,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional("MAX_STEP_UP"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=50.0,
-                        max=2000.0,
-                        step=10.0,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="W",
-                    )
-                ),
-                vol.Optional("MAX_STEP_DOWN"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=50.0,
-                        max=2000.0,
-                        step=10.0,
                         mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="W",
                     )
@@ -531,6 +488,92 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                         unit_of_measurement="%",
                     )
                 ),
+                vol.Optional("CHARGE_DEADBAND_W"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=200.0,
+                        step=5.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+                vol.Optional("CHARGE_KP_UP"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.10,
+                        max=2.00,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional("CHARGE_KP_DOWN"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.10,
+                        max=2.00,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional("CHARGE_MAX_STEP_UP"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=50.0,
+                        max=2000.0,
+                        step=10.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+                vol.Optional("CHARGE_MAX_STEP_DOWN"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=50.0,
+                        max=2000.0,
+                        step=10.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+                vol.Optional("DISCHARGE_DEADBAND_W"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=200.0,
+                        step=5.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+                vol.Optional("DISCHARGE_KP_UP"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.10,
+                        max=2.00,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional("DISCHARGE_KP_DOWN"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.10,
+                        max=2.00,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional("DISCHARGE_MAX_STEP_UP"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=50.0,
+                        max=2000.0,
+                        step=10.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+                vol.Optional("DISCHARGE_MAX_STEP_DOWN"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=50.0,
+                        max=2000.0,
+                        step=10.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
             }
         )
 
@@ -546,23 +589,9 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                 "TARGET_IMPORT_W",
                 profile.get("TARGET_IMPORT_W"),
             ),
-            "DEADBAND_W": current_overrides.get(
-                "DEADBAND_W",
-                profile.get("DEADBAND_W"),
-            ),
             "EXPORT_GUARD_W": current_overrides.get(
                 "EXPORT_GUARD_W",
                 profile.get("EXPORT_GUARD_W"),
-            ),
-            "KP_UP": current_overrides.get("KP_UP", profile.get("KP_UP")),
-            "KP_DOWN": current_overrides.get("KP_DOWN", profile.get("KP_DOWN")),
-            "MAX_STEP_UP": current_overrides.get(
-                "MAX_STEP_UP",
-                profile.get("MAX_STEP_UP"),
-            ),
-            "MAX_STEP_DOWN": current_overrides.get(
-                "MAX_STEP_DOWN",
-                profile.get("MAX_STEP_DOWN"),
             ),
             "KEEPALIVE_MIN_DEFICIT_W": current_overrides.get(
                 "KEEPALIVE_MIN_DEFICIT_W",
@@ -575,6 +604,46 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
             "SOC_DISCHARGE_RESUME_MARGIN": current_overrides.get(
                 "SOC_DISCHARGE_RESUME_MARGIN",
                 profile.get("SOC_DISCHARGE_RESUME_MARGIN", 3.0),
+            ),
+            "CHARGE_DEADBAND_W": current_overrides.get(
+                "CHARGE_DEADBAND_W",
+                profile.get("CHARGE_DEADBAND_W"),
+            ),
+            "CHARGE_KP_UP": current_overrides.get(
+                "CHARGE_KP_UP",
+                profile.get("CHARGE_KP_UP"),
+            ),
+            "CHARGE_KP_DOWN": current_overrides.get(
+                "CHARGE_KP_DOWN",
+                profile.get("CHARGE_KP_DOWN"),
+            ),
+            "CHARGE_MAX_STEP_UP": current_overrides.get(
+                "CHARGE_MAX_STEP_UP",
+                profile.get("CHARGE_MAX_STEP_UP"),
+            ),
+            "CHARGE_MAX_STEP_DOWN": current_overrides.get(
+                "CHARGE_MAX_STEP_DOWN",
+                profile.get("CHARGE_MAX_STEP_DOWN"),
+            ),
+            "DISCHARGE_DEADBAND_W": current_overrides.get(
+                "DISCHARGE_DEADBAND_W",
+                profile.get("DISCHARGE_DEADBAND_W"),
+            ),
+            "DISCHARGE_KP_UP": current_overrides.get(
+                "DISCHARGE_KP_UP",
+                profile.get("DISCHARGE_KP_UP"),
+            ),
+            "DISCHARGE_KP_DOWN": current_overrides.get(
+                "DISCHARGE_KP_DOWN",
+                profile.get("DISCHARGE_KP_DOWN"),
+            ),
+            "DISCHARGE_MAX_STEP_UP": current_overrides.get(
+                "DISCHARGE_MAX_STEP_UP",
+                profile.get("DISCHARGE_MAX_STEP_UP"),
+            ),
+            "DISCHARGE_MAX_STEP_DOWN": current_overrides.get(
+                "DISCHARGE_MAX_STEP_DOWN",
+                profile.get("DISCHARGE_MAX_STEP_DOWN"),
             ),
         }
 
