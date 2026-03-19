@@ -1,6 +1,5 @@
 {
   "title": "Battery SmartFlow AI",
-
   "config": {
     "error": {
       "grid_split_missing": "Bei \"Zwei Sensoren\" müssen Bezug und Einspeisung beide ausgewählt werden."
@@ -12,6 +11,11 @@
         "data": {
           "device_profile": "Aktives Geräteprofil",
           "soc_entity": "Akkustand (SoC)",
+          "soc_limit_entity": "SoC-Limit Status (optional)",
+          "pack_capacity_kwh": "Kapazität pro Akku-Pack (kWh)",
+          "battery_ac_power_entity": "Batterie Leistungssensor (W)",
+          "additional_battery_charge_entity": "Zusatzakku Ladeleistung (optional)",
+          "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "pv_entity": "PV-Leistung",
           "price_export_entity": "Strompreis-Export (optional)",
           "price_now_entity": "Aktueller Strompreis (optional)",
@@ -23,40 +27,198 @@
           "grid_import_entity": "Netzbezug",
           "grid_export_entity": "Netzeinspeisung"
         }
+      },
+      "grid": {
+        "title": "Netzmessung konfigurieren",
+        "description": "Wähle die Netzsensoren passend zum Modus",
+        "data": {
+          "grid_power_entity": "Netzleistung (Single)",
+          "grid_import_entity": "Netzbezug (Split)",
+          "grid_export_entity": "Netzeinspeisung (Split)"
+        }
+      },
+      "reconfigure": {
+        "title": "Battery SmartFlow AI neu konfigurieren",
+        "description": "Passe die ausgewählten Sensoren an",
+        "data": {
+          "device_profile": "Geräteprofil",
+          "soc_entity": "Batterie-SoC Sensor",
+          "soc_limit_entity": "SoC-Limit Status (optional)",
+          "pack_capacity_kwh": "Kapazität pro Akku-Pack (kWh)",
+          "battery_ac_power_entity": "Batterie Leistungssensor (W)",
+          "additional_battery_charge_entity": "Zusatzakku Ladeleistung (optional)",
+          "installed_pv_wp": "Installierte PV-Leistung (Wp)",
+          "pv_entity": "PV-Leistung Sensor",
+          "price_now_entity": "Aktueller Strompreis",
+          "price_export_entity": "Preisverlauf (z. B. Tibber / EPEX)",
+          "grid_mode": "Netzmessung",
+          "grid_power_entity": "Netzleistung (Single)",
+          "grid_import_entity": "Netzbezug (Split)",
+          "grid_export_entity": "Netzeinspeisung (Split)",
+          "ac_mode_entity": "Zendure AC-Modus",
+          "input_limit_entity": "Zendure Ladeleistung",
+          "output_limit_entity": "Zendure Entladeleistung"
+        }
+      },
+      "reconfigure_grid": {
+        "title": "Netzmessung konfigurieren",
+        "description": "Wähle die Netzsensoren passend zum Modus",
+        "data": {
+          "grid_power_entity": "Netzleistung (Single)",
+          "grid_import_entity": "Netzbezug (Split)",
+          "grid_export_entity": "Netzeinspeisung (Split)"
+        }
       }
     }
   },
-
+  "options": {
+    "step": {
+      "init": {
+        "title": "Regelprofil bearbeiten",
+        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
+        "data": {
+          "section": "Bereich"
+        },
+        "data_description": {
+          "section": "Wähle, ob du allgemeine Parameter, Lade-Parameter oder Entlade-Parameter des aktiven Geräteprofils bearbeiten möchtest."
+        }
+      },
+      "general": {
+        "title": "Regelprofil bearbeiten – Allgemein",
+        "description": "Allgemeine Regelparameter des aktiven Geräteprofils.",
+        "data": {
+          "installed_pv_wp": "Installierte PV-Leistung (Wp)",
+          "TARGET_IMPORT_W": "Ziel-Netzbezug",
+          "EXPORT_GUARD_W": "Export-Schutz",
+          "KEEPALIVE_MIN_DEFICIT_W": "Keepalive Mindestdefizit",
+          "KEEPALIVE_MIN_OUTPUT_W": "Keepalive Mindestleistung",
+          "SOC_DISCHARGE_RESUME_MARGIN": "Entlade-Wiederfreigabe oberhalb SoC-Minimum"
+        },
+        "data_description": {
+          "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
+          "TARGET_IMPORT_W": "Zielwert für einen kleinen gewollten Netzbezug. Ein höherer Wert reduziert das Risiko ungewollter Einspeisung, erhöht aber den Netzverbrauch leicht.",
+          "EXPORT_GUARD_W": "Zusätzliche Schutzreserve gegen ungewollte Einspeisung. Höhere Werte machen die Regelung vorsichtiger.",
+          "KEEPALIVE_MIN_DEFICIT_W": "Mindestdefizit, ab dem die Entladung aktiv gehalten wird. Hilft gegen Flattern bei sehr kleinen Lasten.",
+          "KEEPALIVE_MIN_OUTPUT_W": "Mindest-Entladeleistung zum stabilen Aktivhalten der Entladung. Verhindert unnötiges Ein- und Ausschalten.",
+          "SOC_DISCHARGE_RESUME_MARGIN": "Zusätzlicher SoC-Abstand oberhalb des eingestellten Mindest-SoC, der erreicht werden muss, bevor die Entladung nach einer SoC-Sperre wieder freigegeben wird. Verhindert Flattern zwischen Laden und Entladen bei knappem Akkustand, besonders morgens bei schwankender PV-Leistung."
+        }
+      },
+      "charge": {
+        "title": "Regelprofil bearbeiten – Laden",
+        "description": "Regelparameter für das Ladeverhalten des aktiven Geräteprofils.",
+        "data": {
+          "CHARGE_DEADBAND_W": "Laden Deadband",
+          "CHARGE_KP_UP": "Laden KP Hochregeln",
+          "CHARGE_KP_DOWN": "Laden KP Runterregeln",
+          "CHARGE_MAX_STEP_UP": "Laden Max. Schritt Hochregeln",
+          "CHARGE_MAX_STEP_DOWN": "Laden Max. Schritt Runterregeln"
+        },
+        "data_description": {
+          "CHARGE_DEADBAND_W": "Toleranzbereich für die Lade-Regelung, in dem nicht nachgeregelt wird. Ein höherer Wert macht das Laden ruhiger, ein niedrigerer Wert reagiert schneller und präziser.",
+          "CHARGE_KP_UP": "Verstärkung beim Hochregeln der Ladeleistung. Höhere Werte erhöhen die Ladeleistung schneller, können aber eher zu unruhigem Verhalten führen.",
+          "CHARGE_KP_DOWN": "Verstärkung beim Runterregeln der Ladeleistung. Höhere Werte reduzieren die Ladeleistung schneller, können aber stärkere Sprünge verursachen.",
+          "CHARGE_MAX_STEP_UP": "Maximaler Leistungsschritt pro Regelzyklus beim Erhöhen der Ladeleistung. Höhere Werte machen die Lade-Regelung schneller, aber potenziell aggressiver.",
+          "CHARGE_MAX_STEP_DOWN": "Maximaler Leistungsschritt pro Regelzyklus beim Reduzieren der Ladeleistung. Höhere Werte bremsen das Laden schneller ab, können aber unruhiger wirken."
+        }
+      },
+      "discharge": {
+        "title": "Regelprofil bearbeiten – Entladen",
+        "description": "Regelparameter für das Entladeverhalten des aktiven Geräteprofils.",
+        "data": {
+          "DISCHARGE_DEADBAND_W": "Entladen Deadband",
+          "DISCHARGE_KP_UP": "Entladen KP Hochregeln",
+          "DISCHARGE_KP_DOWN": "Entladen KP Runterregeln",
+          "DISCHARGE_MAX_STEP_UP": "Entladen Max. Schritt Hochregeln",
+          "DISCHARGE_MAX_STEP_DOWN": "Entladen Max. Schritt Runterregeln"
+        },
+        "data_description": {
+          "DISCHARGE_DEADBAND_W": "Toleranzbereich für die Entlade-Regelung, in dem nicht nachgeregelt wird. Ein höherer Wert macht die Entladung ruhiger, ein niedrigerer Wert reagiert schneller und präziser.",
+          "DISCHARGE_KP_UP": "Verstärkung beim Hochregeln der Entladeleistung. Höhere Werte erhöhen die Entladeleistung schneller, können aber eher überschwingen.",
+          "DISCHARGE_KP_DOWN": "Verstärkung beim Runterregeln der Entladeleistung. Höhere Werte reduzieren die Entladeleistung schneller, können aber unruhiger wirken.",
+          "DISCHARGE_MAX_STEP_UP": "Maximaler Leistungsschritt pro Regelzyklus beim Erhöhen der Entladeleistung. Höhere Werte machen die Entlade-Regelung schneller, aber potenziell aggressiver.",
+          "DISCHARGE_MAX_STEP_DOWN": "Maximaler Leistungsschritt pro Regelzyklus beim Reduzieren der Entladeleistung. Höhere Werte bremsen die Entladung schneller ab, können aber stärker springen."
+        }
+      }
+    }
+  },
   "entity": {
     "select": {
-      "ai_mode": { "name": "Betriebsmodus" },
-      "manual_action": { "name": "Manuelle Aktion" }
+      "ai_mode": {
+        "name": "Betriebsmodus"
+      },
+      "manual_action": {
+        "name": "Manuelle Aktion"
+      }
     },
     "number": {
-      "soc_min": { "name": "SoC Minimum" },
-      "soc_max": { "name": "SoC Maximum" },
-      "max_charge": { "name": "Max. Ladeleistung" },
-      "max_discharge": { "name": "Max. Entladeleistung" },
-      "very_expensive_threshold": { "name": "Sehr-teuer-Schwelle" },
-      "emergency_soc": { "name": "Notladung ab SoC" },
-      "emergency_charge": { "name": "Notladeleistung" },
-      "profit_margin_pct": { "name": "Gewinnmarge" }
+      "soc_min": {
+        "name": "SoC Minimum"
+      },
+      "soc_max": {
+        "name": "SoC Maximum"
+      },
+      "max_charge": {
+        "name": "Max. Ladeleistung"
+      },
+      "max_discharge": {
+        "name": "Max. Entladeleistung"
+      },
+      "very_expensive_threshold": {
+        "name": "Sehr-teuer-Schwelle"
+      },
+      "emergency_soc": {
+        "name": "Notladung ab SoC"
+      },
+      "emergency_charge": {
+        "name": "Notladeleistung"
+      },
+      "profit_margin_pct": {
+        "name": "Gewinnmarge"
+      }
     },
     "sensor": {
-      "status": { "name": "Systemstatus" },
-      "ai_status": { "name": "KI-Status" },
-      "recommendation": { "name": "Empfehlung" },
-      "decision_reason": { "name": "Entscheidungsgrund" },
-      "next_action_state": { "name": "Nächste Aktion" },
-      "next_action_time": { "name": "Startzeit nächste Aktion" },
-      "planning_status": { "name": "Preisplanung Status" },
-      "planning_active": { "name": "Preisplanung aktiv" },
-      "planning_target_soc": { "name": "Ziel-SoC (Planung)" },
-      "planning_reason": { "name": "Planungsbegründung" },
-      "house_load": { "name": "Hauslast" },
-      "price_now": { "name": "Aktueller Strompreis" },
-      "avg_charge_price": { "name": "Ø Ladepreis Akku" },
-      "profit_eur": { "name": "Ersparnis / Gewinn" }
+      "status": {
+        "name": "Systemstatus"
+      },
+      "ai_status": {
+        "name": "KI-Status"
+      },
+      "recommendation": {
+        "name": "Empfehlung"
+      },
+      "decision_reason": {
+        "name": "Entscheidungsgrund"
+      },
+      "next_action_state": {
+        "name": "Nächste Aktion"
+      },
+      "next_action_time": {
+        "name": "Startzeit nächste Aktion"
+      },
+      "planning_status": {
+        "name": "Preisplanung Status"
+      },
+      "planning_active": {
+        "name": "Preisplanung aktiv"
+      },
+      "planning_target_soc": {
+        "name": "Ziel-SoC (Planung)"
+      },
+      "planning_reason": {
+        "name": "Planungsbegründung"
+      },
+      "house_load": {
+        "name": "Hauslast"
+      },
+      "price_now": {
+        "name": "Aktueller Strompreis"
+      },
+      "avg_charge_price": {
+        "name": "Ø Ladepreis Akku"
+      },
+      "profit_eur": {
+        "name": "Ersparnis / Gewinn"
+      }
     }
   }
 }
