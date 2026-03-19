@@ -123,23 +123,56 @@
     "step": {
       "init": {
         "title": "Regelprofil bearbeiten",
-        "description": "Experteneinstellungen für das aktive Geräteprofil. Diese Werte ändern das interne Regelverhalten und sollten nur angepasst werden, wenn du die Wirkung kennst.",
+        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
         "data": {
+          "section": "Bereich"
+        },
+        "data_description": {
+          "section": "Wähle, ob du allgemeine Parameter, Lade-Parameter oder Entlade-Parameter des aktiven Geräteprofils bearbeiten möchtest."
+        }
+      },
+      "general": {
+        "title": "Regelprofil bearbeiten – Allgemein",
+        "description": "Allgemeine Regelparameter des aktiven Geräteprofils.",
+        "data": {
+          "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "TARGET_IMPORT_W": "Ziel-Netzbezug",
-          "DEADBAND_W": "Deadband",
           "EXPORT_GUARD_W": "Export-Schutz",
-          "KP_UP": "KP Hochregeln",
-          "KP_DOWN": "KP Runterregeln",
-          "MAX_STEP_UP": "Max. Schritt Hochregeln",
-          "MAX_STEP_DOWN": "Max. Schritt Runterregeln",
           "KEEPALIVE_MIN_DEFICIT_W": "Keepalive Mindestdefizit",
           "KEEPALIVE_MIN_OUTPUT_W": "Keepalive Mindestleistung",
-          "SOC_DISCHARGE_RESUME_MARGIN": "Entlade-Wiederfreigabe oberhalb SoC-Minimum",
+          "SOC_DISCHARGE_RESUME_MARGIN": "Entlade-Wiederfreigabe oberhalb SoC-Minimum"
+        },
+        "data_description": {
+          "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
+          "TARGET_IMPORT_W": "Zielwert für einen kleinen gewollten Netzbezug. Ein höherer Wert reduziert das Risiko ungewollter Einspeisung, erhöht aber den Netzverbrauch leicht.",
+          "EXPORT_GUARD_W": "Zusätzliche Schutzreserve gegen ungewollte Einspeisung. Höhere Werte machen die Regelung vorsichtiger.",
+          "KEEPALIVE_MIN_DEFICIT_W": "Mindestdefizit, ab dem die Entladung aktiv gehalten wird. Hilft gegen Flattern bei sehr kleinen Lasten.",
+          "KEEPALIVE_MIN_OUTPUT_W": "Mindest-Entladeleistung zum stabilen Aktivhalten der Entladung. Verhindert unnötiges Ein- und Ausschalten.",
+          "SOC_DISCHARGE_RESUME_MARGIN": "Zusätzlicher SoC-Abstand oberhalb des eingestellten Mindest-SoC, der erreicht werden muss, bevor die Entladung nach einer SoC-Sperre wieder freigegeben wird. Verhindert Flattern zwischen Laden und Entladen bei knappem Akkustand, besonders morgens bei schwankender PV-Leistung."
+        }
+      },
+      "charge": {
+        "title": "Regelprofil bearbeiten – Laden",
+        "description": "Regelparameter für das Ladeverhalten des aktiven Geräteprofils.",
+        "data": {
           "CHARGE_DEADBAND_W": "Laden Deadband",
           "CHARGE_KP_UP": "Laden KP Hochregeln",
           "CHARGE_KP_DOWN": "Laden KP Runterregeln",
           "CHARGE_MAX_STEP_UP": "Laden Max. Schritt Hochregeln",
-          "CHARGE_MAX_STEP_DOWN": "Laden Max. Schritt Runterregeln",
+          "CHARGE_MAX_STEP_DOWN": "Laden Max. Schritt Runterregeln"
+        },
+        "data_description": {
+          "CHARGE_DEADBAND_W": "Toleranzbereich für die Lade-Regelung, in dem nicht nachgeregelt wird. Ein höherer Wert macht das Laden ruhiger, ein niedrigerer Wert reagiert schneller und präziser.",
+          "CHARGE_KP_UP": "Verstärkung beim Hochregeln der Ladeleistung. Höhere Werte erhöhen die Ladeleistung schneller, können aber eher zu unruhigem Verhalten führen.",
+          "CHARGE_KP_DOWN": "Verstärkung beim Runterregeln der Ladeleistung. Höhere Werte reduzieren die Ladeleistung schneller, können aber stärkere Sprünge verursachen.",
+          "CHARGE_MAX_STEP_UP": "Maximaler Leistungsschritt pro Regelzyklus beim Erhöhen der Ladeleistung. Höhere Werte machen die Lade-Regelung schneller, aber potenziell aggressiver.",
+          "CHARGE_MAX_STEP_DOWN": "Maximaler Leistungsschritt pro Regelzyklus beim Reduzieren der Ladeleistung. Höhere Werte bremsen das Laden schneller ab, können aber unruhiger wirken."
+        }
+      },
+      "discharge": {
+        "title": "Regelprofil bearbeiten – Entladen",
+        "description": "Regelparameter für das Entladeverhalten des aktiven Geräteprofils.",
+        "data": {
           "DISCHARGE_DEADBAND_W": "Entladen Deadband",
           "DISCHARGE_KP_UP": "Entladen KP Hochregeln",
           "DISCHARGE_KP_DOWN": "Entladen KP Runterregeln",
@@ -147,21 +180,6 @@
           "DISCHARGE_MAX_STEP_DOWN": "Entladen Max. Schritt Runterregeln"
         },
         "data_description": {
-          "TARGET_IMPORT_W": "Zielwert für einen kleinen gewollten Netzbezug. Ein höherer Wert reduziert das Risiko ungewollter Einspeisung, erhöht aber den Netzverbrauch leicht.",
-          "DEADBAND_W": "Toleranzbereich, in dem nicht nachgeregelt wird. Ein höherer Wert macht die Regelung ruhiger, ein niedrigerer aggressiver und präziser.",
-          "EXPORT_GUARD_W": "Zusätzliche Schutzreserve gegen ungewollte Einspeisung. Höhere Werte machen die Regelung vorsichtiger.",
-          "KP_UP": "Verstärkung beim Hochregeln der Leistung. Höhere Werte reagieren schneller, können aber eher überschwingen.",
-          "KP_DOWN": "Verstärkung beim Runterregeln der Leistung. Höhere Werte reduzieren Leistung schneller, können aber unruhiger wirken.",
-          "MAX_STEP_UP": "Maximaler Leistungsschritt pro Regelzyklus beim Hochregeln. Höhere Werte machen die Regelung schneller, aber potenziell aggressiver.",
-          "MAX_STEP_DOWN": "Maximaler Leistungsschritt pro Regelzyklus beim Runterregeln. Höhere Werte bremsen schneller ab, können aber stärker springen.",
-          "KEEPALIVE_MIN_DEFICIT_W": "Mindestdefizit, ab dem die Entladung aktiv gehalten wird. Hilft gegen Flattern bei sehr kleinen Lasten.",
-          "KEEPALIVE_MIN_OUTPUT_W": "Mindest-Entladeleistung zum stabilen Aktivhalten der Entladung. Verhindert unnötiges Ein- und Ausschalten.",
-          "SOC_DISCHARGE_RESUME_MARGIN": "Zusätzlicher SoC-Abstand oberhalb des eingestellten Mindest-SoC, der erreicht werden muss, bevor die Entladung nach einer SoC-Sperre wieder freigegeben wird. Verhindert Flattern zwischen Laden und Entladen bei knappem Akkustand, besonders morgens bei schwankender PV-Leistung.",
-          "CHARGE_DEADBAND_W": "Toleranzbereich für die Lade-Regelung, in dem nicht nachgeregelt wird. Ein höherer Wert macht das Laden ruhiger, ein niedrigerer Wert reagiert schneller und präziser.",
-          "CHARGE_KP_UP": "Verstärkung beim Hochregeln der Ladeleistung. Höhere Werte erhöhen die Ladeleistung schneller, können aber eher zu unruhigem Verhalten führen.",
-          "CHARGE_KP_DOWN": "Verstärkung beim Runterregeln der Ladeleistung. Höhere Werte reduzieren die Ladeleistung schneller, können aber stärkere Sprünge verursachen.",
-          "CHARGE_MAX_STEP_UP": "Maximaler Leistungsschritt pro Regelzyklus beim Erhöhen der Ladeleistung. Höhere Werte machen die Lade-Regelung schneller, aber potenziell aggressiver.",
-          "CHARGE_MAX_STEP_DOWN": "Maximaler Leistungsschritt pro Regelzyklus beim Reduzieren der Ladeleistung. Höhere Werte bremsen das Laden schneller ab, können aber unruhiger wirken.",
           "DISCHARGE_DEADBAND_W": "Toleranzbereich für die Entlade-Regelung, in dem nicht nachgeregelt wird. Ein höherer Wert macht die Entladung ruhiger, ein niedrigerer Wert reagiert schneller und präziser.",
           "DISCHARGE_KP_UP": "Verstärkung beim Hochregeln der Entladeleistung. Höhere Werte erhöhen die Entladeleistung schneller, können aber eher überschwingen.",
           "DISCHARGE_KP_DOWN": "Verstärkung beim Runterregeln der Entladeleistung. Höhere Werte reduzieren die Entladeleistung schneller, können aber unruhiger wirken.",
