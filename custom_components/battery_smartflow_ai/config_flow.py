@@ -395,7 +395,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
     """Options flow for profile overrides and expert settings."""
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+    def _profile_context(self) -> tuple[str, dict[str, Any], dict[str, Any]]:
         profile_key = (
             self.config_entry.options.get(CONF_DEVICE_PROFILE)
             or self.config_entry.data.get(CONF_DEVICE_PROFILE)
@@ -408,41 +408,94 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         current_overrides = self.config_entry.options.get(CONF_PROFILE_OVERRIDES, {})
         if not isinstance(current_overrides, dict):
             current_overrides = {}
+        return profile_key, profile, current_overrides
+
+    def _build_merged_options(
+        self,
+        user_input: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged_options = dict(self.config_entry.options)
+
+        installed_pv_wp = user_input.get(
+            CONF_INSTALLED_PV_WP,
+            self.config_entry.options.get(
+                CONF_INSTALLED_PV_WP,
+                self.config_entry.data.get(
+                    CONF_INSTALLED_PV_WP,
+                    DEFAULT_INSTALLED_PV_WP,
+                ),
+            ),
+        )
+
+        profile_overrides: dict[str, float] = dict(
+            self.config_entry.options.get(CONF_PROFILE_OVERRIDES, {})
+            if isinstance(self.config_entry.options.get(CONF_PROFILE_OVERRIDES, {}), dict)
+            else {}
+        )
+
+        for key in PROFILE_OVERRIDE_FIELDS:
+            if key not in user_input:
+                continue
+            value = user_input.get(key)
+            if value is None:
+                continue
+            try:
+                profile_overrides[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+
+        merged_options[CONF_INSTALLED_PV_WP] = float(installed_pv_wp)
+        merged_options[CONF_PROFILE_OVERRIDES] = profile_overrides
+        return merged_options
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+        if user_input is not None:
+            section = user_input["section"]
+            if section == "general":
+                return await self.async_step_general()
+            if section == "charge":
+                return await self.async_step_charge()
+            if section == "discharge":
+                return await self.async_step_discharge()
+
+        section_schema = vol.Schema(
+            {
+                vol.Required("section"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {"value": "general", "label": "Allgemein"},
+                            {"value": "charge", "label": "Laden"},
+                            {"value": "discharge", "label": "Entladen"},
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                )
+            }
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=section_schema,
+        )
+
+    async def async_step_general(self, user_input: dict[str, Any] | None = None):
+        _, profile, current_overrides = self._profile_context()
 
         if user_input is not None:
-            merged_options = dict(self.config_entry.options)
-
-            installed_pv_wp = user_input.get(
-                CONF_INSTALLED_PV_WP,
-                self.config_entry.options.get(
-                    CONF_INSTALLED_PV_WP,
-                    self.config_entry.data.get(
-                        CONF_INSTALLED_PV_WP,
-                        DEFAULT_INSTALLED_PV_WP,
-                    ),
-                ),
-            )
-
-            profile_overrides: dict[str, float] = {}
-            for key in PROFILE_OVERRIDE_FIELDS:
-                value = user_input.get(key)
-                if value is None:
-                    continue
-                try:
-                    profile_overrides[key] = float(value)
-                except (TypeError, ValueError):
-                    continue
-
-            merged_options[CONF_INSTALLED_PV_WP] = float(installed_pv_wp)
-            merged_options[CONF_PROFILE_OVERRIDES] = profile_overrides
-
-            return self.async_create_entry(
-                title="",
-                data=merged_options,
-            )
+            merged_options = self._build_merged_options(user_input)
+            return self.async_create_entry(title="", data=merged_options)
 
         options_schema = vol.Schema(
             {
+                vol.Optional(CONF_INSTALLED_PV_WP): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=50000,
+                        step=10,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="Wp",
+                    )
+                ),
                 vol.Optional("TARGET_IMPORT_W"): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.0,
@@ -488,6 +541,56 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                         unit_of_measurement="%",
                     )
                 ),
+            }
+        )
+
+        suggested_values = {
+            CONF_INSTALLED_PV_WP: self.config_entry.options.get(
+                CONF_INSTALLED_PV_WP,
+                self.config_entry.data.get(
+                    CONF_INSTALLED_PV_WP,
+                    DEFAULT_INSTALLED_PV_WP,
+                ),
+            ),
+            "TARGET_IMPORT_W": current_overrides.get(
+                "TARGET_IMPORT_W",
+                profile.get("TARGET_IMPORT_W"),
+            ),
+            "EXPORT_GUARD_W": current_overrides.get(
+                "EXPORT_GUARD_W",
+                profile.get("EXPORT_GUARD_W"),
+            ),
+            "KEEPALIVE_MIN_DEFICIT_W": current_overrides.get(
+                "KEEPALIVE_MIN_DEFICIT_W",
+                profile.get("KEEPALIVE_MIN_DEFICIT_W"),
+            ),
+            "KEEPALIVE_MIN_OUTPUT_W": current_overrides.get(
+                "KEEPALIVE_MIN_OUTPUT_W",
+                profile.get("KEEPALIVE_MIN_OUTPUT_W"),
+            ),
+            "SOC_DISCHARGE_RESUME_MARGIN": current_overrides.get(
+                "SOC_DISCHARGE_RESUME_MARGIN",
+                profile.get("SOC_DISCHARGE_RESUME_MARGIN", 3.0),
+            ),
+        }
+
+        return self.async_show_form(
+            step_id="general",
+            data_schema=self.add_suggested_values_to_schema(
+                options_schema,
+                suggested_values,
+            ),
+        )
+
+    async def async_step_charge(self, user_input: dict[str, Any] | None = None):
+        _, profile, current_overrides = self._profile_context()
+
+        if user_input is not None:
+            merged_options = self._build_merged_options(user_input)
+            return self.async_create_entry(title="", data=merged_options)
+
+        options_schema = vol.Schema(
+            {
                 vol.Optional("CHARGE_DEADBAND_W"): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.0,
@@ -531,6 +634,49 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                         unit_of_measurement="W",
                     )
                 ),
+            }
+        )
+
+        suggested_values = {
+            "CHARGE_DEADBAND_W": current_overrides.get(
+                "CHARGE_DEADBAND_W",
+                profile.get("CHARGE_DEADBAND_W"),
+            ),
+            "CHARGE_KP_UP": current_overrides.get(
+                "CHARGE_KP_UP",
+                profile.get("CHARGE_KP_UP"),
+            ),
+            "CHARGE_KP_DOWN": current_overrides.get(
+                "CHARGE_KP_DOWN",
+                profile.get("CHARGE_KP_DOWN"),
+            ),
+            "CHARGE_MAX_STEP_UP": current_overrides.get(
+                "CHARGE_MAX_STEP_UP",
+                profile.get("CHARGE_MAX_STEP_UP"),
+            ),
+            "CHARGE_MAX_STEP_DOWN": current_overrides.get(
+                "CHARGE_MAX_STEP_DOWN",
+                profile.get("CHARGE_MAX_STEP_DOWN"),
+            ),
+        }
+
+        return self.async_show_form(
+            step_id="charge",
+            data_schema=self.add_suggested_values_to_schema(
+                options_schema,
+                suggested_values,
+            ),
+        )
+
+    async def async_step_discharge(self, user_input: dict[str, Any] | None = None):
+        _, profile, current_overrides = self._profile_context()
+
+        if user_input is not None:
+            merged_options = self._build_merged_options(user_input)
+            return self.async_create_entry(title="", data=merged_options)
+
+        options_schema = vol.Schema(
+            {
                 vol.Optional("DISCHARGE_DEADBAND_W"): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.0,
@@ -578,53 +724,6 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         )
 
         suggested_values = {
-            CONF_INSTALLED_PV_WP: self.config_entry.options.get(
-                CONF_INSTALLED_PV_WP,
-                self.config_entry.data.get(
-                    CONF_INSTALLED_PV_WP,
-                    DEFAULT_INSTALLED_PV_WP,
-                ),
-            ),
-            "TARGET_IMPORT_W": current_overrides.get(
-                "TARGET_IMPORT_W",
-                profile.get("TARGET_IMPORT_W"),
-            ),
-            "EXPORT_GUARD_W": current_overrides.get(
-                "EXPORT_GUARD_W",
-                profile.get("EXPORT_GUARD_W"),
-            ),
-            "KEEPALIVE_MIN_DEFICIT_W": current_overrides.get(
-                "KEEPALIVE_MIN_DEFICIT_W",
-                profile.get("KEEPALIVE_MIN_DEFICIT_W"),
-            ),
-            "KEEPALIVE_MIN_OUTPUT_W": current_overrides.get(
-                "KEEPALIVE_MIN_OUTPUT_W",
-                profile.get("KEEPALIVE_MIN_OUTPUT_W"),
-            ),
-            "SOC_DISCHARGE_RESUME_MARGIN": current_overrides.get(
-                "SOC_DISCHARGE_RESUME_MARGIN",
-                profile.get("SOC_DISCHARGE_RESUME_MARGIN", 3.0),
-            ),
-            "CHARGE_DEADBAND_W": current_overrides.get(
-                "CHARGE_DEADBAND_W",
-                profile.get("CHARGE_DEADBAND_W"),
-            ),
-            "CHARGE_KP_UP": current_overrides.get(
-                "CHARGE_KP_UP",
-                profile.get("CHARGE_KP_UP"),
-            ),
-            "CHARGE_KP_DOWN": current_overrides.get(
-                "CHARGE_KP_DOWN",
-                profile.get("CHARGE_KP_DOWN"),
-            ),
-            "CHARGE_MAX_STEP_UP": current_overrides.get(
-                "CHARGE_MAX_STEP_UP",
-                profile.get("CHARGE_MAX_STEP_UP"),
-            ),
-            "CHARGE_MAX_STEP_DOWN": current_overrides.get(
-                "CHARGE_MAX_STEP_DOWN",
-                profile.get("CHARGE_MAX_STEP_DOWN"),
-            ),
             "DISCHARGE_DEADBAND_W": current_overrides.get(
                 "DISCHARGE_DEADBAND_W",
                 profile.get("DISCHARGE_DEADBAND_W"),
@@ -648,7 +747,7 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         }
 
         return self.async_show_form(
-            step_id="init",
+            step_id="discharge",
             data_schema=self.add_suggested_values_to_schema(
                 options_schema,
                 suggested_values,
