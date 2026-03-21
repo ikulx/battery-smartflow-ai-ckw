@@ -123,7 +123,7 @@
     "step": {
       "init": {
         "title": "Regelprofil bearbeiten",
-        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
+        "description": "Wähle den Bereich aus, den du bearbeiten möchtest. „Allgemein“ enthält gemeinsame Profilparameter, „Laden“ die Regelwerte für die Ladeleistung und „Entladen“ die Regelwerte für die Entladeleistung.",
         "menu_options": {
           "general": "Allgemein",
           "charge": "Laden",
