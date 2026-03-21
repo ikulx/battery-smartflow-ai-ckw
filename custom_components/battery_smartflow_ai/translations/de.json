@@ -61,7 +61,7 @@
       },
       "grid": {
         "title": "Netzmessung konfigurieren",
-        "description": "Wähle die Netzsensoren passend zum Modus",
+        "description": "Wähle den Bereich aus, den du bearbeiten möchtest. „Allgemein“ enthält gemeinsame Profilparameter, „Laden“ die Regelwerte für die Ladeleistung und „Entladen“ die Regelwerte für die Entladeleistung.",
         "data": {
           "grid_power_entity": "Netzleistung (Single)",
           "grid_import_entity": "Netzbezug (Split)",
