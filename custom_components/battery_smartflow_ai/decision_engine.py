@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import statistics
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Literal, Optional
@@ -341,10 +340,77 @@ class DecisionEngine:
         return base_price * valley_factor
 
     # -------------------------------------------------
+    # Directional profile mapping
+    # -------------------------------------------------
+
+    def _profile_for_discharge(self, profile: dict) -> dict:
+        """Map discharge-specific tuning keys onto legacy controller keys.
+
+        This keeps PowerController compatible while allowing separate
+        charge/discharge parameter sets in the profiles.
+        """
+        mapped = dict(profile)
+
+        mapped["DEADBAND_W"] = profile.get(
+            "DISCHARGE_DEADBAND_W",
+            profile.get("DEADBAND_W"),
+        )
+        mapped["KP_UP"] = profile.get(
+            "DISCHARGE_KP_UP",
+            profile.get("KP_UP"),
+        )
+        mapped["KP_DOWN"] = profile.get(
+            "DISCHARGE_KP_DOWN",
+            profile.get("KP_DOWN"),
+        )
+        mapped["MAX_STEP_UP"] = profile.get(
+            "DISCHARGE_MAX_STEP_UP",
+            profile.get("MAX_STEP_UP"),
+        )
+        mapped["MAX_STEP_DOWN"] = profile.get(
+            "DISCHARGE_MAX_STEP_DOWN",
+            profile.get("MAX_STEP_DOWN"),
+        )
+
+        return mapped
+
+    def _profile_for_charge(self, profile: dict) -> dict:
+        """Map charge-specific tuning keys onto legacy controller keys."""
+        mapped = dict(profile)
+
+        mapped["DEADBAND_W"] = profile.get(
+            "CHARGE_DEADBAND_W",
+            profile.get("DEADBAND_W"),
+        )
+        mapped["KP_UP"] = profile.get(
+            "CHARGE_KP_UP",
+            profile.get("KP_UP"),
+        )
+        mapped["KP_DOWN"] = profile.get(
+            "CHARGE_KP_DOWN",
+            profile.get("KP_DOWN"),
+        )
+        mapped["MAX_STEP_UP"] = profile.get(
+            "CHARGE_MAX_STEP_UP",
+            profile.get("MAX_STEP_UP"),
+        )
+        mapped["MAX_STEP_DOWN"] = profile.get(
+            "CHARGE_MAX_STEP_DOWN",
+            profile.get("MAX_STEP_DOWN"),
+        )
+
+        return mapped
+
+    # -------------------------------------------------
     # Delta delegation
     # -------------------------------------------------
 
-    def _to_power_ctx(self, ctx: DecisionContext) -> PowerContext:
+    def _to_power_ctx(self, ctx: DecisionContext, mode: Literal["charge", "discharge"]) -> PowerContext:
+        if mode == "discharge":
+            effective_profile = self._profile_for_discharge(ctx.profile)
+        else:
+            effective_profile = self._profile_for_charge(ctx.profile)
+
         return PowerContext(
             soc=ctx.soc,
             soc_min=ctx.soc_min,
@@ -355,14 +421,14 @@ class DecisionEngine:
             grid_export_w=ctx.grid_export_w,
             prev_discharge_w=ctx.prev_discharge_w,
             prev_charge_w=ctx.prev_charge_w,
-            profile=ctx.profile,
+            profile=effective_profile,
         )
 
     def _delta_discharge(self, ctx: DecisionContext) -> float:
-        return PowerController.delta_discharge(self._to_power_ctx(ctx))
+        return PowerController.delta_discharge(self._to_power_ctx(ctx, "discharge"))
 
     def _delta_charge(self, ctx: DecisionContext) -> float:
-        return PowerController.delta_charge(self._to_power_ctx(ctx))
+        return PowerController.delta_charge(self._to_power_ctx(ctx, "charge"))
 
     # -------------------------------------------------
     # Peak detection

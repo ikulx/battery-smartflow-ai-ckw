@@ -232,8 +232,8 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema[
             vol.Optional(
-                CONF_INSTALLED_PV_WP, 
-                default =_val(CONF_INSTALLED_PV_WP) or DEFAULT_INSTALLED_PV_WP,
+                CONF_INSTALLED_PV_WP,
+                default=_val(CONF_INSTALLED_PV_WP) or DEFAULT_INSTALLED_PV_WP,
             )
         ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
@@ -244,7 +244,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 unit_of_measurement="Wp",
             )
         )
-        
+
         schema[
             vol.Required(CONF_PV_ENTITY, default=_val(CONF_PV_ENTITY))
         ] = selector.EntitySelector(
@@ -395,7 +395,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
     """Options flow for profile overrides and expert settings."""
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+    def _profile_context(self) -> tuple[str, dict[str, Any], dict[str, Any]]:
         profile_key = (
             self.config_entry.options.get(CONF_DEVICE_PROFILE)
             or self.config_entry.data.get(CONF_DEVICE_PROFILE)
@@ -408,54 +408,74 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         current_overrides = self.config_entry.options.get(CONF_PROFILE_OVERRIDES, {})
         if not isinstance(current_overrides, dict):
             current_overrides = {}
+        return profile_key, profile, current_overrides
+
+    def _build_merged_options(
+        self,
+        user_input: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged_options = dict(self.config_entry.options)
+
+        installed_pv_wp = user_input.get(
+            CONF_INSTALLED_PV_WP,
+            self.config_entry.options.get(
+                CONF_INSTALLED_PV_WP,
+                self.config_entry.data.get(
+                    CONF_INSTALLED_PV_WP,
+                    DEFAULT_INSTALLED_PV_WP,
+                ),
+            ),
+        )
+
+        profile_overrides: dict[str, float] = dict(
+            self.config_entry.options.get(CONF_PROFILE_OVERRIDES, {})
+            if isinstance(self.config_entry.options.get(CONF_PROFILE_OVERRIDES, {}), dict)
+            else {}
+        )
+
+        for key in PROFILE_OVERRIDE_FIELDS:
+            if key not in user_input:
+                continue
+            value = user_input.get(key)
+            if value is None:
+                continue
+            try:
+                profile_overrides[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+
+        merged_options[CONF_INSTALLED_PV_WP] = float(installed_pv_wp)
+        merged_options[CONF_PROFILE_OVERRIDES] = profile_overrides
+        return merged_options
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["general", "charge", "discharge"],
+        )
+
+    async def async_step_general(self, user_input: dict[str, Any] | None = None):
+        _, profile, current_overrides = self._profile_context()
 
         if user_input is not None:
-            merged_options = dict(self.config_entry.options)
-
-            installed_pv_wp = user_input.get(
-                CONF_INSTALLED_PV_WP,
-                self.config_entry.options.get(
-                    CONF_INSTALLED_PV_WP,
-                    self.config_entry.data.get(
-                        CONF_INSTALLED_PV_WP,
-                        DEFAULT_INSTALLED_PV_WP,
-                    ),
-                ),
-            )
-
-            profile_overrides: dict[str, float] = {}
-            for key in PROFILE_OVERRIDE_FIELDS:
-                value = user_input.get(key)
-                if value is None:
-                    continue
-                try:
-                    profile_overrides[key] = float(value)
-                except (TypeError, ValueError):
-                    continue
-
-            merged_options[CONF_INSTALLED_PV_WP] = float(installed_pv_wp)
-            merged_options[CONF_PROFILE_OVERRIDES] = profile_overrides
-
-            return self.async_create_entry(
-                title="",
-                data=merged_options,
-            )
+            merged_options = self._build_merged_options(user_input)
+            return self.async_create_entry(title="", data=merged_options)
 
         options_schema = vol.Schema(
             {
+                vol.Optional(CONF_INSTALLED_PV_WP): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=50000,
+                        step=10,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="Wp",
+                    )
+                ),
                 vol.Optional("TARGET_IMPORT_W"): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.0,
                         max=300.0,
-                        step=5.0,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="W",
-                    )
-                ),
-                vol.Optional("DEADBAND_W"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.0,
-                        max=200.0,
                         step=5.0,
                         mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="W",
@@ -466,40 +486,6 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                         min=0.0,
                         max=300.0,
                         step=5.0,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="W",
-                    )
-                ),
-                vol.Optional("KP_UP"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.10,
-                        max=2.00,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional("KP_DOWN"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.10,
-                        max=2.00,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional("MAX_STEP_UP"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=50.0,
-                        max=2000.0,
-                        step=10.0,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="W",
-                    )
-                ),
-                vol.Optional("MAX_STEP_DOWN"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=50.0,
-                        max=2000.0,
-                        step=10.0,
                         mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="W",
                     )
@@ -522,6 +508,15 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                         unit_of_measurement="W",
                     )
                 ),
+                vol.Optional("SOC_DISCHARGE_RESUME_MARGIN"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=15.0,
+                        step=0.5,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="%",
+                    )
+                ),
             }
         )
 
@@ -537,23 +532,9 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                 "TARGET_IMPORT_W",
                 profile.get("TARGET_IMPORT_W"),
             ),
-            "DEADBAND_W": current_overrides.get(
-                "DEADBAND_W",
-                profile.get("DEADBAND_W"),
-            ),
             "EXPORT_GUARD_W": current_overrides.get(
                 "EXPORT_GUARD_W",
                 profile.get("EXPORT_GUARD_W"),
-            ),
-            "KP_UP": current_overrides.get("KP_UP", profile.get("KP_UP")),
-            "KP_DOWN": current_overrides.get("KP_DOWN", profile.get("KP_DOWN")),
-            "MAX_STEP_UP": current_overrides.get(
-                "MAX_STEP_UP",
-                profile.get("MAX_STEP_UP"),
-            ),
-            "MAX_STEP_DOWN": current_overrides.get(
-                "MAX_STEP_DOWN",
-                profile.get("MAX_STEP_DOWN"),
             ),
             "KEEPALIVE_MIN_DEFICIT_W": current_overrides.get(
                 "KEEPALIVE_MIN_DEFICIT_W",
@@ -563,10 +544,186 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                 "KEEPALIVE_MIN_OUTPUT_W",
                 profile.get("KEEPALIVE_MIN_OUTPUT_W"),
             ),
+            "SOC_DISCHARGE_RESUME_MARGIN": current_overrides.get(
+                "SOC_DISCHARGE_RESUME_MARGIN",
+                profile.get("SOC_DISCHARGE_RESUME_MARGIN", 3.0),
+            ),
         }
 
         return self.async_show_form(
-            step_id="init",
+            step_id="general",
+            data_schema=self.add_suggested_values_to_schema(
+                options_schema,
+                suggested_values,
+            ),
+        )
+
+    async def async_step_charge(self, user_input: dict[str, Any] | None = None):
+        _, profile, current_overrides = self._profile_context()
+
+        if user_input is not None:
+            merged_options = self._build_merged_options(user_input)
+            return self.async_create_entry(title="", data=merged_options)
+
+        options_schema = vol.Schema(
+            {
+                vol.Optional("CHARGE_DEADBAND_W"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=200.0,
+                        step=5.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+                vol.Optional("CHARGE_KP_UP"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.10,
+                        max=2.00,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional("CHARGE_KP_DOWN"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.10,
+                        max=2.00,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional("CHARGE_MAX_STEP_UP"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=50.0,
+                        max=2000.0,
+                        step=10.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+                vol.Optional("CHARGE_MAX_STEP_DOWN"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=50.0,
+                        max=2000.0,
+                        step=10.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+            }
+        )
+
+        suggested_values = {
+            "CHARGE_DEADBAND_W": current_overrides.get(
+                "CHARGE_DEADBAND_W",
+                profile.get("CHARGE_DEADBAND_W"),
+            ),
+            "CHARGE_KP_UP": current_overrides.get(
+                "CHARGE_KP_UP",
+                profile.get("CHARGE_KP_UP"),
+            ),
+            "CHARGE_KP_DOWN": current_overrides.get(
+                "CHARGE_KP_DOWN",
+                profile.get("CHARGE_KP_DOWN"),
+            ),
+            "CHARGE_MAX_STEP_UP": current_overrides.get(
+                "CHARGE_MAX_STEP_UP",
+                profile.get("CHARGE_MAX_STEP_UP"),
+            ),
+            "CHARGE_MAX_STEP_DOWN": current_overrides.get(
+                "CHARGE_MAX_STEP_DOWN",
+                profile.get("CHARGE_MAX_STEP_DOWN"),
+            ),
+        }
+
+        return self.async_show_form(
+            step_id="charge",
+            data_schema=self.add_suggested_values_to_schema(
+                options_schema,
+                suggested_values,
+            ),
+        )
+
+    async def async_step_discharge(self, user_input: dict[str, Any] | None = None):
+        _, profile, current_overrides = self._profile_context()
+
+        if user_input is not None:
+            merged_options = self._build_merged_options(user_input)
+            return self.async_create_entry(title="", data=merged_options)
+
+        options_schema = vol.Schema(
+            {
+                vol.Optional("DISCHARGE_DEADBAND_W"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=200.0,
+                        step=5.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+                vol.Optional("DISCHARGE_KP_UP"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.10,
+                        max=2.00,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional("DISCHARGE_KP_DOWN"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.10,
+                        max=2.00,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional("DISCHARGE_MAX_STEP_UP"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=50.0,
+                        max=2000.0,
+                        step=10.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+                vol.Optional("DISCHARGE_MAX_STEP_DOWN"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=50.0,
+                        max=2000.0,
+                        step=10.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+            }
+        )
+
+        suggested_values = {
+            "DISCHARGE_DEADBAND_W": current_overrides.get(
+                "DISCHARGE_DEADBAND_W",
+                profile.get("DISCHARGE_DEADBAND_W"),
+            ),
+            "DISCHARGE_KP_UP": current_overrides.get(
+                "DISCHARGE_KP_UP",
+                profile.get("DISCHARGE_KP_UP"),
+            ),
+            "DISCHARGE_KP_DOWN": current_overrides.get(
+                "DISCHARGE_KP_DOWN",
+                profile.get("DISCHARGE_KP_DOWN"),
+            ),
+            "DISCHARGE_MAX_STEP_UP": current_overrides.get(
+                "DISCHARGE_MAX_STEP_UP",
+                profile.get("DISCHARGE_MAX_STEP_UP"),
+            ),
+            "DISCHARGE_MAX_STEP_DOWN": current_overrides.get(
+                "DISCHARGE_MAX_STEP_DOWN",
+                profile.get("DISCHARGE_MAX_STEP_DOWN"),
+            ),
+        }
+
+        return self.async_show_form(
+            step_id="discharge",
             data_schema=self.add_suggested_values_to_schema(
                 options_schema,
                 suggested_values,

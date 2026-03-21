@@ -191,6 +191,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # basic state
             "power_state": "idle",  # idle|charging|discharging
             "emergency_active": False,
+            "discharge_blocked_by_soc_min": False,
+            "discharge_resume_soc": None,
 
             # analytics
             "trade_avg_charge_price": None,
@@ -378,6 +380,76 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return pack_capacity * packs
 
+    def _update_discharge_resume_hysteresis(
+        self,
+        soc: float,
+        soc_min: float,
+        resume_margin: float,
+    ) -> bool:
+        """Maintain hysteresis for discharge re-enable around soc_min."""
+        blocked = bool(self._persist.get("discharge_blocked_by_soc_min", False))
+        effective_resume_soc = float(soc_min) + max(0.0, float(resume_margin))
+
+        if float(soc) <= float(soc_min):
+            blocked = True
+        elif float(soc) >= effective_resume_soc:
+            blocked = False
+
+        self._persist["discharge_blocked_by_soc_min"] = blocked
+        self._persist["discharge_resume_soc"] = effective_resume_soc
+
+        return blocked
+
+    def _classify_charge_source(
+        self,
+        delta_kwh: float,
+        grid_import_w: float,
+        grid_export_w: float,
+        decision_charge_w: float,
+        decision_ac_mode: str,
+        price_now: float | None,
+    ) -> tuple[bool, float, str]:
+        """Classify the source of a positive battery charge delta.
+
+        Returns:
+            (is_grid_charge, applied_price, charge_source)
+
+        Notes:
+        - PV / surplus charging must be counted as a real charge event with 0 €/kWh.
+        - The logic intentionally biases towards PV/free charging unless there is
+          strong evidence that the battery is really being charged from grid.
+        """
+        if delta_kwh <= 0:
+            return False, 0.0, "no_charge_delta"
+
+        if decision_ac_mode != "input":
+            return False, 0.0, "not_in_input_mode"
+
+        charge_cmd_w = max(0.0, float(decision_charge_w or 0.0))
+        if charge_cmd_w <= 0.0:
+            return False, 0.0, "no_charge_command"
+
+        import_w = max(0.0, float(grid_import_w or 0.0))
+        export_w = max(0.0, float(grid_export_w or 0.0))
+
+        export_threshold = 40.0
+        noise_import_threshold = 60.0
+        strong_import_threshold = max(120.0, min(charge_cmd_w * 0.35, 500.0))
+
+        if export_w >= export_threshold:
+            return False, 0.0, "pv_surplus_export"
+
+        if import_w <= noise_import_threshold:
+            return False, 0.0, "pv_or_free_low_import"
+
+        if price_now is None:
+            return False, 0.0, "price_missing_assume_free"
+
+        if import_w >= strong_import_threshold:
+            return True, float(price_now), "grid_charge"
+
+        return False, 0.0, "mixed_bias_pv"
+
     def _parse_price_points(self, now) -> list[PricePoint]:
         """
         Universal price parser (production hardened).
@@ -464,7 +536,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if t_end <= now:
                     continue
 
-                price = float(cents) / 100.0  # cents -> €
+                price = float(cents) / 100.0
                 out.append(PricePoint(start=t_start, end=t_end, price=price))
                 continue
 
@@ -525,7 +597,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         installed_pv_wp = self._get_installed_pv_wp()
 
-        # Fallback for users without configured PV size yet
         if installed_pv_wp <= 0:
             summer_pv_threshold = 1100.0
             summer_export_threshold = 350.0
@@ -655,6 +726,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 SETTING_SOC_MAX,
                 profile.get("SOC_MAX", DEFAULT_SOC_MAX),
             )
+            resume_margin = float(profile.get("SOC_DISCHARGE_RESUME_MARGIN", 3.0))
 
             max_charge = self._get_setting(
                 SETTING_MAX_CHARGE,
@@ -748,6 +820,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             battery_power = float(battery_power or 0.0)
 
             battery_discharge_w = max(0.0, battery_power)
+            battery_charge_w = max(0.0, -battery_power)
 
             house_load = max(
                 0.0,
@@ -760,6 +833,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             season = self._season_detection(
                 pv_w=pv_w,
                 export_w=float(grid_export),
+            )
+
+            discharge_blocked_by_soc_min = self._update_discharge_resume_hysteresis(
+                soc=float(soc),
+                soc_min=float(soc_min),
+                resume_margin=float(resume_margin),
             )
 
             ctx = DecisionContext(
@@ -796,19 +875,36 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             decision = self._engine.evaluate(ctx)
 
-            if delta_kwh > 0 and price_now is not None:
-                charged_kwh = self._persist.get("trade_charged_kwh", 0.0)
+            charge_price_applied = None
+            charge_source = "no_charge_delta"
+            is_grid_charge = False
+
+            if delta_kwh > 0:
+                charged_kwh = float(self._persist.get("trade_charged_kwh", 0.0) or 0.0)
                 avg_price = self._persist.get("trade_avg_charge_price")
 
-                new_total_kwh = charged_kwh + delta_kwh
+                is_grid_charge, applied_price, charge_source = self._classify_charge_source(
+                    delta_kwh=float(delta_kwh),
+                    grid_import_w=float(grid_import or 0.0),
+                    grid_export_w=float(grid_export or 0.0),
+                    decision_charge_w=float(decision.charge_w or 0.0),
+                    decision_ac_mode=str(decision.ac_mode),
+                    price_now=price_now,
+                )
 
-                if avg_price is None:
-                    new_avg = price_now
+                charge_price_applied = float(applied_price)
+                new_total_kwh = charged_kwh + float(delta_kwh)
+
+                if new_total_kwh > 0:
+                    if avg_price is None:
+                        new_avg = float(applied_price)
+                    else:
+                        new_avg = (
+                            (float(avg_price) * charged_kwh + float(applied_price) * float(delta_kwh))
+                            / new_total_kwh
+                        )
                 else:
-                    new_avg = (
-                        (avg_price * charged_kwh + price_now * delta_kwh)
-                        / new_total_kwh
-                    )
+                    new_avg = 0.0
 
                 self._persist["trade_charged_kwh"] = new_total_kwh
                 self._persist["trade_avg_charge_price"] = new_avg
@@ -860,10 +956,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 decision.action = "idle"
                 decision.reason = "soc_limit_lower"
 
-            if decision.ac_mode == "output" and soc <= float(soc_min):
+            if decision.ac_mode == "output" and discharge_blocked_by_soc_min:
                 decision.discharge_w = 0.0
                 decision.action = "idle"
-                decision.reason = "soc_min_enforced"
+                decision.reason = "soc_min_resume_block"
 
             ac_mode = (
                 ZENDURE_MODE_INPUT
@@ -919,6 +1015,18 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "price_now": price_now,
                 "avg_charge_price": self._persist.get("trade_avg_charge_price"),
                 "profit_eur": float(self._persist.get("profit_eur") or 0.0),
+                "delta_kwh": float(delta_kwh),
+                "is_grid_charge": is_grid_charge,
+                "charge_source": charge_source,
+                "charge_price_applied": charge_price_applied,
+                "battery_ac_power_raw": battery_power,
+                "battery_charge_w_est": battery_charge_w,
+                "battery_discharge_w_est": battery_discharge_w,
+                "discharge_blocked_by_soc_min": discharge_blocked_by_soc_min,
+                "soc_discharge_resume_margin": float(resume_margin),
+                "discharge_resume_soc": float(
+                    self._persist.get("discharge_resume_soc", float(soc_min))
+                ),
                 "max_charge": max_charge,
                 "max_discharge": max_discharge,
                 "set_mode": ac_mode,
@@ -952,6 +1060,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "effective_max_step_down": profile.get("MAX_STEP_DOWN"),
                 "effective_keepalive_min_deficit_w": profile.get("KEEPALIVE_MIN_DEFICIT_W"),
                 "effective_keepalive_min_output_w": profile.get("KEEPALIVE_MIN_OUTPUT_W"),
+                "effective_soc_discharge_resume_margin": profile.get("SOC_DISCHARGE_RESUME_MARGIN"),
             }
 
             def _iso_or_none(val):

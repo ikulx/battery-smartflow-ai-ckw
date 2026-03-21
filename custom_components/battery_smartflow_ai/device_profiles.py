@@ -10,7 +10,7 @@ PROFILE_OVERRIDE_FIELDS = {
         "icon": "mdi:transmission-tower-import",
     },
     "DEADBAND_W": {
-        "label": "Deadband",
+        "label": "Deadband (Legacy)",
         "min": 0.0,
         "max": 200.0,
         "step": 5.0,
@@ -26,7 +26,7 @@ PROFILE_OVERRIDE_FIELDS = {
         "icon": "mdi:shield-outline",
     },
     "KP_UP": {
-        "label": "KP Hochregeln",
+        "label": "KP Hochregeln (Legacy)",
         "min": 0.10,
         "max": 2.00,
         "step": 0.01,
@@ -34,7 +34,7 @@ PROFILE_OVERRIDE_FIELDS = {
         "icon": "mdi:chart-line-variant",
     },
     "KP_DOWN": {
-        "label": "KP Runterregeln",
+        "label": "KP Runterregeln (Legacy)",
         "min": 0.10,
         "max": 2.00,
         "step": 0.01,
@@ -42,7 +42,7 @@ PROFILE_OVERRIDE_FIELDS = {
         "icon": "mdi:chart-line-variant",
     },
     "MAX_STEP_UP": {
-        "label": "Max. Schritt Hochregeln",
+        "label": "Max. Schritt Hochregeln (Legacy)",
         "min": 50.0,
         "max": 2000.0,
         "step": 10.0,
@@ -50,7 +50,7 @@ PROFILE_OVERRIDE_FIELDS = {
         "icon": "mdi:arrow-up-bold",
     },
     "MAX_STEP_DOWN": {
-        "label": "Max. Schritt Runterregeln",
+        "label": "Max. Schritt Runterregeln (Legacy)",
         "min": 50.0,
         "max": 2000.0,
         "step": 10.0,
@@ -73,6 +73,94 @@ PROFILE_OVERRIDE_FIELDS = {
         "unit": "W",
         "icon": "mdi:flash",
     },
+    "SOC_DISCHARGE_RESUME_MARGIN": {
+        "label": "SoC Wiederfreigabe-Margin",
+        "min": 0.0,
+        "max": 15.0,
+        "step": 0.5,
+        "unit": "%",
+        "icon": "mdi:battery-sync",
+    },
+    "CHARGE_DEADBAND_W": {
+        "label": "Laden Deadband",
+        "min": 0.0,
+        "max": 200.0,
+        "step": 5.0,
+        "unit": "W",
+        "icon": "mdi:battery-plus-outline",
+    },
+    "CHARGE_KP_UP": {
+        "label": "Laden KP Hochregeln",
+        "min": 0.10,
+        "max": 2.00,
+        "step": 0.01,
+        "unit": "",
+        "icon": "mdi:chart-line-variant",
+    },
+    "CHARGE_KP_DOWN": {
+        "label": "Laden KP Runterregeln",
+        "min": 0.10,
+        "max": 2.00,
+        "step": 0.01,
+        "unit": "",
+        "icon": "mdi:chart-line-variant",
+    },
+    "CHARGE_MAX_STEP_UP": {
+        "label": "Laden Max. Schritt Hochregeln",
+        "min": 50.0,
+        "max": 2000.0,
+        "step": 10.0,
+        "unit": "W",
+        "icon": "mdi:arrow-up-bold",
+    },
+    "CHARGE_MAX_STEP_DOWN": {
+        "label": "Laden Max. Schritt Runterregeln",
+        "min": 50.0,
+        "max": 2000.0,
+        "step": 10.0,
+        "unit": "W",
+        "icon": "mdi:arrow-down-bold",
+    },
+    "DISCHARGE_DEADBAND_W": {
+        "label": "Entladen Deadband",
+        "min": 0.0,
+        "max": 200.0,
+        "step": 5.0,
+        "unit": "W",
+        "icon": "mdi:battery-minus-outline",
+    },
+    "DISCHARGE_KP_UP": {
+        "label": "Entladen KP Hochregeln",
+        "min": 0.10,
+        "max": 2.00,
+        "step": 0.01,
+        "unit": "",
+        "icon": "mdi:chart-line-variant",
+    },
+    "DISCHARGE_KP_DOWN": {
+        "label": "Entladen KP Runterregeln",
+        "min": 0.10,
+        "max": 2.00,
+        "step": 0.01,
+        "unit": "",
+        "icon": "mdi:chart-line-variant",
+    },
+    "DISCHARGE_MAX_STEP_UP": {
+        "label": "Entladen Max. Schritt Hochregeln",
+        "min": 50.0,
+        "max": 2000.0,
+        "step": 10.0,
+        "unit": "W",
+        "icon": "mdi:arrow-up-bold",
+    },
+    "DISCHARGE_MAX_STEP_DOWN": {
+        "label": "Entladen Max. Schritt Runterregeln",
+        "min": 50.0,
+        "max": 2000.0,
+        "step": 10.0,
+        "unit": "W",
+        "icon": "mdi:arrow-down-bold",
+    },
 }
 
 # Optional: diese Felder sollen zwar sichtbar, aber nicht editierbar sein
@@ -85,7 +173,7 @@ SF800PRO_PROFILE = {
     # --- UI ---
     "label": "Zendure SF800Pro",
 
-    # --- Discharge controller tuning ---
+    # --- Legacy controller tuning ---
     "TARGET_IMPORT_W": 30.0,
     "DEADBAND_W": 35.0,
     "EXPORT_GUARD_W": 40.0,
@@ -93,8 +181,25 @@ SF800PRO_PROFILE = {
     "KP_DOWN": 0.75,
     "MAX_STEP_UP": 250.0,
     "MAX_STEP_DOWN": 400.0,
+
+    # --- Shared / other tuning ---
     "KEEPALIVE_MIN_DEFICIT_W": 15.0,
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
+    "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
+
+    # --- Charge controller tuning ---
+    "CHARGE_DEADBAND_W": 35.0,
+    "CHARGE_KP_UP": 0.40,
+    "CHARGE_KP_DOWN": 0.75,
+    "CHARGE_MAX_STEP_UP": 250.0,
+    "CHARGE_MAX_STEP_DOWN": 400.0,
+
+    # --- Discharge controller tuning ---
+    "DISCHARGE_DEADBAND_W": 35.0,
+    "DISCHARGE_KP_UP": 0.40,
+    "DISCHARGE_KP_DOWN": 0.75,
+    "DISCHARGE_MAX_STEP_UP": 250.0,
+    "DISCHARGE_MAX_STEP_DOWN": 400.0,
 
     # --- Hardware limits (safety clamp) ---
     "MAX_INPUT_W": 1000.0,
@@ -105,7 +210,7 @@ SF2400AC_PROFILE = {
     # --- UI ---
     "label": "Zendure SF2400AC",
 
-    # --- Discharge controller tuning ---
+    # --- Legacy controller tuning ---
     "TARGET_IMPORT_W": 10.0,
     "DEADBAND_W": 30.0,
     "EXPORT_GUARD_W": 80.0,
@@ -113,8 +218,25 @@ SF2400AC_PROFILE = {
     "KP_DOWN": 0.90,
     "MAX_STEP_UP": 550.0,
     "MAX_STEP_DOWN": 800.0,
+
+    # --- Shared / other tuning ---
     "KEEPALIVE_MIN_DEFICIT_W": 15.0,
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
+    "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
+
+    # --- Charge controller tuning ---
+    "CHARGE_DEADBAND_W": 30.0,
+    "CHARGE_KP_UP": 0.65,
+    "CHARGE_KP_DOWN": 0.90,
+    "CHARGE_MAX_STEP_UP": 550.0,
+    "CHARGE_MAX_STEP_DOWN": 800.0,
+
+    # --- Discharge controller tuning ---
+    "DISCHARGE_DEADBAND_W": 30.0,
+    "DISCHARGE_KP_UP": 0.65,
+    "DISCHARGE_KP_DOWN": 0.90,
+    "DISCHARGE_MAX_STEP_UP": 550.0,
+    "DISCHARGE_MAX_STEP_DOWN": 800.0,
 
     # --- Hardware limits (safety clamp) ---
     "MAX_INPUT_W": 2400.0,
@@ -125,7 +247,7 @@ SF1600AC_PROFILE = {
     # --- UI ---
     "label": "Zendure SF1600AC+",
 
-    # --- Discharge controller tuning ---
+    # --- Legacy controller tuning ---
     "TARGET_IMPORT_W": 35.0,
     "DEADBAND_W": 40.0,
     "EXPORT_GUARD_W": 45.0,
@@ -133,8 +255,25 @@ SF1600AC_PROFILE = {
     "KP_DOWN": 0.95,
     "MAX_STEP_UP": 450.0,
     "MAX_STEP_DOWN": 900.0,
+
+    # --- Shared / other tuning ---
     "KEEPALIVE_MIN_DEFICIT_W": 15.0,
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
+    "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
+
+    # --- Charge controller tuning ---
+    "CHARGE_DEADBAND_W": 40.0,
+    "CHARGE_KP_UP": 0.55,
+    "CHARGE_KP_DOWN": 0.95,
+    "CHARGE_MAX_STEP_UP": 450.0,
+    "CHARGE_MAX_STEP_DOWN": 900.0,
+
+    # --- Discharge controller tuning ---
+    "DISCHARGE_DEADBAND_W": 40.0,
+    "DISCHARGE_KP_UP": 0.55,
+    "DISCHARGE_KP_DOWN": 0.95,
+    "DISCHARGE_MAX_STEP_UP": 450.0,
+    "DISCHARGE_MAX_STEP_DOWN": 900.0,
 
     # --- Hardware limits (safety clamp) ---
     "MAX_INPUT_W": 1600.0,
@@ -145,7 +284,7 @@ HYPER2000_PROFILE = {
     # --- UI ---
     "label": "Zendure Hyper 2000",
 
-    # --- Discharge controller tuning ---
+    # --- Legacy controller tuning ---
     "TARGET_IMPORT_W": 10.0,
     "DEADBAND_W": 30.0,
     "EXPORT_GUARD_W": 80.0,
@@ -153,8 +292,25 @@ HYPER2000_PROFILE = {
     "KP_DOWN": 0.90,
     "MAX_STEP_UP": 550.0,
     "MAX_STEP_DOWN": 800.0,
+
+    # --- Shared / other tuning ---
     "KEEPALIVE_MIN_DEFICIT_W": 15.0,
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
+    "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
+
+    # --- Charge controller tuning ---
+    "CHARGE_DEADBAND_W": 30.0,
+    "CHARGE_KP_UP": 0.65,
+    "CHARGE_KP_DOWN": 0.90,
+    "CHARGE_MAX_STEP_UP": 550.0,
+    "CHARGE_MAX_STEP_DOWN": 800.0,
+
+    # --- Discharge controller tuning ---
+    "DISCHARGE_DEADBAND_W": 30.0,
+    "DISCHARGE_KP_UP": 0.65,
+    "DISCHARGE_KP_DOWN": 0.90,
+    "DISCHARGE_MAX_STEP_UP": 550.0,
+    "DISCHARGE_MAX_STEP_DOWN": 800.0,
 
     # --- Hardware limits (safety clamp) ---
     "MAX_INPUT_W": 1200.0,
