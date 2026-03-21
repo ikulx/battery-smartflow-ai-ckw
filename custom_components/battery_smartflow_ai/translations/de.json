@@ -123,13 +123,7 @@
     "step": {
       "init": {
         "title": "Regelprofil bearbeiten",
-        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
-        "data": {
-          "section": "Bereich"
-        },
-        "data_description": {
-          "section": "Wähle, ob du allgemeine Parameter, Lade-Parameter oder Entlade-Parameter des aktiven Geräteprofils bearbeiten möchtest."
-        }
+        "description": "Wähle den Bereich aus, den du bearbeiten möchtest."
       },
       "general": {
         "title": "Regelprofil bearbeiten – Allgemein",
