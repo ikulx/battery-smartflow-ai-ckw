@@ -204,7 +204,8 @@
         "state": {
           "standby": "Stand-by",
           "charge": "Laden",
-          "discharge": "Ontladen"
+          "discharge": "Ontladen",
+          "constant_discharge": "Constante ontlading"
         }
       }
     },
@@ -347,6 +348,7 @@
           "manual_standby": "Handmatige stand-by",
           "manual_charge": "Handmatig laden",
           "manual_discharge": "Handmatig ontladen",
+          "manual_constant_discharge": "Constante ontlading actief",
           "manual_idle": "Handmatige stand-by",
           "idle": "Gereed",
           "adaptive_peak_discharge": "Ontladen vanwege prijspiek",
