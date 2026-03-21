@@ -123,7 +123,12 @@
     "step": {
       "init": {
         "title": "Regelprofil bearbeiten",
-        "description": "Wähle den Bereich aus, den du bearbeiten möchtest."
+        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
+        "menu_options": {
+          "general": "Allgemein",
+          "charge": "Laden",
+          "discharge": "Entladen"
+        }
       },
       "general": {
         "title": "Regelprofil bearbeiten – Allgemein",
