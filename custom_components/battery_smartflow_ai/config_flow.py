@@ -449,33 +449,9 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         return merged_options
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
-        if user_input is not None:
-            section = user_input["section"]
-            if section == "general":
-                return await self.async_step_general()
-            if section == "charge":
-                return await self.async_step_charge()
-            if section == "discharge":
-                return await self.async_step_discharge()
-
-        section_schema = vol.Schema(
-            {
-                vol.Required("section"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            {"value": "general", "label": "Allgemein"},
-                            {"value": "charge", "label": "Laden"},
-                            {"value": "discharge", "label": "Entladen"},
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                )
-            }
-        )
-
-        return self.async_show_form(
+        return self.async_show_menu(
             step_id="init",
-            data_schema=section_schema,
+            menu_options=["general", "charge", "discharge"],
         )
 
     async def async_step_general(self, user_input: dict[str, Any] | None = None):
