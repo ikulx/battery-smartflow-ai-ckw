@@ -255,7 +255,7 @@
         "name": "Adaptiver Peak erkannt"
       },
       "price_daily_average": {
-        "name": "Ø Tagespreis"
+        "name": "Ø Tagespreis dynamisch"
       },
       "current_peak_threshold": {
         "name": "Aktuelle Peak-Schwelle"
