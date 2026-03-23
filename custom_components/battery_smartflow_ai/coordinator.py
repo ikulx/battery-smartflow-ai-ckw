@@ -385,13 +385,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         avg_charge_price: float | None,
         profit_margin_pct: float,
     ) -> float | None:
-        """Compute the economic discharge threshold based on battery charge price.
-
-        This is a secondary economic steering value for V3.4.0:
-        - market thresholds remain the primary market reference
-        - this value shows from which price discharging becomes economically attractive
-          based on average battery charge price and configured profit margin
-        """
+        """Compute the economic discharge threshold based on battery charge price."""
         if avg_charge_price is None:
             return None
 
@@ -405,6 +399,46 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
 
         return avg_charge_price * (1.0 + (profit_margin_pct / 100.0))
+
+    def _compute_effective_discharge_threshold(
+        self,
+        price_points: list[PricePoint],
+        peak_factor: float,
+        economic_discharge_threshold: float | None,
+    ) -> float | None:
+        """Compute the effective discharge threshold used by the planning logic.
+
+        Market price structure remains the primary reference.
+        The economic discharge threshold may widen the discharge window,
+        but not down into clearly cheap market phases.
+        """
+        if not price_points:
+            return None
+
+        prices = [p.price for p in price_points]
+        if not prices:
+            return None
+
+        try:
+            peak_factor = float(peak_factor)
+        except Exception:
+            return None
+
+        base_price = sum(prices) / len(prices)
+        market_peak_threshold = max(
+            base_price * peak_factor,
+            base_price + 0.03,
+        )
+
+        if economic_discharge_threshold is None:
+            return market_peak_threshold
+
+        try:
+            economic_discharge_threshold = float(economic_discharge_threshold)
+        except Exception:
+            return market_peak_threshold
+
+        return max(economic_discharge_threshold, market_peak_threshold * 0.80)
 
     def _update_discharge_resume_hysteresis(
         self,
@@ -840,6 +874,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 profit_margin_pct=float(profit_margin_pct),
             )
 
+            effective_discharge_threshold = self._compute_effective_discharge_threshold(
+                price_points=price_points,
+                peak_factor=peak_factor,
+                economic_discharge_threshold=economic_discharge_threshold,
+            )
+
             engine_health = "ok"
             if not price_points:
                 engine_health = "no_price_data"
@@ -944,6 +984,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     avg_charge_price=self._persist.get("trade_avg_charge_price"),
                     profit_margin_pct=float(profit_margin_pct),
                 )
+                effective_discharge_threshold = self._compute_effective_discharge_threshold(
+                    price_points=price_points,
+                    peak_factor=peak_factor,
+                    economic_discharge_threshold=economic_discharge_threshold,
+                )
 
             if (
                 delta_kwh < 0
@@ -976,6 +1021,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     economic_discharge_threshold = self._compute_economic_discharge_threshold(
                         avg_charge_price=self._persist.get("trade_avg_charge_price"),
                         profit_margin_pct=float(profit_margin_pct),
+                    )
+                    effective_discharge_threshold = self._compute_effective_discharge_threshold(
+                        price_points=price_points,
+                        peak_factor=peak_factor,
+                        economic_discharge_threshold=economic_discharge_threshold,
                     )
 
             adaptive_peak_active = decision.reason == "adaptive_peak_discharge"
@@ -1056,6 +1106,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "price_now": price_now,
                 "avg_charge_price": self._persist.get("trade_avg_charge_price"),
                 "economic_discharge_threshold": economic_discharge_threshold,
+                "effective_discharge_threshold": effective_discharge_threshold,
                 "profit_eur": float(self._persist.get("profit_eur") or 0.0),
                 "delta_kwh": float(delta_kwh),
                 "is_grid_charge": is_grid_charge,
@@ -1148,6 +1199,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "current_peak_threshold": current_peak_threshold,
                 "current_valley_threshold": current_valley_threshold,
                 "economic_discharge_threshold": economic_discharge_threshold,
+                "effective_discharge_threshold": effective_discharge_threshold,
                 "engine_health": engine_health,
             }
 
