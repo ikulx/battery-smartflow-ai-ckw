@@ -365,15 +365,36 @@ class DecisionEngine:
             return None
 
         market_peak_threshold = self._compute_peak_threshold(prices, ctx.peak_factor)
+        valley_threshold = self._compute_valley_threshold(prices, ctx.valley_factor)
         economic_threshold = self._compute_economic_discharge_threshold(ctx)
 
         if economic_threshold is None:
             return market_peak_threshold
 
-        # Market remains the primary reference.
-        # Economic threshold may widen the discharge window,
-        # but not down into clearly cheap market phases.
-        return max(economic_threshold, market_peak_threshold * 0.80)
+        # ------------------------------------------------
+        # Market anchor:
+        # We allow discharge somewhat below the raw peak threshold,
+        # but the market still remains the dominant reference.
+        # ------------------------------------------------
+        market_anchor = market_peak_threshold * 0.82
+
+        # ------------------------------------------------
+        # Weighted combination:
+        # Market dominates, economics clearly influences the result.
+        # ------------------------------------------------
+        effective = (market_anchor * 0.70) + (economic_threshold * 0.30)
+
+        # ------------------------------------------------
+        # Safety rails:
+        # - never below pure economics
+        # - never inside the clearly cheap valley zone
+        # - never above the actual peak threshold
+        # ------------------------------------------------
+        effective = max(effective, economic_threshold)
+        effective = max(effective, valley_threshold)
+        effective = min(effective, market_peak_threshold)
+
+        return effective
 
     def _is_market_discharge_window(self, ctx: DecisionContext) -> bool:
         if ctx.price_now is None or not ctx.price_points:
