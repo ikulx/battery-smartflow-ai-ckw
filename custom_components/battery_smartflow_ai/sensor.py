@@ -155,6 +155,13 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         icon="mdi:cash-clock",
     ),
     ZendureSensorEntityDescription(
+        key="effective_discharge_threshold",
+        translation_key="effective_discharge_threshold",
+        runtime_key="effective_discharge_threshold",
+        native_unit_of_measurement="€/kWh",
+        icon="mdi:chart-line-variant",
+    ),
+    ZendureSensorEntityDescription(
         key="house_load",
         translation_key="house_load",
         runtime_key="house_load",
