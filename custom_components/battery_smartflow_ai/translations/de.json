@@ -266,6 +266,9 @@
       "economic_discharge_threshold": {
         "name": "Ökonomische Entladeschwelle"
       },
+      "effective_discharge_threshold": {
+        "name": "Effektive Entladeschwelle"
+      },
       "engine_health": {
         "name": "Engine-Status",
         "state": {
