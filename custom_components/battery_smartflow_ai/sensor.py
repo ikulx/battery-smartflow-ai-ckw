@@ -148,6 +148,13 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         icon="mdi:chart-bell-curve-cumulative",
     ),
     ZendureSensorEntityDescription(
+        key="economic_discharge_threshold",
+        translation_key="economic_discharge_threshold",
+        runtime_key="economic_discharge_threshold",
+        native_unit_of_measurement="€/kWh",
+        icon="mdi:cash-clock",
+    ),
+    ZendureSensorEntityDescription(
         key="house_load",
         translation_key="house_load",
         runtime_key="house_load",
@@ -306,6 +313,7 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
             "effective_max_step_down": details.get("effective_max_step_down"),
             "effective_keepalive_min_deficit_w": details.get("effective_keepalive_min_deficit_w"),
             "effective_keepalive_min_output_w": details.get("effective_keepalive_min_output_w"),
+            "effective_soc_discharge_resume_margin": details.get("effective_soc_discharge_resume_margin"),
             "season_summer_pv_threshold": season_thresholds.get("summer_pv_threshold"),
             "season_summer_export_threshold": season_thresholds.get("summer_export_threshold"),
             "season_winter_pv_threshold": season_thresholds.get("winter_pv_threshold"),
