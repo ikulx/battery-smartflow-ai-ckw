@@ -263,6 +263,9 @@
       "current_valley_threshold": {
         "name": "Aktuelle Tal-Schwelle"
       },
+      "economic_discharge_threshold": {
+        "name": "Ökonomische Entladeschwelle"
+      },
       "engine_health": {
         "name": "Engine-Status",
         "state": {
