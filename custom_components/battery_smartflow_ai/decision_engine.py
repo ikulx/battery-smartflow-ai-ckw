@@ -129,7 +129,10 @@ class PeakRule(BaseRule):
             ctx.soc > ctx.soc_min + 5
             and ctx.ai_mode in ("automatic", "winter")
         ):
-            if engine._detect_adaptive_peak(ctx):
+            if (
+                engine._detect_adaptive_peak(ctx)
+                and engine._is_effective_discharge_price_reached(ctx)
+            ):
                 discharge_w = engine._delta_discharge(ctx)
                 return DecisionResult(
                     action="discharge",
@@ -159,10 +162,10 @@ class ArbitrageRule(BaseRule):
         if (
             ctx.price_now is not None
             and ctx.avg_charge_price is not None
-            and ctx.price_now >= ctx.expensive_threshold
-            and ctx.price_now > ctx.avg_charge_price
             and ctx.soc > ctx.soc_min + 5
             and ctx.ai_mode in ("automatic", "winter")
+            and engine._is_market_discharge_window(ctx)
+            and engine._is_effective_discharge_price_reached(ctx)
         ):
             discharge_w = engine._delta_discharge(ctx)
             return DecisionResult(
@@ -338,6 +341,63 @@ class DecisionEngine:
     def _compute_valley_threshold(self, prices: List[float], valley_factor: float) -> float:
         base_price = self._compute_base_price(prices)
         return base_price * valley_factor
+
+    def _compute_economic_discharge_threshold(self, ctx: DecisionContext) -> Optional[float]:
+        if ctx.avg_charge_price is None:
+            return None
+        try:
+            avg_charge_price = float(ctx.avg_charge_price)
+            margin_pct = float(ctx.profit_margin_pct)
+        except Exception:
+            return None
+
+        if avg_charge_price < 0:
+            return None
+
+        return avg_charge_price * (1.0 + margin_pct / 100.0)
+
+    def _compute_effective_discharge_threshold(self, ctx: DecisionContext) -> Optional[float]:
+        if not ctx.price_points:
+            return None
+
+        prices = [p.price for p in ctx.price_points]
+        if not prices:
+            return None
+
+        market_peak_threshold = self._compute_peak_threshold(prices, ctx.peak_factor)
+        economic_threshold = self._compute_economic_discharge_threshold(ctx)
+
+        if economic_threshold is None:
+            return market_peak_threshold
+
+        # Market remains the primary reference.
+        # Economic threshold may widen the discharge window,
+        # but not down into clearly cheap market phases.
+        return max(economic_threshold, market_peak_threshold * 0.80)
+
+    def _is_market_discharge_window(self, ctx: DecisionContext) -> bool:
+        if ctx.price_now is None or not ctx.price_points:
+            return False
+
+        prices = [p.price for p in ctx.price_points]
+        if not prices:
+            return False
+
+        market_peak_threshold = self._compute_peak_threshold(prices, ctx.peak_factor)
+
+        # Keep market curve as primary logic:
+        # discharge is only allowed in a relevant upper market band.
+        return float(ctx.price_now) >= (market_peak_threshold * 0.80)
+
+    def _is_effective_discharge_price_reached(self, ctx: DecisionContext) -> bool:
+        if ctx.price_now is None:
+            return False
+
+        effective_threshold = self._compute_effective_discharge_threshold(ctx)
+        if effective_threshold is None:
+            return False
+
+        return float(ctx.price_now) >= float(effective_threshold)
 
     # -------------------------------------------------
     # Directional profile mapping
