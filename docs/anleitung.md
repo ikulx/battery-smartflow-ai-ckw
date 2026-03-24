@@ -444,7 +444,8 @@ Keine KI-Logik.
 Mögliche Aktionen:
 
 - Laden  
-- Entladen  
+- Entladen
+- Konstant Entladen
 - Standby  
 
 Die Integration greift nicht automatisch ein.
@@ -823,6 +824,7 @@ Auswahl zwischen:
 - Sommer
 - Winter
 - Manuell
+- Konstante Entladung
 
 ---
 
@@ -843,6 +845,90 @@ Optionen:
 - Standby
 - Laden
 - Entladen
+- Konstante Entladung
+
+  ## Konstante Entladung
+
+  Im Gegensatz zur bestehenden Mechanik die Delta-Steuerung nutzt, um die Ausgangsleistung an die Netzverhältnisse anzupassen, läuft sie exakt mit dem konfigurierten Wert von Max. Entladeleistung – keine Modulation.
+
+  ## Anwendungsfall
+
+     Abendautomatisierung bei Sonnenuntergang: Zendure auf konstante Entladung bei 300 W einstellen, um die Batterie über Nacht langsam zu entladen. Danach kann sie dann am nächsten Tag im günstigen Tariffenster vollständig aufgeladen werden.
+     Die Automatisierung stellt den vorherigen Modus bei Sonnenaufgang oder wenn der Batterie-SoC unter den Schwellenwert fällt, wieder her.
+  
+     Hier ein Beispielcode für eine mögliche Automation:
+
+```yaml
+alias: Zendure Nachtmodus Steuerung
+description: Nachts konstante Entladung und danach Rückkehr zum vorherigen Modus
+triggers:
+  - id: sunset
+    trigger: sun
+    event: sunset
+  - id: sunrise
+    trigger: sun
+    event: sunrise
+  - id: solarflow_low
+    trigger: numeric_state
+    entity_id: sensor.solarflow_2400_ac_electric_level
+    below: 6
+  - id: byd_low
+    trigger: numeric_state
+    entity_id: "<SoC entity of secondary battery>"
+    below: 2
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: sunset
+        sequence:
+          - action: input_text.set_value
+            target:
+              entity_id: input_text.zendure_vorheriger_modus
+            data:
+              value: "{{ states('select.battery_smartflow_ai_betriebsmodus') }}"
+          - action: select.select_option
+            target:
+              entity_id: select.battery_smartflow_ai_betriebsmodus
+            data:
+              option: manual
+          - delay: "00:00:02"
+          - action: select.select_option
+            target:
+              entity_id: select.battery_smartflow_ai_manuelle_aktion
+            data:
+              option: constant_discharge
+          - delay: "00:00:02"
+          - action: number.set_value
+            target:
+              entity_id: number.battery_smartflow_ai_max_entladeleistung
+            data:
+              value: 300
+      - conditions:
+          - condition: or
+            conditions:
+              - condition: trigger
+                id: sunrise
+              - condition: trigger
+                id: solarflow_low
+              - condition: trigger
+                id: byd_low
+        sequence:
+          - action: select.select_option
+            target:
+              entity_id: select.battery_smartflow_ai_betriebsmodus
+            data:
+              option: >
+                {% set mode = states('input_text.zendure_vorheriger_modus') %}
+                {% if mode == 'manual' %}automatic{% else %}{{ mode }}{% endif %}
+          - delay: "00:00:02"
+          - action: number.set_value
+            target:
+              entity_id: number.battery_smartflow_ai_max_entladeleistung
+            data:
+              value: 2400
+mode: single
+```
 
 # Kapitel 7 – Technischer Hintergrund (für Power-User)
 
