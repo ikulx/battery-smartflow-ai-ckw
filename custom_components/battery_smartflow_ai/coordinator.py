@@ -199,6 +199,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # analytics
             "trade_avg_charge_price": None,
             "trade_charged_kwh": 0.0,
+            "trade_cycle_below_soc_min": False,
             "prev_soc": None,
 
             "avg_charge_price": None,
@@ -831,6 +832,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 soc_min=float(soc_min),
                 resume_margin=float(resume_margin),
             )
+            if float(soc) <= float(soc_min):
+                self._persist["trade_avg_charge_price"] = None
+                self._persist["trade_charged_kwh"] = 0.0
+                self._persist["trade_cycle_below_soc_min"] = True
+            elif float(soc) > float(soc_min):
+                self._persist["trade_cycle_below_soc_min"] = False
 
             ctx = DecisionContext(
                 now=now,
@@ -871,8 +878,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             is_grid_charge = False
 
             if delta_kwh > 0:
-                charged_kwh = float(self._persist.get("trade_charged_kwh", 0.0) or 0.0)
-                avg_price = self._persist.get("trade_avg_charge_price")
+                is_below_soc_min_cycle = bool(self._persist.get("trade_cycle_below_soc_min", False))
 
                 is_grid_charge, applied_price, charge_source = self._classify_charge_source(
                     delta_kwh=float(delta_kwh),
@@ -884,22 +890,29 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
                 charge_price_applied = float(applied_price)
-                new_total_kwh = charged_kwh + float(delta_kwh)
 
-                if new_total_kwh > 0:
-                    if avg_price is None:
-                        new_avg = float(applied_price)
+                # Schutz-/Notladebereich unterhalb SoC-Min:
+                # keine Anrechnung auf den wirtschaftlichen Ladezyklus
+                if not is_below_soc_min_cycle:
+                    charged_kwh = float(self._persist.get("trade_charged_kwh", 0.0) or 0.0)
+                    avg_price = self._persist.get("trade_avg_charge_price")
+
+                    new_total_kwh = charged_kwh + float(delta_kwh)
+
+                    if new_total_kwh > 0:
+                        if avg_price is None:
+                            new_avg = float(applied_price)
+                        else:
+                            new_avg = (
+                                (float(avg_price) * charged_kwh + float(applied_price) * float(delta_kwh))
+                                / new_total_kwh
+                            )
                     else:
-                        new_avg = (
-                            (float(avg_price) * charged_kwh + float(applied_price) * float(delta_kwh))
-                            / new_total_kwh
-                        )
-                else:
-                    new_avg = 0.0
+                        new_avg = 0.0
 
-                self._persist["trade_charged_kwh"] = new_total_kwh
-                self._persist["trade_avg_charge_price"] = new_avg
-
+                    self._persist["trade_charged_kwh"] = new_total_kwh
+                    self._persist["trade_avg_charge_price"] = new_avg
+                    
             if (
                 delta_kwh < 0
                 and price_now is not None
