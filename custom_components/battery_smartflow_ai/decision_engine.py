@@ -123,7 +123,7 @@ class AdditionalBatteryBlockRule(BaseRule):
 class PeakRule(BaseRule):
     def evaluate(self, engine, ctx):
         if (
-            ctx.soc > ctx.soc_min + 5
+            ctx.soc > ctx.soc_min
             and ctx.ai_mode in ("automatic", "winter")
         ):
             if (
@@ -165,7 +165,7 @@ class ArbitrageRule(BaseRule):
         if (
             ctx.price_now is not None
             and ctx.avg_charge_price is not None
-            and ctx.soc > ctx.soc_min + 5
+            and ctx.soc > ctx.soc_min
             and ctx.ai_mode in ("automatic", "winter")
             and engine._is_market_discharge_window(ctx)
             and engine._is_effective_discharge_price_reached(ctx)
