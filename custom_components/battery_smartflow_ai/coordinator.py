@@ -833,7 +833,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 resume_margin=float(resume_margin),
             )
             if float(soc) <= float(soc_min):
-                self._persist["trade_avg_charge_price"] = None
+                self._persist["trade_avg_charge_price"] = 0.0
                 self._persist["trade_charged_kwh"] = 0.0
                 self._persist["trade_cycle_below_soc_min"] = True
             elif float(soc) > float(soc_min):
@@ -939,7 +939,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._persist["trade_charged_kwh"] = remaining_kwh
 
                     if remaining_kwh <= 0:
-                        self._persist["trade_avg_charge_price"] = None
+                        self._persist["trade_charged_kwh"] = 0.0
+                        self._persist["trade_avg_charge_price"] = 0.0
 
             adaptive_peak_active = decision.reason == "adaptive_peak_discharge"
 
