@@ -280,9 +280,6 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
 
         val = details.get(key, data.get(key))
 
-        if key == "avg_charge_price" and val is None:
-            return 0.0
-
         if val is None:
             return None
 
