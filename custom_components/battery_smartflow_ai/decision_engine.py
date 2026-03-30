@@ -233,8 +233,14 @@ class ValleyBoostRule(BaseRule):
 
 class PvRule(BaseRule):
     def evaluate(self, engine, ctx):
+        # Wenn wir gerade aktiv planen zu laden,
+        # soll PV diese Entscheidung nicht überschreiben
         planning = engine._evaluate_adaptive_planning(ctx)
         if planning is not None:
+            return None
+
+        # Nur bei echtem PV-Überschuss / realer Einspeisung
+        if float(ctx.grid_export_w or 0.0) < 80.0:
             return None
 
         if ctx.soc < ctx.soc_max:
