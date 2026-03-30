@@ -300,6 +300,19 @@
       "effective_discharge_threshold": {
         "name": "Effektive Entladeschwelle"
       },
+      "global_lowest_cell_voltage": {
+        "name": "Globale niedrigste Zellspannung"
+      },
+      "cell_voltage_status": {
+        "name": "Zellspannungs-Status",
+        "state": {
+          "disabled": "Deaktiviert",
+          "normal": "Normal",
+          "warning": "Warnbereich aktiv",
+          "cutoff_active": "Entladesperre aktiv",
+          "sensor_invalid": "Sensordaten ungültig"
+        }
+      },
       "engine_health": {
         "name": "Engine-Status",
         "state": {
