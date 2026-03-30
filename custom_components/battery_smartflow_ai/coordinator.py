@@ -1302,6 +1302,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "cell_voltage_resume_threshold": self._persist.get(
                     "cell_voltage_resume_threshold"
                 ),
+                "cell_voltage_emergency_active"=bool(
+                    self._cell_voltage_protection_enabled()
+                    and global_lowest_cell_voltage is not None
+                    and float(global_lowest_cell_voltage)
+                    <= float(
+                        self._get_setting(
+                            SETTING_CELL_VOLTAGE_WARNING,
+                            DEFAULT_CELL_VOLTAGE_WARNING,
+                        )
+                    )
+                ),
             }
 
             def _iso_or_none(val):
