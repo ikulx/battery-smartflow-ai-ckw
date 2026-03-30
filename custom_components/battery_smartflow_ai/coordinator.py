@@ -75,6 +75,7 @@ from .const import (
     STATUS_SENSOR_INVALID,
     AI_STATUS_STANDBY,
     AI_STATUS_CHARGE_SURPLUS,
+    AI_STATUS_PRICE_CHARGE,
     AI_STATUS_COVER_DEFICIT,
     AI_STATUS_EXPENSIVE_DISCHARGE,
     AI_STATUS_VERY_EXPENSIVE_FORCE,
@@ -658,6 +659,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if action == "emergency":
             return AI_STATUS_EMERGENCY_CHARGE
         if action == "charge":
+            if reason == "pv_surplus_charge":
+                return AI_STATUS_CHARGE_SURPLUS
+            if "valley" in reason or "planning" in reason or "price" in reason:
+                return AI_STATUS_PRICE_CHARGE
             return AI_STATUS_CHARGE_SURPLUS
         if action == "discharge":
             if "very_expensive" in reason or "adaptive_peak" in reason:
