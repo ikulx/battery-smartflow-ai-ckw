@@ -423,7 +423,8 @@
           "valley_boost_charge": "Preis-Tal erkannt. Maximalladung",
           "additional_battery_charging_block": "Zusatzakku lädt: Entladung blockiert",
           "soc_min_resume_block": "Entladung blockiert (Wiederfreigabe-Schwelle noch nicht erreicht)",
-          "cell_voltage_cutoff_block": "Entladung blockiert (Zellspannungs-Schutz aktiv)"
+          "cell_voltage_cutoff_block": "Entladung blockiert (Zellspannungs-Schutz aktiv)",
+          "cell_voltage_emergency_charge": "Notladung aktiv (Zellspannung kritisch)"
         }
       },
       "next_planned_action": {
