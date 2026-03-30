@@ -63,6 +63,9 @@ class DecisionContext:
     valley_factor: float = 0.85
     very_cheap_price: Optional[float] = None
 
+    # V3.5.0 cell voltage protection
+    cell_voltage_emergency_active: bool = False
+
 
 @dataclass
 class DecisionResult:
@@ -90,7 +93,7 @@ class BaseRule:
 
 class EmergencyRule(BaseRule):
     def evaluate(self, engine, ctx):
-        if ctx.soc <= ctx.emergency_soc:
+        if ctx.soc <= ctx.emergency_soc or ctx.cell_voltage_emergency_active:
             return engine._with_thresholds(
                 ctx,
                 DecisionResult(
@@ -98,7 +101,11 @@ class EmergencyRule(BaseRule):
                     ac_mode="input",
                     charge_w=min(ctx.max_charge_w, ctx.emergency_charge_w),
                     discharge_w=0.0,
-                    reason="emergency_latched_charge",
+                    reason=(
+                        "cell_voltage_emergency_charge"
+                        if ctx.cell_voltage_emergency_active and ctx.soc > ctx.emergency_soc
+                        else "emergency_latched_charge"
+                    ),
                 ),
             )
         return None
@@ -233,13 +240,10 @@ class ValleyBoostRule(BaseRule):
 
 class PvRule(BaseRule):
     def evaluate(self, engine, ctx):
-        # Wenn wir gerade aktiv planen zu laden,
-        # soll PV diese Entscheidung nicht überschreiben
         planning = engine._evaluate_adaptive_planning(ctx)
         if planning is not None:
             return None
 
-        # Nur bei echtem PV-Überschuss / realer Einspeisung
         if float(ctx.grid_export_w or 0.0) < 80.0:
             return None
 
