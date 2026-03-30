@@ -317,6 +317,7 @@
         "state": {
           "standby": "Bereitschaft",
           "charge_surplus": "Laden (PV-Überschuss)",
+          "price_charge": "Laden (Preisvorteil)",
           "cover_deficit": "Entladen (Hauslast decken)",
           "expensive_discharge": "Entladen (hoher Strompreis)",
           "very_expensive_force": "Zwangsentladung (extreme Preise)",
