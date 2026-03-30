@@ -24,6 +24,7 @@ from .const import (
     AI_STATUS_ENUMS,
     RECO_ENUMS,
     NEXT_ACTION_STATE_ENUMS,
+    CELL_VOLTAGE_STATUS_ENUMS,
 )
 from .device_profiles import DEVICE_PROFILES
 
@@ -193,6 +194,24 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         icon="mdi:cash",
     ),
     # --------------------------------------------------
+    # CELL VOLTAGE (V3.5.0)
+    # --------------------------------------------------
+    ZendureSensorEntityDescription(
+        key="global_lowest_cell_voltage",
+        translation_key="global_lowest_cell_voltage",
+        runtime_key="global_lowest_cell_voltage",
+        native_unit_of_measurement="V",
+        icon="mdi:battery-heart-variant",
+    ),
+    ZendureSensorEntityDescription(
+        key="cell_voltage_status",
+        translation_key="cell_voltage_status",
+        runtime_key="cell_voltage_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=CELL_VOLTAGE_STATUS_ENUMS,
+        icon="mdi:battery-alert-variant-outline",
+    ),
+    # --------------------------------------------------
     # DEVICE / MODE
     # --------------------------------------------------
     ZendureSensorEntityDescription(
@@ -326,6 +345,17 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
             "season_winter_pv_threshold": season_thresholds.get("winter_pv_threshold"),
             "season_winter_export_threshold": season_thresholds.get("winter_export_threshold"),
             "season_counter": season_thresholds.get("counter"),
+            # V3.5.0 cell voltage transparency
+            "expert_mode_enabled": details.get("expert_mode_enabled"),
+            "cell_voltage_protection_enabled": details.get("cell_voltage_protection_enabled"),
+            "configured_lowest_cell_voltage_sensor_count": details.get(
+                "configured_lowest_cell_voltage_sensor_count"
+            ),
+            "global_lowest_cell_voltage": details.get("global_lowest_cell_voltage"),
+            "cell_voltage_status": details.get("cell_voltage_status"),
+            "cell_voltage_warning": details.get("cell_voltage_warning"),
+            "cell_voltage_cutoff": details.get("cell_voltage_cutoff"),
+            "cell_voltage_resume": details.get("cell_voltage_resume"),
         }
 
         attrs["profile_overrides"] = profile_overrides
