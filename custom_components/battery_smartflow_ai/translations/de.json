@@ -191,8 +191,26 @@
         "title": "Regelprofil bearbeiten – Expertenmodus",
         "description": "Erweiterte Schutz- und Diagnosefunktionen. Aktiviere zuerst den Expertenmodus. Danach kann optional der Zellspannungs-Schutz aktiviert werden. Bei aktivem Zellspannungs-Schutz werden zusätzliche Sensoren passend zur eingestellten Akku-Anzahl angezeigt.",
         "data": {
-          "expert_mode_enabled": "Expertenmodus aktivieren",
-          "cell_voltage_protection_enabled": "Zellspannungs-Schutz aktivieren",
+          "expert_mode_enabled": "Expertenmodus aktivieren"
+        },
+        "data_description": {
+          "expert_mode_enabled": "Aktiviert den erweiterten Expertenbereich für zusätzliche Schutz- und Diagnosefunktionen."
+        }
+      },
+      "expert_cell_voltage": {
+        "title": "Regelprofil bearbeiten – Zellspannungs-Schutz",
+        "description": "Aktiviere optional den Zellspannungs-Schutz. Wenn dieser aktiviert wird, folgt im nächsten Schritt die Konfiguration der Zellspannungssensoren und Schutzschwellen.",
+        "data": {
+          "cell_voltage_protection_enabled": "Zellspannungs-Schutz aktivieren"
+        },
+        "data_description": {
+          "cell_voltage_protection_enabled": "Aktiviert den zellspannungsbasierten Batterieschutz. Danach können die Sensoren für die niedrigste Zellspannung je Akku-Pack sowie die Schutzschwellen konfiguriert werden."
+        }
+      },
+      "expert_cell_voltage_config": {
+        "title": "Regelprofil bearbeiten – Zellspannungs-Konfiguration",
+        "description": "Konfiguriere die Sensoren für die niedrigste Zellspannung je Akku-Pack sowie die zugehörigen Schutzschwellen.",
+        "data": {
           "lowest_cell_voltage_pack_1": "Niedrigste Zellspannung Akku-Pack 1",
           "lowest_cell_voltage_pack_2": "Niedrigste Zellspannung Akku-Pack 2",
           "lowest_cell_voltage_pack_3": "Niedrigste Zellspannung Akku-Pack 3",
@@ -204,8 +222,6 @@
           "cell_voltage_resume": "Zellspannung Wiederfreigabe"
         },
         "data_description": {
-          "expert_mode_enabled": "Aktiviert den erweiterten Expertenbereich für zusätzliche Schutz- und Diagnosefunktionen.",
-          "cell_voltage_protection_enabled": "Aktiviert den Zellspannungs-basierten Batterieschutz. Bei Aktivierung werden die Sensoren für die niedrigste Zellspannung pro Akku-Pack sichtbar.",
           "lowest_cell_voltage_pack_1": "Sensor für die niedrigste Zellspannung des ersten Akku-Packs. Dieser Wert wird für die globale Schutzbewertung verwendet.",
           "lowest_cell_voltage_pack_2": "Sensor für die niedrigste Zellspannung des zweiten Akku-Packs. Dieser Wert wird für die globale Schutzbewertung verwendet.",
           "lowest_cell_voltage_pack_3": "Sensor für die niedrigste Zellspannung des dritten Akku-Packs. Dieser Wert wird für die globale Schutzbewertung verwendet.",
