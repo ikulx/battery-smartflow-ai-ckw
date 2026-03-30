@@ -122,6 +122,8 @@ class AdditionalBatteryBlockRule(BaseRule):
 
 class PeakRule(BaseRule):
     def evaluate(self, engine, ctx):
+        if float(ctx.grid_export_w or 0.0) > 80.0:
+            return None
         if (
             ctx.soc > ctx.soc_min
             and ctx.ai_mode in ("automatic", "winter")
@@ -162,6 +164,8 @@ class PeakRule(BaseRule):
 
 class ArbitrageRule(BaseRule):
     def evaluate(self, engine, ctx):
+        if float(ctx.grid_export_w or 0.0) > 80.0:
+            return None
         if (
             ctx.price_now is not None
             and ctx.avg_charge_price is not None
@@ -332,11 +336,11 @@ class DecisionEngine:
         self._rules = [
             EmergencyRule(),
             AdditionalBatteryBlockRule(),
+            PvRule(),
             PeakRule(),
             ArbitrageRule(),
             PlanningRule(),
             ValleyBoostRule(),
-            PvRule(),
             SummerRule(),
             ManualRule(),
         ]
