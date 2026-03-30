@@ -229,6 +229,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # cell voltage
             "global_lowest_cell_voltage": None,
             "cell_voltage_status": "disabled",
+            "cell_voltage_discharge_blocked": False,
+            "cell_voltage_resume_threshold": None,
 
             # debug
             "debug": "init",
@@ -481,6 +483,42 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._persist["discharge_blocked_by_soc_min"] = blocked
         self._persist["discharge_resume_soc"] = effective_resume_soc
 
+        return blocked
+
+    def _update_cell_voltage_discharge_hysteresis(
+        self,
+        global_lowest_cell_voltage: float | None,
+    ) -> bool:
+        """Maintain hysteresis for discharge re-enable based on cell voltage."""
+        blocked = bool(self._persist.get("cell_voltage_discharge_blocked", False))
+
+        if not self._cell_voltage_protection_enabled():
+            self._persist["cell_voltage_discharge_blocked"] = False
+            self._persist["cell_voltage_resume_threshold"] = None
+            return False
+
+        cutoff = self._get_setting(
+            SETTING_CELL_VOLTAGE_CUTOFF,
+            DEFAULT_CELL_VOLTAGE_CUTOFF,
+        )
+        resume = self._get_setting(
+            SETTING_CELL_VOLTAGE_RESUME,
+            DEFAULT_CELL_VOLTAGE_RESUME,
+        )
+
+        self._persist["cell_voltage_resume_threshold"] = float(resume)
+
+        if global_lowest_cell_voltage is None:
+            return blocked
+
+        cell_v = float(global_lowest_cell_voltage)
+
+        if cell_v <= float(cutoff):
+            blocked = True
+        elif cell_v >= float(resume):
+            blocked = False
+
+        self._persist["cell_voltage_discharge_blocked"] = blocked
         return blocked
 
     def _classify_charge_source(
@@ -919,6 +957,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._persist["global_lowest_cell_voltage"] = global_lowest_cell_voltage
             self._persist["cell_voltage_status"] = cell_voltage_status
 
+            cell_voltage_discharge_blocked = self._update_cell_voltage_discharge_hysteresis(
+                global_lowest_cell_voltage
+            )
+
             discharge_blocked_by_soc_min = self._update_discharge_resume_hysteresis(
                 soc=float(soc),
                 soc_min=float(soc_min),
@@ -1057,6 +1099,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 decision.discharge_w = 0.0
                 decision.action = "idle"
                 decision.reason = "soc_min_resume_block"
+
+            if decision.ac_mode == "output" and cell_voltage_discharge_blocked:
+                decision.discharge_w = 0.0
+                decision.action = "idle"
+                decision.reason = "cell_voltage_cutoff_block"
 
             ac_mode = (
                 ZENDURE_MODE_INPUT
@@ -1228,6 +1275,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "cell_voltage_resume": self._get_setting(
                     SETTING_CELL_VOLTAGE_RESUME,
                     DEFAULT_CELL_VOLTAGE_RESUME,
+                ),
+                "cell_voltage_discharge_blocked": cell_voltage_discharge_blocked,
+                "cell_voltage_resume_threshold": self._persist.get(
+                    "cell_voltage_resume_threshold"
                 ),
             }
 
