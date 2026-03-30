@@ -1003,6 +1003,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 valley_factor=valley_factor,
                 very_cheap_price=very_cheap_price,
                 additional_battery_charge_w=additional_battery_charge_w,
+                cell_voltage_emergency_active=bool(
+                    self._cell_voltage_protection_enabled()
+                    and global_lowest_cell_voltage is not None
+                    and float(global_lowest_cell_voltage)
+                    <= float (
+                        self._get_setting(
+                            SETTING_CELL_VOLTAGE_WARNING,
+                            DEFAULT_CELL_VOLTAGE_WARNING,
+                        )
+                    )
+                ),
             )
 
             decision = self._engine.evaluate(ctx)
@@ -1176,6 +1187,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 valley_factor=valley_factor,
                 very_cheap_price=very_cheap_price,
                 additional_battery_charge_w=additional_battery_charge_w,
+                cell_voltage_emergency_active=bool(
+                    self._cell_voltage_protection_enabled()
+                    and global_lowest_cell_voltage is not None
+                    and float(global_lowest_cell_voltage)
+                    <= float (
+                        self._get_setting(
+                            SETTING_CELL_VOLTAGE_WARNING,
+                            DEFAULT_CELL_VOLTAGE_WARNING,
+                        )
+                    )
+                ),
             )
 
             transparency_result = self._engine._with_thresholds(
