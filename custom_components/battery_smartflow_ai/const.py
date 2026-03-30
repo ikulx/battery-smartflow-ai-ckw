@@ -10,7 +10,7 @@ DOMAIN = "battery_smartflow_ai"
 INTEGRATION_NAME = "Battery SmartFlow AI"
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "3.4.1"
+INTEGRATION_VERSION = "3.5.0"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -51,6 +51,26 @@ CONF_BATTERY_AC_POWER_ENTITY = "battery_ac_power_entity"
 CONF_INSTALLED_PV_WP = "installed_pv_wp"
 CONF_PROFILE_OVERRIDES = "profile_overrides"
 
+# --- New for V3.5.0 ---
+CONF_EXPERT_MODE_ENABLED = "expert_mode_enabled"
+CONF_CELL_VOLTAGE_PROTECTION_ENABLED = "cell_voltage_protection_enabled"
+
+CONF_LOWEST_CELL_VOLTAGE_PACK_1 = "lowest_cell_voltage_pack_1"
+CONF_LOWEST_CELL_VOLTAGE_PACK_2 = "lowest_cell_voltage_pack_2"
+CONF_LOWEST_CELL_VOLTAGE_PACK_3 = "lowest_cell_voltage_pack_3"
+CONF_LOWEST_CELL_VOLTAGE_PACK_4 = "lowest_cell_voltage_pack_4"
+CONF_LOWEST_CELL_VOLTAGE_PACK_5 = "lowest_cell_voltage_pack_5"
+CONF_LOWEST_CELL_VOLTAGE_PACK_6 = "lowest_cell_voltage_pack_6"
+
+LOWEST_CELL_VOLTAGE_CONFIG_KEYS = [
+    CONF_LOWEST_CELL_VOLTAGE_PACK_1,
+    CONF_LOWEST_CELL_VOLTAGE_PACK_2,
+    CONF_LOWEST_CELL_VOLTAGE_PACK_3,
+    CONF_LOWEST_CELL_VOLTAGE_PACK_4,
+    CONF_LOWEST_CELL_VOLTAGE_PACK_5,
+    CONF_LOWEST_CELL_VOLTAGE_PACK_6,
+]
+
 # --- Helper constants for dynamic GUI profile override entities ---
 PROFILE_OVERRIDE_PREFIX = "profile_override_"
 
@@ -60,6 +80,11 @@ SETTING_BATTERY_PACKS = "battery_packs"
 SETTING_VALLEY_FACTOR = "valley_factor"
 SETTING_VERY_CHEAP_PRICE = "very_cheap_price"
 
+# --- New runtime settings for V3.5.0 ---
+SETTING_CELL_VOLTAGE_WARNING = "cell_voltage_warning"
+SETTING_CELL_VOLTAGE_CUTOFF = "cell_voltage_cutoff"
+SETTING_CELL_VOLTAGE_RESUME = "cell_voltage_resume"
+
 # Default
 DEFAULT_PACK_CAPACITY_KWH = 2.88
 DEFAULT_BATTERY_PACKS = 1
@@ -67,8 +92,15 @@ DEFAULT_BATTERY_PACKS = 1
 DEFAULT_VALLEY_FACTOR = 0.85
 DEFAULT_VERY_CHEAP_PRICE = None
 
-# --- New default for V3.2.0 ---
+# --- New defaults for V3.2.0 / V3.5.0 ---
 DEFAULT_INSTALLED_PV_WP = 0.0
+
+DEFAULT_EXPERT_MODE_ENABLED = False
+DEFAULT_CELL_VOLTAGE_PROTECTION_ENABLED = False
+
+DEFAULT_CELL_VOLTAGE_WARNING = 3.10
+DEFAULT_CELL_VOLTAGE_CUTOFF = 3.00
+DEFAULT_CELL_VOLTAGE_RESUME = 3.18
 
 # --------------------------------------------------
 # Device profiles (V1.5.x / V3.2.0 overrides)
@@ -102,7 +134,12 @@ MANUAL_CHARGE = "charge"
 MANUAL_DISCHARGE = "discharge"
 MANUAL_CONST_DISCHARGE = "constant_discharge"
 
-MANUAL_ACTIONS = [MANUAL_STANDBY, MANUAL_CHARGE, MANUAL_DISCHARGE, MANUAL_CONST_DISCHARGE]
+MANUAL_ACTIONS = [
+    MANUAL_STANDBY,
+    MANUAL_CHARGE,
+    MANUAL_DISCHARGE,
+    MANUAL_CONST_DISCHARGE,
+]
 
 # ==================================================
 # Settings (Number entities) – entity keys
@@ -211,6 +248,17 @@ NEXT_PLANNED_ACTION_ENUMS = [
     "discharge",
     "wait",
     "emergency",
+]
+
+# ==================================================
+# Cell voltage status enums (V3.5.0)
+# ==================================================
+CELL_VOLTAGE_STATUS_ENUMS = [
+    "disabled",
+    "normal",
+    "warning",
+    "cutoff_active",
+    "sensor_invalid",
 ]
 
 # ==================================================
