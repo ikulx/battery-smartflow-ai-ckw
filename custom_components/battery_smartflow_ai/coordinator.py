@@ -33,6 +33,9 @@ from .const import (
     CONF_DEVICE_PROFILE,
     CONF_PROFILE_OVERRIDES,
     CONF_INSTALLED_PV_WP,
+    CONF_EXPERT_MODE_ENABLED,
+    CONF_CELL_VOLTAGE_PROTECTION_ENABLED,
+    LOWEST_CELL_VOLTAGE_CONFIG_KEYS,
     GRID_MODE_NONE,
     GRID_MODE_SINGLE,
     GRID_MODE_SPLIT,
@@ -49,6 +52,9 @@ from .const import (
     SETTING_BATTERY_PACKS,
     SETTING_PEAK_FACTOR,
     SETTING_VALLEY_FACTOR,
+    SETTING_CELL_VOLTAGE_WARNING,
+    SETTING_CELL_VOLTAGE_CUTOFF,
+    SETTING_CELL_VOLTAGE_RESUME,
     # defaults
     DEFAULT_SOC_MIN,
     DEFAULT_SOC_MAX,
@@ -64,6 +70,11 @@ from .const import (
     DEFAULT_VALLEY_FACTOR,
     DEFAULT_DEVICE_PROFILE,
     DEFAULT_INSTALLED_PV_WP,
+    DEFAULT_EXPERT_MODE_ENABLED,
+    DEFAULT_CELL_VOLTAGE_PROTECTION_ENABLED,
+    DEFAULT_CELL_VOLTAGE_WARNING,
+    DEFAULT_CELL_VOLTAGE_CUTOFF,
+    DEFAULT_CELL_VOLTAGE_RESUME,
     # modes
     AI_MODE_AUTOMATIC,
     AI_MODE_SUMMER,
@@ -126,13 +137,12 @@ class SelectedEntities:
     output_limit: str
     battery_ac_power: str
     additional_battery_charge: str | None
-
     soc_limit: str | None
-
     grid_mode: str
     grid_power: str | None
     grid_import: str | None
     grid_export: str | None
+    lowest_cell_voltage_entities: tuple[str | None, ...]
 
 
 class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -171,6 +181,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             grid_power=entry.data.get(CONF_GRID_POWER_ENTITY),
             grid_import=entry.data.get(CONF_GRID_IMPORT_ENTITY),
             grid_export=entry.data.get(CONF_GRID_EXPORT_ENTITY),
+            lowest_cell_voltage_entities=tuple(
+                entry.options.get(key) for key in LOWEST_CELL_VOLTAGE_CONFIG_KEYS
+            ),
         )
 
         self.runtime_mode: dict[str, Any] = {
@@ -212,6 +225,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # season detection
             "season_mode": "winter",
             "season_counter": 0,
+
+            # cell voltage
+            "global_lowest_cell_voltage": None,
+            "cell_voltage_status": "disabled",
 
             # debug
             "debug": "init",
@@ -264,6 +281,68 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return float(value)
         except Exception:
             return float(DEFAULT_INSTALLED_PV_WP)
+
+    def _expert_mode_enabled(self) -> bool:
+        return bool(
+            self.entry.options.get(
+                CONF_EXPERT_MODE_ENABLED,
+                DEFAULT_EXPERT_MODE_ENABLED,
+            )
+        )
+
+    def _cell_voltage_protection_enabled(self) -> bool:
+        if not self._expert_mode_enabled():
+            return False
+        return bool(
+            self.entry.options.get(
+                CONF_CELL_VOLTAGE_PROTECTION_ENABLED,
+                DEFAULT_CELL_VOLTAGE_PROTECTION_ENABLED,
+            )
+        )
+
+    def _get_lowest_cell_voltage_values(self) -> list[float]:
+        values: list[float] = []
+
+        if not self._cell_voltage_protection_enabled():
+            return values
+
+        for entity_id in self.entities.lowest_cell_voltage_entities:
+            val = _to_float(self._state(entity_id), None)
+            if val is not None:
+                values.append(float(val))
+
+        return values
+
+    def _get_global_lowest_cell_voltage(self) -> float | None:
+        values = self._get_lowest_cell_voltage_values()
+        if not values:
+            return None
+        return min(values)
+
+    def _get_cell_voltage_status(
+        self,
+        global_lowest_cell_voltage: float | None,
+    ) -> str:
+        if not self._cell_voltage_protection_enabled():
+            return "disabled"
+
+        if global_lowest_cell_voltage is None:
+            return "sensor_invalid"
+
+        cutoff = self._get_setting(
+            SETTING_CELL_VOLTAGE_CUTOFF,
+            DEFAULT_CELL_VOLTAGE_CUTOFF,
+        )
+        warning = self._get_setting(
+            SETTING_CELL_VOLTAGE_WARNING,
+            DEFAULT_CELL_VOLTAGE_WARNING,
+        )
+
+        if global_lowest_cell_voltage <= float(cutoff):
+            return "cutoff_active"
+        if global_lowest_cell_voltage <= float(warning):
+            return "warning"
+        return "normal"
 
     def set_ai_mode(self, mode: str) -> None:
         self.runtime_mode["ai_mode"] = mode
@@ -832,6 +911,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 export_w=float(grid_export),
             )
 
+            global_lowest_cell_voltage = self._get_global_lowest_cell_voltage()
+            cell_voltage_status = self._get_cell_voltage_status(
+                global_lowest_cell_voltage
+            )
+
+            self._persist["global_lowest_cell_voltage"] = global_lowest_cell_voltage
+            self._persist["cell_voltage_status"] = cell_voltage_status
+
             discharge_blocked_by_soc_min = self._update_discharge_resume_hysteresis(
                 soc=float(soc),
                 soc_min=float(soc_min),
@@ -917,7 +1004,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                     self._persist["trade_charged_kwh"] = new_total_kwh
                     self._persist["trade_avg_charge_price"] = new_avg
-                    
+
             if (
                 delta_kwh < 0
                 and price_now is not None
@@ -1085,10 +1172,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "battery_charge_w_est": battery_charge_w,
                 "battery_discharge_w_est": battery_discharge_w,
                 "discharge_blocked_by_soc_min": discharge_blocked_by_soc_min,
-                "soc_discharge_resume_margin": float(resume_margin),
                 "discharge_resume_soc": float(
                     self._persist.get("discharge_resume_soc", float(soc_min))
                 ),
+                "soc_discharge_resume_margin": float(resume_margin),
                 "max_charge": max_charge,
                 "max_discharge": max_discharge,
                 "set_mode": ac_mode,
@@ -1123,6 +1210,25 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "effective_keepalive_min_deficit_w": profile.get("KEEPALIVE_MIN_DEFICIT_W"),
                 "effective_keepalive_min_output_w": profile.get("KEEPALIVE_MIN_OUTPUT_W"),
                 "effective_soc_discharge_resume_margin": profile.get("SOC_DISCHARGE_RESUME_MARGIN"),
+                "expert_mode_enabled": self._expert_mode_enabled(),
+                "cell_voltage_protection_enabled": self._cell_voltage_protection_enabled(),
+                "configured_lowest_cell_voltage_sensor_count": len(
+                    [e for e in self.entities.lowest_cell_voltage_entities if e]
+                ),
+                "global_lowest_cell_voltage": global_lowest_cell_voltage,
+                "cell_voltage_status": cell_voltage_status,
+                "cell_voltage_warning": self._get_setting(
+                    SETTING_CELL_VOLTAGE_WARNING,
+                    DEFAULT_CELL_VOLTAGE_WARNING,
+                ),
+                "cell_voltage_cutoff": self._get_setting(
+                    SETTING_CELL_VOLTAGE_CUTOFF,
+                    DEFAULT_CELL_VOLTAGE_CUTOFF,
+                ),
+                "cell_voltage_resume": self._get_setting(
+                    SETTING_CELL_VOLTAGE_RESUME,
+                    DEFAULT_CELL_VOLTAGE_RESUME,
+                ),
             }
 
             def _iso_or_none(val):
