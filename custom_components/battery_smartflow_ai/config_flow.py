@@ -33,6 +33,26 @@ from .const import (
     CONF_PROFILE_OVERRIDES,
     CONF_INSTALLED_PV_WP,
     DEFAULT_INSTALLED_PV_WP,
+    # V3.5.0
+    CONF_EXPERT_MODE_ENABLED,
+    CONF_CELL_VOLTAGE_PROTECTION_ENABLED,
+    CONF_LOWEST_CELL_VOLTAGE_PACK_1,
+    CONF_LOWEST_CELL_VOLTAGE_PACK_2,
+    CONF_LOWEST_CELL_VOLTAGE_PACK_3,
+    CONF_LOWEST_CELL_VOLTAGE_PACK_4,
+    CONF_LOWEST_CELL_VOLTAGE_PACK_5,
+    CONF_LOWEST_CELL_VOLTAGE_PACK_6,
+    LOWEST_CELL_VOLTAGE_CONFIG_KEYS,
+    DEFAULT_EXPERT_MODE_ENABLED,
+    DEFAULT_CELL_VOLTAGE_PROTECTION_ENABLED,
+    SETTING_BATTERY_PACKS,
+    DEFAULT_BATTERY_PACKS,
+    SETTING_CELL_VOLTAGE_WARNING,
+    SETTING_CELL_VOLTAGE_CUTOFF,
+    SETTING_CELL_VOLTAGE_RESUME,
+    DEFAULT_CELL_VOLTAGE_WARNING,
+    DEFAULT_CELL_VOLTAGE_CUTOFF,
+    DEFAULT_CELL_VOLTAGE_RESUME,
 )
 
 from .device_profiles import DEVICE_PROFILES, PROFILE_OVERRIDE_FIELDS
@@ -410,6 +430,20 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
             current_overrides = {}
         return profile_key, profile, current_overrides
 
+    def _get_battery_packs(self) -> int:
+        try:
+            val = self.config_entry.options.get(
+                SETTING_BATTERY_PACKS,
+                self.config_entry.data.get(
+                    SETTING_BATTERY_PACKS,
+                    DEFAULT_BATTERY_PACKS,
+                ),
+            )
+            packs = int(val)
+            return min(max(packs, 1), 6)
+        except Exception:
+            return DEFAULT_BATTERY_PACKS
+
     def _build_merged_options(
         self,
         user_input: dict[str, Any],
@@ -446,12 +480,46 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
 
         merged_options[CONF_INSTALLED_PV_WP] = float(installed_pv_wp)
         merged_options[CONF_PROFILE_OVERRIDES] = profile_overrides
+
+        # V3.5.0 expert mode / cell voltage protection
+        if CONF_EXPERT_MODE_ENABLED in user_input:
+            merged_options[CONF_EXPERT_MODE_ENABLED] = bool(
+                user_input[CONF_EXPERT_MODE_ENABLED]
+            )
+
+        if CONF_CELL_VOLTAGE_PROTECTION_ENABLED in user_input:
+            merged_options[CONF_CELL_VOLTAGE_PROTECTION_ENABLED] = bool(
+                user_input[CONF_CELL_VOLTAGE_PROTECTION_ENABLED]
+            )
+
+        for key in LOWEST_CELL_VOLTAGE_CONFIG_KEYS:
+            if key in user_input:
+                if user_input.get(key):
+                    merged_options[key] = user_input[key]
+                else:
+                    merged_options.pop(key, None)
+
+        for key in (
+            SETTING_CELL_VOLTAGE_WARNING,
+            SETTING_CELL_VOLTAGE_CUTOFF,
+            SETTING_CELL_VOLTAGE_RESUME,
+        ):
+            if key not in user_input:
+                continue
+            value = user_input.get(key)
+            if value is None:
+                continue
+            try:
+                merged_options[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+
         return merged_options
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["general", "charge", "discharge"],
+            menu_options=["general", "charge", "discharge", "expert"],
         )
 
     async def async_step_general(self, user_input: dict[str, Any] | None = None):
@@ -724,6 +792,103 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="discharge",
+            data_schema=self.add_suggested_values_to_schema(
+                options_schema,
+                suggested_values,
+            ),
+        )
+
+    async def async_step_expert(self, user_input: dict[str, Any] | None = None):
+        packs = self._get_battery_packs()
+
+        if user_input is not None:
+            merged_options = self._build_merged_options(user_input)
+            return self.async_create_entry(title="", data=merged_options)
+
+        expert_enabled = self.config_entry.options.get(
+            CONF_EXPERT_MODE_ENABLED,
+            DEFAULT_EXPERT_MODE_ENABLED,
+        )
+        cell_voltage_enabled = self.config_entry.options.get(
+            CONF_CELL_VOLTAGE_PROTECTION_ENABLED,
+            DEFAULT_CELL_VOLTAGE_PROTECTION_ENABLED,
+        )
+
+        schema_dict: dict[Any, Any] = {
+            vol.Optional(CONF_EXPERT_MODE_ENABLED): selector.BooleanSelector(),
+        }
+
+        if expert_enabled:
+            schema_dict[
+                vol.Optional(CONF_CELL_VOLTAGE_PROTECTION_ENABLED)
+            ] = selector.BooleanSelector()
+
+            if cell_voltage_enabled:
+                for idx in range(packs):
+                    key = LOWEST_CELL_VOLTAGE_CONFIG_KEYS[idx]
+                    schema_dict[vol.Optional(key)] = selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="sensor")
+                    )
+
+                schema_dict[
+                    vol.Optional(SETTING_CELL_VOLTAGE_WARNING)
+                ] = selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=2.50,
+                        max=3.40,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="V",
+                    )
+                )
+                schema_dict[
+                    vol.Optional(SETTING_CELL_VOLTAGE_CUTOFF)
+                ] = selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=2.50,
+                        max=3.30,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="V",
+                    )
+                )
+                schema_dict[
+                    vol.Optional(SETTING_CELL_VOLTAGE_RESUME)
+                ] = selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=2.50,
+                        max=3.40,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="V",
+                    )
+                )
+
+        options_schema = vol.Schema(schema_dict)
+
+        suggested_values: dict[str, Any] = {
+            CONF_EXPERT_MODE_ENABLED: expert_enabled,
+            CONF_CELL_VOLTAGE_PROTECTION_ENABLED: cell_voltage_enabled,
+            SETTING_CELL_VOLTAGE_WARNING: self.config_entry.options.get(
+                SETTING_CELL_VOLTAGE_WARNING,
+                DEFAULT_CELL_VOLTAGE_WARNING,
+            ),
+            SETTING_CELL_VOLTAGE_CUTOFF: self.config_entry.options.get(
+                SETTING_CELL_VOLTAGE_CUTOFF,
+                DEFAULT_CELL_VOLTAGE_CUTOFF,
+            ),
+            SETTING_CELL_VOLTAGE_RESUME: self.config_entry.options.get(
+                SETTING_CELL_VOLTAGE_RESUME,
+                DEFAULT_CELL_VOLTAGE_RESUME,
+            ),
+        }
+
+        for idx in range(packs):
+            key = LOWEST_CELL_VOLTAGE_CONFIG_KEYS[idx]
+            suggested_values[key] = self.config_entry.options.get(key)
+
+        return self.async_show_form(
+            step_id="expert",
             data_schema=self.add_suggested_values_to_schema(
                 options_schema,
                 suggested_values,
