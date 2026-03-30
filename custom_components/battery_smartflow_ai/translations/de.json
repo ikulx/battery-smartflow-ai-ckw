@@ -123,11 +123,12 @@
     "step": {
       "init": {
         "title": "Regelprofil bearbeiten",
-        "description": "Wähle den Bereich aus, den du bearbeiten möchtest. „Allgemein“ enthält gemeinsame Profilparameter, „Laden“ die Regelwerte für die Ladeleistung und „Entladen“ die Regelwerte für die Entladeleistung.",
+        "description": "Wähle den Bereich aus, den du bearbeiten möchtest. „Allgemein“ enthält gemeinsame Profilparameter, „Laden“ die Regelwerte für die Ladeleistung, „Entladen“ die Regelwerte für die Entladeleistung und „Expertenmodus“ zusätzliche Schutz- und Diagnosefunktionen.",
         "menu_options": {
           "general": "Allgemein",
           "charge": "Laden",
-          "discharge": "Entladen"
+          "discharge": "Entladen",
+          "expert": "Expertenmodus"
         }
       },
       "general": {
@@ -184,6 +185,36 @@
           "DISCHARGE_KP_DOWN": "Verstärkung beim Runterregeln der Entladeleistung. Höhere Werte reduzieren die Entladeleistung schneller, können aber unruhiger wirken.",
           "DISCHARGE_MAX_STEP_UP": "Maximaler Leistungsschritt pro Regelzyklus beim Erhöhen der Entladeleistung. Höhere Werte machen die Entlade-Regelung schneller, aber potenziell aggressiver.",
           "DISCHARGE_MAX_STEP_DOWN": "Maximaler Leistungsschritt pro Regelzyklus beim Reduzieren der Entladeleistung. Höhere Werte bremsen die Entladung schneller ab, können aber stärker springen."
+        }
+      },
+      "expert": {
+        "title": "Regelprofil bearbeiten – Expertenmodus",
+        "description": "Erweiterte Schutz- und Diagnosefunktionen. Aktiviere zuerst den Expertenmodus. Danach kann optional der Zellspannungs-Schutz aktiviert werden. Bei aktivem Zellspannungs-Schutz werden zusätzliche Sensoren passend zur eingestellten Akku-Anzahl angezeigt.",
+        "data": {
+          "expert_mode_enabled": "Expertenmodus aktivieren",
+          "cell_voltage_protection_enabled": "Zellspannungs-Schutz aktivieren",
+          "lowest_cell_voltage_pack_1": "Niedrigste Zellspannung Akku-Pack 1",
+          "lowest_cell_voltage_pack_2": "Niedrigste Zellspannung Akku-Pack 2",
+          "lowest_cell_voltage_pack_3": "Niedrigste Zellspannung Akku-Pack 3",
+          "lowest_cell_voltage_pack_4": "Niedrigste Zellspannung Akku-Pack 4",
+          "lowest_cell_voltage_pack_5": "Niedrigste Zellspannung Akku-Pack 5",
+          "lowest_cell_voltage_pack_6": "Niedrigste Zellspannung Akku-Pack 6",
+          "cell_voltage_warning": "Zellspannung Warn-/Notlade-Schwelle",
+          "cell_voltage_cutoff": "Zellspannung Entladesperre",
+          "cell_voltage_resume": "Zellspannung Wiederfreigabe"
+        },
+        "data_description": {
+          "expert_mode_enabled": "Aktiviert den erweiterten Expertenbereich für zusätzliche Schutz- und Diagnosefunktionen.",
+          "cell_voltage_protection_enabled": "Aktiviert den Zellspannungs-basierten Batterieschutz. Bei Aktivierung werden die Sensoren für die niedrigste Zellspannung pro Akku-Pack sichtbar.",
+          "lowest_cell_voltage_pack_1": "Sensor für die niedrigste Zellspannung des ersten Akku-Packs. Dieser Wert wird für die globale Schutzbewertung verwendet.",
+          "lowest_cell_voltage_pack_2": "Sensor für die niedrigste Zellspannung des zweiten Akku-Packs. Dieser Wert wird für die globale Schutzbewertung verwendet.",
+          "lowest_cell_voltage_pack_3": "Sensor für die niedrigste Zellspannung des dritten Akku-Packs. Dieser Wert wird für die globale Schutzbewertung verwendet.",
+          "lowest_cell_voltage_pack_4": "Sensor für die niedrigste Zellspannung des vierten Akku-Packs. Dieser Wert wird für die globale Schutzbewertung verwendet.",
+          "lowest_cell_voltage_pack_5": "Sensor für die niedrigste Zellspannung des fünften Akku-Packs. Dieser Wert wird für die globale Schutzbewertung verwendet.",
+          "lowest_cell_voltage_pack_6": "Sensor für die niedrigste Zellspannung des sechsten Akku-Packs. Dieser Wert wird für die globale Schutzbewertung verwendet.",
+          "cell_voltage_warning": "Schwellwert für kritische niedrige Zellspannung. Wird genutzt, um frühzeitig Notladung bzw. Schutzmaßnahmen einzuleiten.",
+          "cell_voltage_cutoff": "Harte Untergrenze für die Zellspannung. Wird diese erreicht oder unterschritten, wird die Entladung gesperrt.",
+          "cell_voltage_resume": "Wiederfreigabe-Schwelle oberhalb der Entladesperre. Erst ab diesem Spannungswert wird die Entladung nach Zellspannungs-Schutz wieder freigegeben."
         }
       }
     }
