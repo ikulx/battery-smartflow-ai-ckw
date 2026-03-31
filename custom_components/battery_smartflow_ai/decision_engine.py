@@ -244,23 +244,36 @@ class PvRule(BaseRule):
         if planning is not None:
             return None
 
-        if float(ctx.grid_export_w or 0.0) < 80.0:
+        if ctx.soc >= ctx.soc_max:
             return None
 
-        if ctx.soc < ctx.soc_max:
-            charge_w = engine._delta_charge(ctx)
+        export_w = float(ctx.grid_export_w or 0.0)
+        pv_w = float(ctx.pv_w or 0.0)
+        prev_charge_w = float(ctx.prev_charge_w or 0.0)
 
-            if charge_w > 0:
-                return engine._with_thresholds(
-                    ctx,
-                    DecisionResult(
-                        action="charge",
-                        ac_mode="input",
-                        charge_w=charge_w,
-                        discharge_w=0.0,
-                        reason="pv_surplus_charge",
-                    ),
-                )
+        has_direct_surplus = export_w >= 80.0
+
+        keepalive_charge = (
+            prev_charge_w > 0.0
+            and pv_w >= max(150.0, prev_charge_w * 0.35)
+        )
+
+        if not has_direct_surplus and not keepalive_charge:
+            return None
+
+        charge_w = engine._delta_charge(ctx)
+
+        if charge_w > 0:
+            return engine._with_thresholds(
+                ctx,
+                DecisionResult(
+                    action="charge",
+                    ac_mode="input",
+                    charge_w=charge_w,
+                    discharge_w=0.0,
+                    reason="pv_surplus_charge",
+                ),
+            )
 
         return None
 
