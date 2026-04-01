@@ -231,6 +231,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "cell_voltage_status": "disabled",
             "cell_voltage_discharge_blocked": False,
             "cell_voltage_resume_threshold": None,
+            "cell_voltage_soc_plausibility": "not_available",
 
             # debug
             "debug": "init",
@@ -344,6 +345,45 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return "cutoff_active"
         if global_lowest_cell_voltage <= float(warning):
             return "warning"
+        return "normal"
+
+    def _get_cell_voltage_soc_plausibility(
+        self,
+        soc: float,
+        soc_min: float,
+        global_lowest_cell_voltage: float | None,
+    ) -> str:
+        """Diagnose whether SoC and cell voltage still look plausible together.
+
+        This is a transparency-only signal. It does not change control behavior.
+        """
+        if not self._cell_voltage_protection_enabled():
+            return "not_available"
+
+        if global_lowest_cell_voltage is None:
+            return "not_available"
+
+        warning_v = self._get_setting(
+            SETTING_CELL_VOLTAGE_WARNING,
+            DEFAULT_CELL_VOLTAGE_WARNING,
+        )
+        cutoff_v = self._get_setting(
+            SETTING_CELL_VOLTAGE_CUTOFF,
+            DEFAULT_CELL_VOLTAGE_CUTOFF,
+        )
+
+        warning_soc_threshold = max(float(soc_min) + 10.0, 20.0)
+        critical_soc_threshold = max(float(soc_min) + 15.0, 30.0)
+
+        cell_v = float(global_lowest_cell_voltage)
+        soc_val = float(soc)
+
+        if cell_v <= float(cutoff_v) and soc_val >= critical_soc_threshold:
+            return "critical"
+
+        if cell_v <= float(warning_v) and soc_val >= warning_soc_threshold:
+            return "warning"
+
         return "normal"
 
     def set_ai_mode(self, mode: str) -> None:
@@ -953,9 +993,15 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             cell_voltage_status = self._get_cell_voltage_status(
                 global_lowest_cell_voltage
             )
+            cell_voltage_soc_plausibility = self._get_cell_voltage_soc_plausibility(
+                soc=float(soc),
+                soc_min=float(soc_min),
+                global_lowest_cell_voltage=global_lowest_cell_voltage,
+            )
 
             self._persist["global_lowest_cell_voltage"] = global_lowest_cell_voltage
             self._persist["cell_voltage_status"] = cell_voltage_status
+            self._persist["cell_voltage_soc_plausibility"] = cell_voltage_soc_plausibility
 
             cell_voltage_discharge_blocked = self._update_cell_voltage_discharge_hysteresis(
                 global_lowest_cell_voltage
@@ -972,6 +1018,18 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._persist["trade_cycle_below_soc_min"] = True
             elif float(soc) > float(soc_min):
                 self._persist["trade_cycle_below_soc_min"] = False
+
+            cell_voltage_emergency_active = bool(
+                self._cell_voltage_protection_enabled()
+                and global_lowest_cell_voltage is not None
+                and float(global_lowest_cell_voltage)
+                <= float(
+                    self._get_setting(
+                        SETTING_CELL_VOLTAGE_WARNING,
+                        DEFAULT_CELL_VOLTAGE_WARNING,
+                    )
+                )
+            )
 
             ctx = DecisionContext(
                 now=now,
@@ -1003,17 +1061,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 valley_factor=valley_factor,
                 very_cheap_price=very_cheap_price,
                 additional_battery_charge_w=additional_battery_charge_w,
-                cell_voltage_emergency_active=bool(
-                    self._cell_voltage_protection_enabled()
-                    and global_lowest_cell_voltage is not None
-                    and float(global_lowest_cell_voltage)
-                    <= float (
-                        self._get_setting(
-                            SETTING_CELL_VOLTAGE_WARNING,
-                            DEFAULT_CELL_VOLTAGE_WARNING,
-                        )
-                    )
-                ),
+                cell_voltage_emergency_active=cell_voltage_emergency_active,
             )
 
             decision = self._engine.evaluate(ctx)
@@ -1036,8 +1084,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                 charge_price_applied = float(applied_price)
 
-                # Schutz-/Notladebereich unterhalb SoC-Min:
-                # keine Anrechnung auf den wirtschaftlichen Ladezyklus
                 if not is_below_soc_min_cycle:
                     charged_kwh = float(self._persist.get("trade_charged_kwh", 0.0) or 0.0)
                     avg_price = self._persist.get("trade_avg_charge_price")
@@ -1156,7 +1202,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             recommendation = self._map_reco(decision.action)
 
-            # Transparency thresholds from the engine only, based on the latest persisted charge price.
             transparency_ctx = DecisionContext(
                 now=now,
                 soc=soc,
@@ -1187,17 +1232,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 valley_factor=valley_factor,
                 very_cheap_price=very_cheap_price,
                 additional_battery_charge_w=additional_battery_charge_w,
-                cell_voltage_emergency_active=bool(
-                    self._cell_voltage_protection_enabled()
-                    and global_lowest_cell_voltage is not None
-                    and float(global_lowest_cell_voltage)
-                    <= float (
-                        self._get_setting(
-                            SETTING_CELL_VOLTAGE_WARNING,
-                            DEFAULT_CELL_VOLTAGE_WARNING,
-                        )
-                    )
-                ),
+                cell_voltage_emergency_active=cell_voltage_emergency_active,
             )
 
             transparency_result = self._engine._with_thresholds(
@@ -1286,6 +1321,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ),
                 "global_lowest_cell_voltage": global_lowest_cell_voltage,
                 "cell_voltage_status": cell_voltage_status,
+                "cell_voltage_soc_plausibility": cell_voltage_soc_plausibility,
+                "cell_voltage_soc_warning_threshold": max(float(soc_min) + 10.0, 20.0),
+                "cell_voltage_soc_critical_threshold": max(float(soc_min) + 15.0, 30.0),
                 "cell_voltage_warning": self._get_setting(
                     SETTING_CELL_VOLTAGE_WARNING,
                     DEFAULT_CELL_VOLTAGE_WARNING,
@@ -1302,17 +1340,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "cell_voltage_resume_threshold": self._persist.get(
                     "cell_voltage_resume_threshold"
                 ),
-                "cell_voltage_emergency_active": bool(
-                    self._cell_voltage_protection_enabled()
-                    and global_lowest_cell_voltage is not None
-                    and float(global_lowest_cell_voltage)
-                    <= float(
-                        self._get_setting(
-                            SETTING_CELL_VOLTAGE_WARNING,
-                            DEFAULT_CELL_VOLTAGE_WARNING,
-                        )
-                    )
-                ),
+                "cell_voltage_emergency_active": cell_voltage_emergency_active,
             }
 
             def _iso_or_none(val):
