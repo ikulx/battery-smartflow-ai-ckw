@@ -8,38 +8,38 @@
           "device_profile": "Apparaatprofiel",
           "soc_entity": "Batterij-SoC-sensor",
           "soc_limit_entity": "SoC-limietstatus (optioneel)",
-          "pack_capacity_kwh": "Capaciteit per batterijpakket (kWh)",
+          "pack_capacity_kwh": "Capaciteit per batterijpack (kWh)",
           "battery_ac_power_entity": "Batterijvermogenssensor (W)",
           "additional_battery_charge_entity": "Laadvermogen extra batterij (optioneel)",
           "capacity_entity": "Capaciteitssensor (optioneel)",
           "installed_pv_wp": "Geïnstalleerd PV-vermogen (Wp)",
           "pv_entity": "PV-vermogenssensor",
           "price_now_entity": "Huidige stroomprijs",
-          "price_export_entity": "Prijsverloop (bijv. Tibber / EPEX)",
+          "price_export_entity": "Prijscurve (bijv. Tibber / EPEX)",
           "grid_mode": "Netmeting",
           "grid_power_entity": "Netvermogen (single)",
-          "grid_import_entity": "Netimport (split)",
-          "grid_export_entity": "Netexport (split)",
+          "grid_import_entity": "Netafname (split)",
+          "grid_export_entity": "Netinjectie (split)",
           "ac_mode_entity": "Zendure AC-modus",
           "input_limit_entity": "Zendure laadvermogen",
           "output_limit_entity": "Zendure ontlaadvermogen"
         },
         "data_description": {
-          "device_profile": "Kies het passende apparaatprofiel voor je Zendure-systeem. Het profiel bevat afgestemde regelparameters.",
-          "soc_entity": "Sensor met de huidige laadstatus (State of Charge) van de batterij in procenten. Centrale basis voor alle beslissingen.",
+          "device_profile": "Selecteer het juiste apparaatprofiel voor je Zendure-systeem. Het profiel bevat afgestemde regelparameters.",
+          "soc_entity": "Sensor met de huidige laadstatus van de batterij in procenten. Centrale basis voor alle beslissingen.",
           "soc_limit_entity": "Optionele sensor uit de Zendure-integratie die actieve BMS-limieten meldt (bijv. laad- of ontlaadblokkering).",
-          "pack_capacity_kwh": "Bruikbare capaciteit van één batterijpakket in kWh. Wordt vermenigvuldigd met het aantal geïnstalleerde pakketten om de totale capaciteit te berekenen.",
+          "pack_capacity_kwh": "Bruikbare capaciteit van één batterijpack in kWh. Dit wordt vermenigvuldigd met het aantal geïnstalleerde packs om de totale capaciteit te berekenen.",
           "battery_ac_power_entity": "Sensor voor het AC-vermogen van de batterij. De waarde moet positief zijn tijdens ontladen. Aanbevolen: sensor.solarflow_2400_ac_bat_in_out",
-          "additional_battery_charge_entity": "Optionele sensor van een tweede batterijsysteem. Als deze sensor positief laadvermogen meldt, blokkeert Battery SmartFlow AI het ontladen.",
-          "capacity_entity": "Optionele sensor met de automatisch berekende beschikbare batterijcapaciteit in kWh (bijv. uit de Zendure-integratie). Indien ingesteld, overschrijft deze de handmatige berekening.",
-          "installed_pv_wp": "Geïnstalleerd theoretisch PV-modulevermogen van de installatie in Wp. Deze waarde wordt gebruikt voor relatieve zomer-/winterdrempels en aanvullende PV-gerelateerde logica.",
+          "additional_battery_charge_entity": "Optionele sensor van een tweede batterijsysteem. Als deze sensor positief laadvermogen meldt, blokkeert Battery SmartFlow AI de ontlading.",
+          "capacity_entity": "Optionele sensor met automatisch berekende beschikbare batterijcapaciteit in kWh (bijv. uit de Zendure-integratie). Indien ingesteld, overschrijft deze de handmatige berekening.",
+          "installed_pv_wp": "Geïnstalleerd theoretisch PV-modulevermogen van de installatie in Wp. Deze waarde wordt gebruikt voor relatieve zomer-/winterdrempels en verdere PV-gerelateerde logica.",
           "pv_entity": "Sensor met het huidige PV-vermogen in watt. Wordt gebruikt om overschot te detecteren.",
           "price_now_entity": "Sensor met de huidige stroomprijs (bijv. Tibber). Wordt gebruikt voor economische beslissingen.",
-          "price_export_entity": "Sensor met prijsprognosegegevens (bijv. Tibber / EPEX). Maakt prijsvoorplanning mogelijk.",
-          "grid_mode": "Kies hoe je netverbruik wordt gemeten: één gecombineerde sensor of aparte sensoren voor import en export.",
-          "grid_power_entity": "Een enkele sensor met positief vermogen bij netimport en negatief vermogen bij netexport.",
-          "grid_import_entity": "Sensor met huidig netimportvermogen (alleen positieve waarde).",
-          "grid_export_entity": "Sensor met huidig netexportvermogen (alleen positieve waarde).",
+          "price_export_entity": "Sensor met prijsprognosegegevens (bijv. Tibber / EPEX). Maakt prijsgebaseerde voorplanning mogelijk.",
+          "grid_mode": "Kies hoe je netverbruik wordt gemeten: één gecombineerde sensor of gescheiden sensoren voor afname en injectie.",
+          "grid_power_entity": "Eén sensor met positief vermogen bij netafname en negatief vermogen bij injectie.",
+          "grid_import_entity": "Sensor met huidig netafnamevermogen (alleen positief).",
+          "grid_export_entity": "Sensor met huidig netinjectievermogen (alleen positief).",
           "ac_mode_entity": "Select-entiteit uit de Zendure-integratie die schakelt tussen laden (INPUT) en ontladen (OUTPUT).",
           "input_limit_entity": "Number-entiteit om het laadvermogen in watt in te stellen.",
           "output_limit_entity": "Number-entiteit om het ontlaadvermogen in watt in te stellen."
@@ -50,13 +50,13 @@
         "description": "Kies de netsensoren passend bij de modus",
         "data": {
           "grid_power_entity": "Netvermogen (single)",
-          "grid_import_entity": "Netimport (split)",
-          "grid_export_entity": "Netexport (split)"
+          "grid_import_entity": "Netafname (split)",
+          "grid_export_entity": "Netinjectie (split)"
         },
         "data_description": {
-          "grid_power_entity": "Een enkele sensor met positief vermogen bij import en negatief bij export.",
-          "grid_import_entity": "Sensor met huidig netimportvermogen in watt.",
-          "grid_export_entity": "Sensor met huidig netexportvermogen in watt."
+          "grid_power_entity": "Eén sensor met positief vermogen bij afname en negatief vermogen bij injectie.",
+          "grid_import_entity": "Sensor met huidig netafnamevermogen in watt.",
+          "grid_export_entity": "Sensor met huidig netinjectievermogen in watt."
         }
       },
       "grid": {
@@ -64,13 +64,13 @@
         "description": "Kies de netsensoren passend bij de modus",
         "data": {
           "grid_power_entity": "Netvermogen (single)",
-          "grid_import_entity": "Netimport (split)",
-          "grid_export_entity": "Netexport (split)"
+          "grid_import_entity": "Netafname (split)",
+          "grid_export_entity": "Netinjectie (split)"
         },
         "data_description": {
-          "grid_power_entity": "Een enkele sensor met positief vermogen bij import en negatief bij export.",
-          "grid_import_entity": "Sensor met huidig netimportvermogen in watt.",
-          "grid_export_entity": "Sensor met huidig netexportvermogen in watt."
+          "grid_power_entity": "Eén sensor met positief vermogen bij afname en negatief vermogen bij injectie.",
+          "grid_import_entity": "Sensor met huidig netafnamevermogen in watt.",
+          "grid_export_entity": "Sensor met huidig netinjectievermogen in watt."
         }
       },
       "user": {
@@ -80,39 +80,39 @@
           "device_profile": "Apparaatprofiel",
           "soc_entity": "Batterij-SoC-sensor",
           "soc_limit_entity": "SoC-limietstatus (optioneel)",
-          "pack_capacity_kwh": "Capaciteit per batterijpakket (kWh)",
+          "pack_capacity_kwh": "Capaciteit per batterijpack (kWh)",
           "battery_ac_power_entity": "Batterijvermogenssensor (W)",
           "additional_battery_charge_entity": "Laadvermogen extra batterij (optioneel)",
           "capacity_entity": "Capaciteitssensor (optioneel)",
           "installed_pv_wp": "Geïnstalleerd PV-vermogen (Wp)",
           "pv_entity": "PV-vermogenssensor",
           "price_now_entity": "Huidige stroomprijs",
-          "price_export_entity": "Prijsverloop (bijv. Tibber / EPEX)",
+          "price_export_entity": "Prijscurve (bijv. Tibber / EPEX)",
           "grid_mode": "Netmeting",
           "grid_power_entity": "Netvermogen (single)",
-          "grid_import_entity": "Netimport (split)",
-          "grid_export_entity": "Netexport (split)",
+          "grid_import_entity": "Netafname (split)",
+          "grid_export_entity": "Netinjectie (split)",
           "ac_mode_entity": "Zendure AC-modus",
           "input_limit_entity": "Zendure laadvermogen",
           "output_limit_entity": "Zendure ontlaadvermogen"
         },
         "data_description": {
-          "device_profile": "Kies het passende apparaatprofiel voor je Zendure-systeem. De regelparameters worden automatisch aangepast.",
+          "device_profile": "Selecteer het juiste apparaatprofiel voor je Zendure-systeem. Regelparameters worden automatisch aangepast.",
           "soc_entity": "Sensor met de huidige laadstatus van de batterij in procenten.",
-          "soc_limit_entity": "Optionele statussensor uit de Zendure-integratie voor het herkennen van actieve BMS-blokkeringen.",
-          "pack_capacity_kwh": "Bruikbare capaciteit van één batterijpakket in kWh. Wordt vermenigvuldigd met het aantal geïnstalleerde pakketten om de totale capaciteit te berekenen.",
+          "soc_limit_entity": "Optionele statussensor uit de Zendure-integratie om actieve BMS-blokkeringen te detecteren.",
+          "pack_capacity_kwh": "Bruikbare capaciteit van één batterijpack in kWh. Dit wordt vermenigvuldigd met het aantal geïnstalleerde packs om de totale capaciteit te berekenen.",
           "battery_ac_power_entity": "Sensor voor het AC-vermogen van de batterij. De waarde moet positief zijn tijdens ontladen. Aanbevolen: sensor.solarflow_2400_ac_bat_in_out",
-          "additional_battery_charge_entity": "Optionele sensor van een tweede batterijsysteem. Als deze sensor positief laadvermogen meldt, blokkeert Battery SmartFlow AI het ontladen.",
-          "capacity_entity": "Optionele sensor met de automatisch berekende beschikbare batterijcapaciteit in kWh (bijv. uit de Zendure-integratie). Indien ingesteld, overschrijft deze de handmatige berekening.",
-          "installed_pv_wp": "Geïnstalleerd theoretisch PV-modulevermogen van de installatie in Wp. Deze waarde wordt gebruikt voor relatieve zomer-/winterdrempels en aanvullende PV-gerelateerde logica.",
+          "additional_battery_charge_entity": "Optionele sensor van een tweede batterijsysteem. Als deze sensor positief laadvermogen meldt, blokkeert Battery SmartFlow AI de ontlading.",
+          "capacity_entity": "Optionele sensor met automatisch berekende beschikbare batterijcapaciteit in kWh (bijv. uit de Zendure-integratie). Indien ingesteld, overschrijft deze de handmatige berekening.",
+          "installed_pv_wp": "Geïnstalleerd theoretisch PV-modulevermogen van de installatie in Wp. Deze waarde wordt gebruikt voor relatieve zomer-/winterdrempels en verdere PV-gerelateerde logica.",
           "pv_entity": "Sensor met het huidige PV-vermogen in watt.",
-          "price_now_entity": "Huidige stroomprijs. Maakt prijsafhankelijk ontladen mogelijk.",
+          "price_now_entity": "Huidige stroomprijs. Maakt prijsgebaseerd ontladen mogelijk.",
           "price_export_entity": "Prijsprognosegegevens voor de komende uren. Maakt intelligente laadplanning mogelijk.",
-          "grid_mode": "Bepaalt hoe netimport en netexport worden gemeten.",
-          "grid_power_entity": "Een gecombineerde netsensor (positief = import, negatief = export).",
-          "grid_import_entity": "Sensor voor netimport (split-modus).",
-          "grid_export_entity": "Sensor voor netexport (split-modus).",
-          "ac_mode_entity": "Zendure AC-modus (INPUT/OUTPUT). Wordt automatisch door de integratie bestuurd.",
+          "grid_mode": "Bepaalt hoe netafname en injectie worden gemeten.",
+          "grid_power_entity": "Een gecombineerde netsensor (positief = afname, negatief = injectie).",
+          "grid_import_entity": "Sensor voor netafname (split-modus).",
+          "grid_export_entity": "Sensor voor netinjectie (split-modus).",
+          "ac_mode_entity": "Zendure AC-modus (INPUT/OUTPUT). Wordt automatisch door de integratie aangestuurd.",
           "input_limit_entity": "Instelbaar laadvermogen in watt.",
           "output_limit_entity": "Instelbaar ontlaadvermogen in watt."
         }
@@ -123,11 +123,12 @@
     "step": {
       "init": {
         "title": "Regelprofiel bewerken",
-        "description": "Kies het onderdeel dat je wilt bewerken. ‘Algemeen’ bevat gedeelde profielparameters, ‘Laden’ bevat de regelwaarden voor laadvermogen en ‘Ontladen’ bevat de regelwaarden voor ontlaadvermogen.",
+        "description": "Kies het onderdeel dat je wilt bewerken. ‘Algemeen’ bevat gedeelde profielparameters, ‘Laden’ de regelwaarden voor laadvermogen, ‘Ontladen’ de regelwaarden voor ontlaadvermogen en ‘Expertmodus’ extra beschermings- en diagnosefuncties.",
         "menu_options": {
           "general": "Algemeen",
           "charge": "Laden",
-          "discharge": "Ontladen"
+          "discharge": "Ontladen",
+          "expert": "Expertmodus"
         }
       },
       "general": {
@@ -135,55 +136,85 @@
         "description": "Algemene regelparameters van het actieve apparaatprofiel.",
         "data": {
           "installed_pv_wp": "Geïnstalleerd PV-vermogen (Wp)",
-          "TARGET_IMPORT_W": "Doel-netimport",
-          "EXPORT_GUARD_W": "Exportbeveiliging",
-          "KEEPALIVE_MIN_DEFICIT_W": "Keepalive minimaal tekort",
-          "KEEPALIVE_MIN_OUTPUT_W": "Keepalive minimaal vermogen",
-          "SOC_DISCHARGE_RESUME_MARGIN": "Ontlaad-herinschakeling boven minimum-SoC"
+          "TARGET_IMPORT_W": "Doel-netafname",
+          "EXPORT_GUARD_W": "Injectiebeveiliging",
+          "KEEPALIVE_MIN_DEFICIT_W": "Keepalive minimumtekort",
+          "KEEPALIVE_MIN_OUTPUT_W": "Keepalive minimumvermogen",
+          "SOC_DISCHARGE_RESUME_MARGIN": "Ontladen opnieuw vrijgeven boven minimum-SoC"
         },
         "data_description": {
-          "installed_pv_wp": "Geïnstalleerd theoretisch PV-modulevermogen van de installatie in Wp. Deze waarde wordt gebruikt voor relatieve zomer-/winterdrempels en aanvullende PV-gerelateerde logica.",
-          "TARGET_IMPORT_W": "Doelwaarde voor een kleine gewenste netimport. Een hogere waarde verkleint het risico op ongewenste export, maar verhoogt het netverbruik licht.",
-          "EXPORT_GUARD_W": "Extra veiligheidsreserve tegen ongewenste export. Hogere waarden maken de regeling voorzichtiger.",
-          "KEEPALIVE_MIN_DEFICIT_W": "Minimaal tekort waarbij ontladen actief blijft. Helpt tegen pendelen bij zeer kleine belastingen.",
-          "KEEPALIVE_MIN_OUTPUT_W": "Minimaal ontlaadvermogen om ontladen stabiel actief te houden. Voorkomt onnodig in- en uitschakelen.",
-          "SOC_DISCHARGE_RESUME_MARGIN": "Extra SoC-afstand boven de ingestelde minimum-SoC die bereikt moet worden voordat ontladen na een SoC-blokkering weer wordt vrijgegeven. Voorkomt pendelen tussen laden en ontladen bij lage accustand, vooral ’s ochtends bij wisselend PV-vermogen."
+          "installed_pv_wp": "Geïnstalleerd theoretisch PV-modulevermogen van de installatie in Wp. Deze waarde wordt gebruikt voor relatieve zomer-/winterdrempels en verdere PV-gerelateerde logica.",
+          "TARGET_IMPORT_W": "Doelwaarde voor een kleine bewuste netafname. Een hogere waarde vermindert het risico op ongewenste injectie, maar verhoogt het netverbruik licht.",
+          "EXPORT_GUARD_W": "Extra veiligheidsreserve tegen ongewenste injectie. Hogere waarden maken de regeling voorzichtiger.",
+          "KEEPALIVE_MIN_DEFICIT_W": "Minimumtekort waarbij ontladen actief blijft. Helpt schommelen bij zeer kleine lasten te voorkomen.",
+          "KEEPALIVE_MIN_OUTPUT_W": "Minimum ontlaadvermogen om ontladen stabiel actief te houden. Voorkomt onnodig aan- en uitschakelen.",
+          "SOC_DISCHARGE_RESUME_MARGIN": "Extra SoC-afstand boven de ingestelde minimum-SoC die moet worden bereikt voordat ontladen weer wordt vrijgegeven na een SoC-blokkering. Voorkomt schommelen tussen laden en ontladen bij lage batterijstand, vooral 's ochtends bij wisselend PV-vermogen."
         }
       },
       "charge": {
         "title": "Regelprofiel bewerken – Laden",
         "description": "Regelparameters voor het laadgedrag van het actieve apparaatprofiel.",
         "data": {
-          "CHARGE_DEADBAND_W": "Laad-deadband",
-          "CHARGE_KP_UP": "Laden KP omhoog",
-          "CHARGE_KP_DOWN": "Laden KP omlaag",
-          "CHARGE_MAX_STEP_UP": "Laden max. stap omhoog",
-          "CHARGE_MAX_STEP_DOWN": "Laden max. stap omlaag"
+          "CHARGE_DEADBAND_W": "Laad deadband",
+          "CHARGE_KP_UP": "Laad KP omhoog",
+          "CHARGE_KP_DOWN": "Laad KP omlaag",
+          "CHARGE_MAX_STEP_UP": "Laad max. stap omhoog",
+          "CHARGE_MAX_STEP_DOWN": "Laad max. stap omlaag"
         },
         "data_description": {
           "CHARGE_DEADBAND_W": "Tolerantiegebied voor de laadregeling waarin niet wordt bijgeregeld. Een hogere waarde maakt laden rustiger, een lagere waarde reageert sneller en nauwkeuriger.",
-          "CHARGE_KP_UP": "Versterking bij het verhogen van het laadvermogen. Hogere waarden verhogen het laadvermogen sneller, maar kunnen tot onrustiger gedrag leiden.",
-          "CHARGE_KP_DOWN": "Versterking bij het verlagen van het laadvermogen. Hogere waarden verlagen het laadvermogen sneller, maar kunnen sterkere sprongen veroorzaken.",
-          "CHARGE_MAX_STEP_UP": "Maximale vermogensstap per regelcyclus bij het verhogen van het laadvermogen. Hogere waarden maken de laadregeling sneller, maar mogelijk agressiever.",
-          "CHARGE_MAX_STEP_DOWN": "Maximale vermogensstap per regelcyclus bij het verlagen van het laadvermogen. Hogere waarden remmen het laden sneller af, maar kunnen minder rustig werken."
+          "CHARGE_KP_UP": "Versterking bij het verhogen van laadvermogen. Hogere waarden verhogen het laadvermogen sneller, maar kunnen tot onrustiger gedrag leiden.",
+          "CHARGE_KP_DOWN": "Versterking bij het verlagen van laadvermogen. Hogere waarden verlagen het laadvermogen sneller, maar kunnen sterkere sprongen veroorzaken.",
+          "CHARGE_MAX_STEP_UP": "Maximale vermogensstap per regelcyclus bij het verhogen van laadvermogen. Hogere waarden maken de laadregeling sneller, maar potentieel agressiever.",
+          "CHARGE_MAX_STEP_DOWN": "Maximale vermogensstap per regelcyclus bij het verlagen van laadvermogen. Hogere waarden remmen het laden sneller af, maar kunnen onrustiger werken."
         }
       },
       "discharge": {
         "title": "Regelprofiel bewerken – Ontladen",
         "description": "Regelparameters voor het ontlaadgedrag van het actieve apparaatprofiel.",
         "data": {
-          "DISCHARGE_DEADBAND_W": "Ontlaad-deadband",
-          "DISCHARGE_KP_UP": "Ontladen KP omhoog",
-          "DISCHARGE_KP_DOWN": "Ontladen KP omlaag",
-          "DISCHARGE_MAX_STEP_UP": "Ontladen max. stap omhoog",
-          "DISCHARGE_MAX_STEP_DOWN": "Ontladen max. stap omlaag"
+          "DISCHARGE_DEADBAND_W": "Ontlaad deadband",
+          "DISCHARGE_KP_UP": "Ontlaad KP omhoog",
+          "DISCHARGE_KP_DOWN": "Ontlaad KP omlaag",
+          "DISCHARGE_MAX_STEP_UP": "Ontlaad max. stap omhoog",
+          "DISCHARGE_MAX_STEP_DOWN": "Ontlaad max. stap omlaag"
         },
         "data_description": {
           "DISCHARGE_DEADBAND_W": "Tolerantiegebied voor de ontlaadregeling waarin niet wordt bijgeregeld. Een hogere waarde maakt ontladen rustiger, een lagere waarde reageert sneller en nauwkeuriger.",
-          "DISCHARGE_KP_UP": "Versterking bij het verhogen van het ontlaadvermogen. Hogere waarden verhogen het ontlaadvermogen sneller, maar kunnen eerder overschieten.",
-          "DISCHARGE_KP_DOWN": "Versterking bij het verlagen van het ontlaadvermogen. Hogere waarden verlagen het ontlaadvermogen sneller, maar kunnen onrustiger werken.",
-          "DISCHARGE_MAX_STEP_UP": "Maximale vermogensstap per regelcyclus bij het verhogen van het ontlaadvermogen. Hogere waarden maken de ontlaadregeling sneller, maar mogelijk agressiever.",
-          "DISCHARGE_MAX_STEP_DOWN": "Maximale vermogensstap per regelcyclus bij het verlagen van het ontlaadvermogen. Hogere waarden remmen het ontladen sneller af, maar kunnen sterkere sprongen veroorzaken."
+          "DISCHARGE_KP_UP": "Versterking bij het verhogen van ontlaadvermogen. Hogere waarden verhogen het ontlaadvermogen sneller, maar kunnen eerder overschieten.",
+          "DISCHARGE_KP_DOWN": "Versterking bij het verlagen van ontlaadvermogen. Hogere waarden verlagen het ontlaadvermogen sneller, maar kunnen onrustiger werken.",
+          "DISCHARGE_MAX_STEP_UP": "Maximale vermogensstap per regelcyclus bij het verhogen van ontlaadvermogen. Hogere waarden maken de ontlaadregeling sneller, maar potentieel agressiever.",
+          "DISCHARGE_MAX_STEP_DOWN": "Maximale vermogensstap per regelcyclus bij het verlagen van ontlaadvermogen. Hogere waarden remmen ontladen sneller af, maar kunnen sterkere sprongen veroorzaken."
+        }
+      },
+      "expert": {
+        "title": "Regelprofiel bewerken – Expertmodus",
+        "description": "Geavanceerde beschermings- en diagnosefuncties. Schakel eerst de expertmodus in. Daarna kan celspanningsbeveiliging optioneel worden geactiveerd. Bij actieve celspanningsbeveiliging worden extra sensoren getoond afhankelijk van het ingestelde aantal batterijpakketten.",
+        "data": {
+          "expert_mode_enabled": "Expertmodus inschakelen",
+          "cell_voltage_protection_enabled": "Celspanningsbeveiliging inschakelen",
+          "lowest_cell_voltage_pack_1": "Laagste celspanning batterijpack 1",
+          "lowest_cell_voltage_pack_2": "Laagste celspanning batterijpack 2",
+          "lowest_cell_voltage_pack_3": "Laagste celspanning batterijpack 3",
+          "lowest_cell_voltage_pack_4": "Laagste celspanning batterijpack 4",
+          "lowest_cell_voltage_pack_5": "Laagste celspanning batterijpack 5",
+          "lowest_cell_voltage_pack_6": "Laagste celspanning batterijpack 6",
+          "cell_voltage_warning": "Celspanning waarschuwing-/noodlaaddrempel",
+          "cell_voltage_cutoff": "Celspanning ontlaadblokkering",
+          "cell_voltage_resume": "Celspanning hervattingsdrempel"
+        },
+        "data_description": {
+          "expert_mode_enabled": "Activeert het geavanceerde expertgedeelte voor extra beschermings- en diagnosefuncties.",
+          "cell_voltage_protection_enabled": "Activeert batterijbescherming op basis van celspanning. Bij activering worden sensoren voor de laagste celspanning per batterijpack zichtbaar.",
+          "lowest_cell_voltage_pack_1": "Sensor voor de laagste celspanning van het eerste batterijpack. Deze waarde wordt gebruikt voor de globale beveiligingsbeoordeling.",
+          "lowest_cell_voltage_pack_2": "Sensor voor de laagste celspanning van het tweede batterijpack. Deze waarde wordt gebruikt voor de globale beveiligingsbeoordeling.",
+          "lowest_cell_voltage_pack_3": "Sensor voor de laagste celspanning van het derde batterijpack. Deze waarde wordt gebruikt voor de globale beveiligingsbeoordeling.",
+          "lowest_cell_voltage_pack_4": "Sensor voor de laagste celspanning van het vierde batterijpack. Deze waarde wordt gebruikt voor de globale beveiligingsbeoordeling.",
+          "lowest_cell_voltage_pack_5": "Sensor voor de laagste celspanning van het vijfde batterijpack. Deze waarde wordt gebruikt voor de globale beveiligingsbeoordeling.",
+          "lowest_cell_voltage_pack_6": "Sensor voor de laagste celspanning van het zesde batterijpack. Deze waarde wordt gebruikt voor de globale beveiligingsbeoordeling.",
+          "cell_voltage_warning": "Drempel voor kritisch lage celspanning. Wordt gebruikt om vroegtijdig noodladen of beschermingsmaatregelen te activeren.",
+          "cell_voltage_cutoff": "Harde ondergrens voor celspanning. Als deze wordt bereikt of onderschreden, wordt ontladen geblokkeerd.",
+          "cell_voltage_resume": "Vrijgavedrempel boven de ontlaadblokkering. Ontladen wordt pas opnieuw vrijgegeven wanneer deze spanning weer is bereikt nadat celspanningsbeveiliging actief was."
         }
       }
     }
@@ -232,7 +263,7 @@
         "name": "Noodladen onder SoC"
       },
       "very_expensive_threshold": {
-        "name": "Zeer-duur-drempel"
+        "name": "Zeer-duur drempel"
       },
       "profit_margin_pct": {
         "name": "Winstmarge (%)"
@@ -244,7 +275,7 @@
         "name": "Dal-factor"
       },
       "very_cheap_price": {
-        "name": "Zeer-goedkoop-drempel"
+        "name": "Zeer-goedkoop drempel"
       }
     },
     "sensor": {
@@ -255,7 +286,7 @@
         "name": "Adaptieve piek gedetecteerd"
       },
       "price_daily_average": {
-        "name": "Dynamische dagelijkse gemiddelde prijs"
+        "name": "Dynamische daggemiddelde prijs"
       },
       "current_peak_threshold": {
         "name": "Huidige piekdrempel"
@@ -281,9 +312,9 @@
       "season_mode": {
         "name": "Gedetecteerde bedrijfsmodus",
         "state": {
-          "winter": "Wintermodus",
-          "summer": "Zomermodus",
-          "manual": "Handmatige modus"
+          "winter": "Winterbedrijf",
+          "summer": "Zomerbedrijf",
+          "manual": "Handmatig bedrijf"
         }
       },
       "soc_limit_status": {
@@ -299,7 +330,7 @@
         "name": "Foutstatus",
         "state": {
           "normal": "Geen fout / alles normaal",
-          "warning": "Waarschuwing (apparaat blijft draaien)",
+          "warning": "Waarschuwing (apparaat blijft werken)",
           "error": "Fout / beveiliging actief"
         }
       },
@@ -308,8 +339,8 @@
         "state": {
           "init": "Initialisatie",
           "ok": "OK",
-          "sensor_invalid": "Ongeldige sensorgegevens",
-          "price_invalid": "Ongeldige prijsgegevens"
+          "sensor_invalid": "Sensorgegevens ongeldig",
+          "price_invalid": "Prijsgegevens ongeldig"
         }
       },
       "ai_status": {
@@ -317,9 +348,10 @@
         "state": {
           "standby": "Stand-by",
           "charge_surplus": "Laden (PV-overschot)",
-          "cover_deficit": "Ontladen (huisverbruik dekken)",
+          "price_charge": "Laden (prijsvoordeel)",
+          "cover_deficit": "Ontladen (huislast dekken)",
           "expensive_discharge": "Ontladen (hoge stroomprijs)",
-          "very_expensive_force": "Geforceerd ontladen (extreme prijzen)",
+          "very_expensive_force": "Geforceerde ontlading (extreme prijzen)",
           "emergency_charge": "Noodladen actief",
           "manual": "Handmatige modus"
         }
@@ -334,22 +366,24 @@
         }
       },
       "decision_reason": {
-        "name": "Reden van beslissing",
+        "name": "Beslissingsreden",
         "state": {
           "standby": "Stand-by",
           "state_idle": "Geen behoefte gedetecteerd",
           "state_enter_discharge": "Ontladen gestart (behoefte gedetecteerd)",
-          "state_discharging": "Ontladen actief (huisverbruik dekken)",
+          "state_discharging": "Ontladen actief (huislast dekken)",
           "state_enter_charge": "Laden gestart (overschot gedetecteerd)",
           "state_charging": "Laden actief",
-          "expensive_discharge": "Ontladen vanwege hoge stroomprijs",
-          "very_expensive_force_discharge": "Geforceerd ontladen vanwege extreme prijspiek",
+          "expensive_discharge": "Ontladen door hoge stroomprijs",
+          "very_expensive_force_discharge": "Geforceerde ontlading door extreme prijspiek",
           "emergency_latched_charge": "Noodladen actief (vergrendeld)",
-          "summer_cover_deficit": "Zomer: huisverbruik dekken",
+          "cell_voltage_emergency_charge": "Noodladen actief (kritische celspanning)",
+          "summer_cover_deficit": "Zomer: huislast dekken",
           "pv_surplus_charge": "PV-overschot laden",
           "soc_min_enforced": "Ontladen gestopt (minimum SoC bereikt)",
           "soc_limit_upper": "Laden geblokkeerd (bovenste SoC-limiet actief)",
           "soc_limit_lower": "Ontladen geblokkeerd (onderste SoC-limiet actief)",
+          "cell_voltage_cutoff_block": "Ontladen geblokkeerd (celspanningsbeveiliging actief)",
           "manual_mode": "Handmatige modus actief",
           "manual_standby": "Handmatige stand-by",
           "manual_charge": "Handmatig laden",
@@ -357,11 +391,11 @@
           "manual_constant_discharge": "Constante ontlading actief",
           "manual_idle": "Handmatige stand-by",
           "idle": "Gereed",
-          "adaptive_peak_discharge": "Ontladen vanwege prijspiek",
-          "price_based_discharge": "Prijsgebaseerd ontladen",
+          "adaptive_peak_discharge": "Ontladen door prijspiek",
+          "price_based_discharge": "Prijsgebaseerde ontlading",
           "valley_boost_charge": "Prijsdal gedetecteerd. Maximaal laden",
           "additional_battery_charging_block": "Extra batterij laadt: ontladen geblokkeerd",
-          "soc_min_resume_block": "Ontladen geblokkeerd (herinschakeldrempel nog niet bereikt)"
+          "soc_min_resume_block": "Ontladen geblokkeerd (hervattingsdrempel nog niet bereikt)"
         }
       },
       "next_planned_action": {
@@ -394,7 +428,7 @@
         "name": "AI-debug"
       },
       "house_load": {
-        "name": "Huisverbruik"
+        "name": "Huislast"
       },
       "price_now": {
         "name": "Huidige stroomprijs"
@@ -404,6 +438,34 @@
       },
       "profit_eur": {
         "name": "Besparing / winst (totaal)"
+      },
+      "global_lowest_cell_voltage": {
+        "name": "Globaal laagste celspanning"
+      },
+      "cell_voltage_status": {
+        "name": "Celspanningsstatus",
+        "state": {
+          "disabled": "Uitgeschakeld",
+          "normal": "Normaal",
+          "warning": "Waarschuwingsgebied",
+          "cutoff_active": "Blokkering actief",
+          "sensor_invalid": "Ongeldige sensorgegevens"
+        }
+      },
+      "cell_voltage_soc_plausibility": {
+        "name": "Plausibiliteit SoC / celspanning",
+        "state": {
+          "normal": "Plausibel",
+          "warning": "Opvallend",
+          "critical": "Kritisch onplausibel",
+          "not_available": "Niet beschikbaar"
+        }
+      },
+      "cell_voltage_emergency_active": {
+        "name": "Celspannings-noodladen actief"
+      },
+      "cell_voltage_discharge_blocked": {
+        "name": "Ontladen geblokkeerd door celspanningsbeveiliging"
       }
     }
   }
