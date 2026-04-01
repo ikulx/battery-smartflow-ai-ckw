@@ -211,6 +211,18 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         options=CELL_VOLTAGE_STATUS_ENUMS,
         icon="mdi:battery-alert-variant-outline",
     ),
+    ZendureSensorEntityDescription(
+        key="cell_voltage_emergency_active",
+        translation_key="cell_voltage_emergency_active",
+        runtime_key="cell_voltage_emergency_active",
+        icon="mdi:battery-sync-outline",
+    ),
+    ZendureSensorEntityDescription(
+        key="cell_voltage_discharge_blocked",
+        translation_key="cell_voltage_discharge_blocked",
+        runtime_key="cell_voltage_discharge_blocked",
+        icon="mdi:battery-lock",
+    ),
     # --------------------------------------------------
     # DEVICE / MODE
     # --------------------------------------------------
@@ -356,6 +368,9 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
             "cell_voltage_warning": details.get("cell_voltage_warning"),
             "cell_voltage_cutoff": details.get("cell_voltage_cutoff"),
             "cell_voltage_resume": details.get("cell_voltage_resume"),
+            "cell_voltage_emergency_active": details.get("cell_voltage_emergency_active"),
+            "cell_voltage_discharge_blocked": details.get("cell_voltage_discharge_blocked"),
+            "cell_voltage_resume_threshold": details.get("cell_voltage_resume_threshold"),
         }
 
         attrs["profile_overrides"] = profile_overrides
