@@ -325,6 +325,15 @@
       "cell_voltage_discharge_blocked": {
         "name": "Entladung durch Zellspannungs-Schutz blockiert"
       },
+      "cell_voltage_soc_plausibility": {
+        "name": "Plausibilität SoC / Zellspannung",
+        "state": {
+          "normal": "Plausibel",
+          "warning": "Auffällig",
+          "critical": "Kritisch unplausibel",
+          "not_available": Nicht verfügbar"
+        }
+      },
       "cell_voltage_status": {
         "name": "Zellspannungs-Status",
         "state": {
