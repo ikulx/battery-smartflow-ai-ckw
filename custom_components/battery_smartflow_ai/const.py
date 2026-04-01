@@ -262,6 +262,16 @@ CELL_VOLTAGE_STATUS_ENUMS = [
 ]
 
 # ==================================================
+# Cell voltage SoC plausibility enums (V3.5.0)
+# ==================================================
+CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS = [
+    "normal",
+    "warning",
+    "critical",
+    "not_available",
+]
+
+# ==================================================
 # Zendure AC Mode options
 # ==================================================
 ZENDURE_MODE_INPUT = "input"
