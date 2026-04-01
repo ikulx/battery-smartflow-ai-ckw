@@ -331,7 +331,7 @@
           "normal": "Plausibel",
           "warning": "Auffällig",
           "critical": "Kritisch unplausibel",
-          "not_available": Nicht verfügbar"
+          "not_available": "Nicht verfügbar"
         }
       },
       "cell_voltage_status": {
