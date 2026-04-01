@@ -25,6 +25,12 @@ from .const import (
     RECO_ENUMS,
     NEXT_ACTION_STATE_ENUMS,
     CELL_VOLTAGE_STATUS_ENUMS,
+    CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS = [
+        "normal",
+        "warning",
+        "critical",
+        "not_available",
+    ]
 )
 from .device_profiles import DEVICE_PROFILES
 
@@ -212,6 +218,14 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         icon="mdi:battery-alert-variant-outline",
     ),
     ZendureSensorEntityDescription(
+        key="cell_voltage_so_plausibility",
+        translation_key="cell_voltage_soc_plausibility",
+        runtime_key="cell_voltage_soc_plausibility",
+        device_class=SensorDeviceClass.ENUM
+        options=CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS,
+        icon="mdi:battery-sync",
+    ),
+    ZendureSensorEntityDescription(
         key="cell_voltage_emergency_active",
         translation_key="cell_voltage_emergency_active",
         runtime_key="cell_voltage_emergency_active",
@@ -371,6 +385,9 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
             "cell_voltage_emergency_active": details.get("cell_voltage_emergency_active"),
             "cell_voltage_discharge_blocked": details.get("cell_voltage_discharge_blocked"),
             "cell_voltage_resume_threshold": details.get("cell_voltage_resume_threshold"),
+            "cell_voltage_soc_plausibility": details.get("cell_voltage_soc_plausibility"),
+            "cell_voltage_soc_warning_threshold": details.get("cell_voltage_soc_warning_threshold"),
+            "cell_voltage_soc_critical_threshold": details.get("cell_voltage_soc_critical_threshold"),
         }
 
         attrs["profile_overrides"] = profile_overrides
