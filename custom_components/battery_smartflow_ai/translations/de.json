@@ -319,6 +319,12 @@
       "global_lowest_cell_voltage": {
         "name": "Globale niedrigste Zellspannung"
       },
+      "cell_voltage_emergency_active": {
+        "name": "Zellspannungs-Notladung aktiv"
+      },
+      "cell_voltage_discharge_blocked": {
+        "name": "Entladung durch Zellspannungs-Schutz blockiert"
+      },
       "cell_voltage_status": {
         "name": "Zellspannungs-Status",
         "state": {
