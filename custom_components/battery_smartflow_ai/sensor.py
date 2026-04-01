@@ -25,12 +25,7 @@ from .const import (
     RECO_ENUMS,
     NEXT_ACTION_STATE_ENUMS,
     CELL_VOLTAGE_STATUS_ENUMS,
-    CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS = [
-        "normal",
-        "warning",
-        "critical",
-        "not_available",
-    ]
+    CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS,
 )
 from .device_profiles import DEVICE_PROFILES
 
@@ -218,10 +213,10 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         icon="mdi:battery-alert-variant-outline",
     ),
     ZendureSensorEntityDescription(
-        key="cell_voltage_so_plausibility",
+        key="cell_voltage_soc_plausibility",
         translation_key="cell_voltage_soc_plausibility",
         runtime_key="cell_voltage_soc_plausibility",
-        device_class=SensorDeviceClass.ENUM
+        device_class=SensorDeviceClass.ENUM,
         options=CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS,
         icon="mdi:battery-sync",
     ),
