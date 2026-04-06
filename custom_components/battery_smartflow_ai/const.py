@@ -85,6 +85,8 @@ SETTING_CELL_VOLTAGE_WARNING = "cell_voltage_warning"
 SETTING_CELL_VOLTAGE_CUTOFF = "cell_voltage_cutoff"
 SETTING_CELL_VOLTAGE_RESUME = "cell_voltage_resume"
 
+SETTING_PV_CHARGE_START_EXPORT_W = "pv_charge_start_export_w"
+
 # Default
 DEFAULT_PACK_CAPACITY_KWH = 2.88
 DEFAULT_BATTERY_PACKS = 1
@@ -101,6 +103,8 @@ DEFAULT_CELL_VOLTAGE_PROTECTION_ENABLED = False
 DEFAULT_CELL_VOLTAGE_WARNING = 3.10
 DEFAULT_CELL_VOLTAGE_CUTOFF = 3.00
 DEFAULT_CELL_VOLTAGE_RESUME = 3.18
+
+DEFAULT_PV_CHARGE_START_EXPORT_W = 80.0
 
 # --------------------------------------------------
 # Device profiles (V1.5.x / V3.2.0 overrides)
