@@ -58,6 +58,7 @@ class DecisionContext:
     battery_capacity_kwh: float
 
     additional_battery_charge_w: float = 0.0
+    pv_charge_start_export_w: float = 80.0
 
     peak_factor: float = 1.35
     valley_factor: float = 0.85
@@ -250,8 +251,9 @@ class PvRule(BaseRule):
         export_w = float(ctx.grid_export_w or 0.0)
         pv_w = float(ctx.pv_w or 0.0)
         prev_charge_w = float(ctx.prev_charge_w or 0.0)
+        start_export_threshold = float(ctx.pv_charge_start_export_w or 0.0)
 
-        has_direct_surplus = export_w >= 80.0
+        has_direct_surplus = export_w >= start_export_threshold
 
         keepalive_charge = (
             prev_charge_w > 0.0
@@ -365,7 +367,7 @@ class DecisionEngine:
             ArbitrageRule(),
             PlanningRule(),
             ValleyBoostRule(),
-            SummerRule(),            
+            SummerRule(),
         ]
 
     def _compute_base_price(self, prices: List[float]) -> float:
