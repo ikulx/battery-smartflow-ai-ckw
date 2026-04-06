@@ -359,13 +359,13 @@ class DecisionEngine:
         self._rules = [
             EmergencyRule(),
             AdditionalBatteryBlockRule(),
+            ManualRule(),
             PvRule(),
             PeakRule(),
             ArbitrageRule(),
             PlanningRule(),
             ValleyBoostRule(),
-            SummerRule(),
-            ManualRule(),
+            SummerRule(),            
         ]
 
     def _compute_base_price(self, prices: List[float]) -> float:
