@@ -255,9 +255,19 @@ class PvRule(BaseRule):
 
         has_direct_surplus = export_w >= start_export_threshold
 
+        prices = [p.price for p in ctx.price_points] if ctx.price_points else []
+        valley_active = (
+            ctx.ai_mode in ("automatic", "winter")
+            and ctx.season == "winter"
+            and ctx.price_now is not None
+            and len(prices) > 0
+            and ctx.price_now <= engine._compute_valley_threshold(prices, ctx.valley_factor)
+        )
+
         keepalive_charge = (
             prev_charge_w > 0.0
             and pv_w >= max(150.0, prev_charge_w * 0.35)
+            and not valley_active
         )
 
         if not has_direct_surplus and not keepalive_charge:
