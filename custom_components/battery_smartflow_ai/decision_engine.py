@@ -251,6 +251,7 @@ class PvRule(BaseRule):
         export_w = float(ctx.grid_export_w or 0.0)
         pv_w = float(ctx.pv_w or 0.0)
         prev_charge_w = float(ctx.prev_charge_w or 0.0)
+        prev_discharge_w = float(ctx.prev_discharge_w or 0.0)
         start_export_threshold = float(ctx.pv_charge_start_export_w or 0.0)
 
         has_direct_surplus = export_w >= start_export_threshold
@@ -266,6 +267,7 @@ class PvRule(BaseRule):
 
         keepalive_charge = (
             prev_charge_w > 0.0
+            and prev_discharge_w <= 0.0
             and pv_w >= max(150.0, prev_charge_w * 0.35)
             and not valley_active
         )
