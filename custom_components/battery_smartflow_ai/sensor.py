@@ -26,8 +26,8 @@ from .const import (
     NEXT_ACTION_STATE_ENUMS,
     CELL_VOLTAGE_STATUS_ENUMS,
     CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS,
-    CONF_CURRENCY,
-    CURRENCY_CHF,
+    CURRENCY_SYMBOL,
+    PRICE_UNIT,
 )
 from .device_profiles import DEVICE_PROFILES
 
@@ -303,25 +303,19 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
             "sw_version": INTEGRATION_VERSION,
         }
 
-    def _currency_symbol(self) -> str:
-        currency = self._entry.data.get(CONF_CURRENCY, "EUR")
-        return "CHF" if currency == CURRENCY_CHF else "€"
-
     @property
     def native_unit_of_measurement(self) -> str | None:
         key = self.entity_description.key
         if key in _PRICE_PER_KWH_SENSOR_KEYS:
-            return f"{self._currency_symbol()}/kWh"
+            return PRICE_UNIT
         if key in _PRICE_TOTAL_SENSOR_KEYS:
-            return self._currency_symbol()
+            return CURRENCY_SYMBOL
         return self.entity_description.native_unit_of_measurement
 
     @property
     def icon(self) -> str | None:
-        key = self.entity_description.key
-        if key in ("price_now", "avg_charge_price", "profit_eur"):
-            if self._entry.data.get(CONF_CURRENCY) == CURRENCY_CHF:
-                return "mdi:cash"
+        if self.entity_description.key in ("price_now", "avg_charge_price", "profit_eur"):
+            return "mdi:cash"
         return self.entity_description.icon
 
     @property

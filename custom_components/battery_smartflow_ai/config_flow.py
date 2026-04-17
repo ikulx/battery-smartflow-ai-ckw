@@ -34,10 +34,6 @@ from .const import (
     CONF_INSTALLED_PV_WP,
     DEFAULT_INSTALLED_PV_WP,
     CONF_CKW_ENABLED,
-    CONF_CURRENCY,
-    CURRENCY_EUR,
-    CURRENCY_CHF,
-    DEFAULT_CURRENCY,
     # V3.5.0
     CONF_EXPERT_MODE_ENABLED,
     CONF_CELL_VOLTAGE_PROTECTION_ENABLED,
@@ -330,21 +326,6 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 default=bool(_val(CONF_CKW_ENABLED) or False),
             )
         ] = selector.BooleanSelector()
-
-        schema[
-            vol.Required(
-                CONF_CURRENCY,
-                default=_val(CONF_CURRENCY) or DEFAULT_CURRENCY,
-            )
-        ] = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    {"value": CURRENCY_EUR, "label": "EUR (€)"},
-                    {"value": CURRENCY_CHF, "label": "CHF (Fr.)"},
-                ],
-                mode=selector.SelectSelectorMode.DROPDOWN,
-            )
-        )
 
         schema[
             vol.Required(CONF_AC_MODE_ENTITY, default=_val(CONF_AC_MODE_ENTITY))

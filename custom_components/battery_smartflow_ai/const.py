@@ -35,11 +35,9 @@ CONF_CKW_ENABLED = "ckw_enabled"
 CKW_API_URL = "https://e-ckw-public-data.de-c1.eu1.cloudhub.io/api/v1/netzinformationen/energie/dynamische-preise"
 CKW_FETCH_INTERVAL = 30  # minutes
 
-# --- Währung ---
-CONF_CURRENCY = "currency"
-CURRENCY_EUR = "EUR"
-CURRENCY_CHF = "CHF"
-DEFAULT_CURRENCY = CURRENCY_EUR
+# --- Währung (CHF fix für CKW-Fork) ---
+CURRENCY_SYMBOL = "CHF"
+PRICE_UNIT = "CHF/kWh"
 
 CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY = "additional_battery_charge_entity"
 
