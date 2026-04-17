@@ -13,7 +13,8 @@ from .const import (
     INTEGRATION_MANUFACTURER,
     INTEGRATION_MODEL,
     INTEGRATION_VERSION,
-    PRICE_UNIT,
+    CONF_CURRENCY,
+    CURRENCY_CHF,
     SETTING_BATTERY_PACKS,
     DEFAULT_BATTERY_PACKS,
     SETTING_PEAK_FACTOR,
@@ -260,8 +261,11 @@ class ZendureSmartFlowNumber(NumberEntity):
 
     @property
     def native_unit_of_measurement(self) -> str | None:
-        if self.entity_description.key in _PRICE_PER_KWH_NUMBER_KEYS:
-            return PRICE_UNIT
+        key = self.entity_description.key
+        if key in _PRICE_PER_KWH_NUMBER_KEYS:
+            currency = self._entry.data.get(CONF_CURRENCY, "EUR")
+            sym = "CHF" if currency == CURRENCY_CHF else "€"
+            return f"{sym}/kWh"
         return self.entity_description.native_unit_of_measurement
 
     @property
