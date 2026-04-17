@@ -1,0 +1,227 @@
+# ============================================================
+# Battery SmartFlow AI – Energie-Dashboard
+# ============================================================
+# ENTITY-IDs PRÜFEN: In HA → Entwicklerwerkzeuge → Zustände
+# nach "battery_smartflow_ai" suchen.
+# Die IDs unten folgen dem deutschen Übersetzungsschema.
+# Dein Akku-SoC-Sensor (DEIN_SOC_SENSOR) muss angepasst werden!
+# ============================================================
+
+title: Energie
+views:
+  - title: Energie
+    path: energie
+    icon: mdi:battery-charging
+    cards:
+
+      # ----------------------------------------------------------
+      # STATUS-CHIPS
+      # ----------------------------------------------------------
+      - type: custom:mushroom-chips-card
+        chips:
+          - type: template
+            icon: mdi:robot
+            icon_color: >
+              {% set s = states('sensor.battery_smartflow_ai_ki_status') %}
+              {% if 'laden' in s | lower or 'charge' in s | lower %}blue
+              {% elif 'entladen' in s | lower or 'discharge' in s | lower %}orange
+              {% elif 'notladung' in s | lower or 'emergency' in s | lower %}red
+              {% else %}grey{% endif %}
+            content: "{{ states('sensor.battery_smartflow_ai_ki_status') }}"
+          - type: template
+            icon: mdi:heart-pulse
+            icon_color: >
+              {% if states('sensor.battery_smartflow_ai_engine_status') == 'ok'
+                 or states('sensor.battery_smartflow_ai_engine_status') == 'System normal' %}green
+              {% else %}red{% endif %}
+            content: "{{ states('sensor.battery_smartflow_ai_engine_status') }}"
+          - type: template
+            icon: mdi:weather-partly-snowy
+            content: "{{ states('sensor.battery_smartflow_ai_erkannter_betriebsmodus') }}"
+
+      # ----------------------------------------------------------
+      # PREIS + AKKU + HAUSLAST
+      # ----------------------------------------------------------
+      - type: horizontal-stack
+        cards:
+          - type: custom:mushroom-template-card
+            primary: Aktueller Preis
+            secondary: >
+              {{ states('sensor.battery_smartflow_ai_preisprognose_ckw') | float(0) | round(3) }}
+              {{ state_attr('sensor.battery_smartflow_ai_preisprognose_ckw', 'unit_of_measurement') | default('CHF/kWh') }}
+            icon: mdi:lightning-bolt
+            icon_color: >
+              {% set p = states('sensor.battery_smartflow_ai_preisprognose_ckw') | float(0) %}
+              {% if p < 0.12 %}green
+              {% elif p < 0.18 %}lime
+              {% elif p < 0.28 %}orange
+              {% else %}red{% endif %}
+            tap_action:
+              action: more-info
+
+          - type: gauge
+            entity: DEIN_SOC_SENSOR
+            name: Akkustand
+            min: 0
+            max: 100
+            needle: true
+            severity:
+              green: 40
+              yellow: 20
+              red: 0
+
+          - type: custom:mushroom-template-card
+            primary: Hauslast
+            secondary: >
+              {{ states('sensor.battery_smartflow_ai_hauslast') | int(0) }} W
+            icon: mdi:home-lightning-bolt
+            icon_color: grey
+
+      # ----------------------------------------------------------
+      # PREISVERLAUF CKW (ApexCharts)
+      # ----------------------------------------------------------
+      - type: custom:apexcharts-card
+        header:
+          show: true
+          title: Strompreise CKW – nächste 48h
+          show_states: true
+          colorize_states: true
+        graph_span: 48h
+        span:
+          start: hour
+        now:
+          show: true
+          label: Jetzt
+          color: "#aaaaaa"
+        series:
+          - entity: sensor.battery_smartflow_ai_preisprognose_ckw
+            name: Preis CHF/kWh
+            type: column
+            data_generator: |
+              const prices = entity.attributes.prices || [];
+              return prices.map(p => [new Date(p.start).getTime(), p.price]);
+            color_threshold:
+              - value: -999
+                color: "#52b788"
+              - value: 0.18
+                color: "#ffd166"
+              - value: 0.28
+                color: "#ef476f"
+        yaxis:
+          - decimals: 3
+            apex_config:
+              forceNiceScale: true
+        apex_config:
+          chart:
+            height: 220
+          dataLabels:
+            enabled: false
+          annotations:
+            yaxis:
+              - y: 0.12
+                borderColor: "#52b788"
+                label:
+                  text: Sehr günstig
+                  style:
+                    color: "#fff"
+                    background: "#52b788"
+              - y: 0.28
+                borderColor: "#ef476f"
+                label:
+                  text: Sehr teuer
+                  style:
+                    color: "#fff"
+                    background: "#ef476f"
+
+      # ----------------------------------------------------------
+      # KI-ENTSCHEIDUNG
+      # ----------------------------------------------------------
+      - type: horizontal-stack
+        cards:
+          - type: custom:mushroom-template-card
+            primary: Empfehlung
+            secondary: "{{ states('sensor.battery_smartflow_ai_ki_empfehlung') }}"
+            icon: mdi:lightbulb-outline
+            icon_color: >
+              {% set r = states('sensor.battery_smartflow_ai_ki_empfehlung') | lower %}
+              {% if 'laden' in r or 'charge' in r %}blue
+              {% elif 'entladen' in r or 'discharge' in r %}orange
+              {% elif 'notladung' in r or 'emergency' in r %}red
+              {% else %}grey{% endif %}
+
+          - type: custom:mushroom-template-card
+            primary: Nächste Aktion
+            secondary: "{{ states('sensor.battery_smartflow_ai_nachste_aktion') }}"
+            icon: mdi:clock-outline
+            icon_color: grey
+
+      - type: entities
+        title: Entscheidungsgrund
+        entities:
+          - entity: sensor.battery_smartflow_ai_entscheidungsgrund
+            name: Grund
+
+      # ----------------------------------------------------------
+      # WIRTSCHAFTLICHKEIT
+      # ----------------------------------------------------------
+      - type: horizontal-stack
+        cards:
+          - type: custom:mushroom-template-card
+            primary: Ø Ladepreis
+            secondary: >
+              {{ states('sensor.battery_smartflow_ai_o_ladepreis_akku') | float(0) | round(3) }}
+              {{ state_attr('sensor.battery_smartflow_ai_o_ladepreis_akku', 'unit_of_measurement') | default('CHF/kWh') }}
+            icon: mdi:scale-balance
+            icon_color: blue
+
+          - type: custom:mushroom-template-card
+            primary: Ersparnis / Gewinn
+            secondary: >
+              {{ states('sensor.battery_smartflow_ai_ersparnis_gewinn') | float(0) | round(2) }}
+              {{ state_attr('sensor.battery_smartflow_ai_ersparnis_gewinn', 'unit_of_measurement') | default('CHF') }}
+            icon: mdi:cash
+            icon_color: green
+
+          - type: custom:mushroom-template-card
+            primary: Ø Tagespreis
+            secondary: >
+              {{ states('sensor.battery_smartflow_ai_o_tagespreis_dynamisch') | float(0) | round(3) }}
+              {{ state_attr('sensor.battery_smartflow_ai_o_tagespreis_dynamisch', 'unit_of_measurement') | default('CHF/kWh') }}
+            icon: mdi:chart-line
+            icon_color: grey
+
+      # ----------------------------------------------------------
+      # ALLE WERTE (Detail-Übersicht)
+      # ----------------------------------------------------------
+      - type: entities
+        title: SmartFlow AI – Details
+        show_header_toggle: false
+        entities:
+          - entity: sensor.battery_smartflow_ai_systemstatus
+            name: Systemstatus
+          - entity: sensor.battery_smartflow_ai_ki_status
+            name: KI-Status
+          - entity: sensor.battery_smartflow_ai_ki_empfehlung
+            name: Empfehlung
+          - entity: sensor.battery_smartflow_ai_nachste_aktion
+            name: Nächste Aktion
+          - entity: sensor.battery_smartflow_ai_startzeit_nachste_aktion
+            name: Startzeit nächste Aktion
+          - type: divider
+          - entity: sensor.battery_smartflow_ai_aktueller_strompreis
+            name: Preis jetzt
+          - entity: sensor.battery_smartflow_ai_preisprognose_ckw
+            name: Preisprognose (State)
+          - entity: sensor.battery_smartflow_ai_o_tagespreis_dynamisch
+            name: Ø Tagespreis
+          - entity: sensor.battery_smartflow_ai_aktuelle_peak_schwelle
+            name: Peak-Schwelle
+          - entity: sensor.battery_smartflow_ai_aktuelle_tal_schwelle
+            name: Tal-Schwelle
+          - type: divider
+          - entity: sensor.battery_smartflow_ai_hauslast
+            name: Hauslast
+          - entity: sensor.battery_smartflow_ai_o_ladepreis_akku
+            name: Ø Ladepreis
+          - entity: sensor.battery_smartflow_ai_ersparnis_gewinn
+            name: Ersparnis / Gewinn

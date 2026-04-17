@@ -337,6 +337,9 @@
           "lower_limit_active": "Lower SoC limit active (discharging blocked)"
         }
       },
+      "price_forecast": {
+        "name": "CKW price forecast"
+      },
       "fault_level_status": {
         "name": "Fault status",
         "state": {

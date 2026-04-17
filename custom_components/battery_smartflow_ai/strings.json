@@ -221,6 +221,9 @@
       },
       "profit_eur": {
         "name": "Ersparnis / Gewinn"
+      },
+      "price_forecast": {
+        "name": "Preisprognose CKW"
       }
     }
   }

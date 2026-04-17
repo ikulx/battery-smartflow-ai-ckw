@@ -54,6 +54,7 @@ _PRICE_PER_KWH_SENSOR_KEYS = frozenset({
     "effective_discharge_threshold",
     "price_now",
     "avg_charge_price",
+    "price_forecast",
 })
 _PRICE_TOTAL_SENSOR_KEYS = frozenset({"profit_eur"})
 
@@ -272,6 +273,16 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         options=SOC_LIMIT_ENUMS,
         icon="mdi:shield-alert-outline",
     ),
+    # --------------------------------------------------
+    # PRICE FORECAST
+    # --------------------------------------------------
+    ZendureSensorEntityDescription(
+        key="price_forecast",
+        translation_key="price_forecast",
+        runtime_key="price_forecast",
+        native_unit_of_measurement="€/kWh",
+        icon="mdi:chart-timeline-variant",
+    ),
 )
 
 
@@ -333,6 +344,15 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
         data = self.coordinator.data or {}
         details = data.get("details") or {}
         key = self.entity_description.runtime_key
+
+        if key == "price_forecast":
+            val = details.get("price_now")
+            if val is None:
+                return None
+            try:
+                return float(val)
+            except Exception:
+                return None
 
         if self.device_class == SensorDeviceClass.TIMESTAMP:
             val = data.get(key)
@@ -429,6 +449,13 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
 
         if self.entity_description.runtime_key == "device_profile":
             details.update(self._build_device_profile_attributes())
+        elif self.entity_description.runtime_key == "price_forecast":
+            forecast = data.get("price_forecast") or []
+            self._attr_extra_state_attributes = {
+                "prices": [{"start": p["start"], "price": p["price"]} for p in forecast]
+            }
+            super()._handle_coordinator_update()
+            return
 
         self._attr_extra_state_attributes = details
         super()._handle_coordinator_update()

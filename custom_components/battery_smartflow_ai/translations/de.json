@@ -381,6 +381,9 @@
           "lower_limit_active": "Unteres SoC-Limit aktiv (Entladen gesperrt)"
         }
       },
+      "price_forecast": {
+        "name": "Preisprognose CKW"
+      },
       "fault_level_status": {
         "name": "Fehlerstatus",
         "state": {

@@ -1498,6 +1498,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "economic_discharge_threshold": economic_discharge_threshold,
                 "effective_discharge_threshold": effective_discharge_threshold,
                 "engine_health": engine_health,
+                "price_forecast": [
+                    {"start": p.start.isoformat(), "price": round(p.price, 4)}
+                    for p in self._ckw_prices
+                ] if self._ckw_enabled() else [],
             }
 
         except Exception as err:
