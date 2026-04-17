@@ -324,7 +324,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         end = (now_utc + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         try:
-            resp = await session.get(
+            async with session.get(
                 CKW_API_URL,
                 params={
                     "tariff_type": "integrated",
@@ -333,11 +333,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "end_timestamp": end,
                 },
                 timeout=aiohttp.ClientTimeout(total=15),
-            )
-            if resp.status != 200:
-                _LOGGER.warning("CKW API returned HTTP %s", resp.status)
-                return
-            data = await resp.json()
+            ) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning("CKW API returned HTTP %s", resp.status)
+                    return
+                data = await resp.json(content_type=None)
         except Exception as err:
             _LOGGER.warning("CKW price fetch failed: %s", err)
             return
@@ -357,10 +357,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 continue
 
             # Normalize missing seconds: "2024-01-15T13:00Z" → "2024-01-15T13:00:00Z"
-            if start_s.endswith("Z") and start_s.count(":") == 1:
-                start_s = start_s[:-1] + ":00Z"
-            if end_s.endswith("Z") and end_s.count(":") == 1:
-                end_s = end_s[:-1] + ":00Z"
+            if "T" in start_s and start_s.endswith("Z"):
+                time_part = start_s.split("T", 1)[1][:-1]  # strip "Z"
+                if time_part.count(":") == 1:
+                    start_s = start_s[:-1] + ":00Z"
+            if "T" in end_s and end_s.endswith("Z"):
+                time_part = end_s.split("T", 1)[1][:-1]
+                if time_part.count(":") == 1:
+                    end_s = end_s[:-1] + ":00Z"
 
             t_start = dt_util.parse_datetime(start_s)
             t_end = dt_util.parse_datetime(end_s)
