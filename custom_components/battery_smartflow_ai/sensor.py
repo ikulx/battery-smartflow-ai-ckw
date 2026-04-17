@@ -26,6 +26,8 @@ from .const import (
     NEXT_ACTION_STATE_ENUMS,
     CELL_VOLTAGE_STATUS_ENUMS,
     CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS,
+    CONF_CURRENCY,
+    CURRENCY_CHF,
 )
 from .device_profiles import DEVICE_PROFILES
 
@@ -43,6 +45,17 @@ SOC_LIMIT_ENUMS = [
 FAULT_LEVEL_ENUMS = ["normal", "warning", "error"]
 
 DEVICE_PROFILE_ENUMS = list(DEVICE_PROFILES.keys())
+
+_PRICE_PER_KWH_SENSOR_KEYS = frozenset({
+    "price_daily_average",
+    "current_peak_threshold",
+    "current_valley_threshold",
+    "economic_discharge_threshold",
+    "effective_discharge_threshold",
+    "price_now",
+    "avg_charge_price",
+})
+_PRICE_TOTAL_SENSOR_KEYS = frozenset({"profit_eur"})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -289,6 +302,27 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
             "model": INTEGRATION_MODEL,
             "sw_version": INTEGRATION_VERSION,
         }
+
+    def _currency_symbol(self) -> str:
+        currency = self._entry.data.get(CONF_CURRENCY, "EUR")
+        return "CHF" if currency == CURRENCY_CHF else "€"
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        key = self.entity_description.key
+        if key in _PRICE_PER_KWH_SENSOR_KEYS:
+            return f"{self._currency_symbol()}/kWh"
+        if key in _PRICE_TOTAL_SENSOR_KEYS:
+            return self._currency_symbol()
+        return self.entity_description.native_unit_of_measurement
+
+    @property
+    def icon(self) -> str | None:
+        key = self.entity_description.key
+        if key in ("price_now", "avg_charge_price", "profit_eur"):
+            if self._entry.data.get(CONF_CURRENCY) == CURRENCY_CHF:
+                return "mdi:cash"
+        return self.entity_description.icon
 
     @property
     def available(self) -> bool:

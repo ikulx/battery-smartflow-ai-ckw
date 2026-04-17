@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
+
+import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -19,6 +22,9 @@ from .const import (
     CONF_PV_ENTITY,
     CONF_PRICE_EXPORT_ENTITY,
     CONF_PRICE_NOW_ENTITY,
+    CONF_CKW_ENABLED,
+    CKW_API_URL,
+    CKW_FETCH_INTERVAL,
     CONF_AC_MODE_ENTITY,
     CONF_INPUT_LIMIT_ENTITY,
     CONF_OUTPUT_LIMIT_ENTITY,
@@ -196,6 +202,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._engine = DecisionEngine()
 
         self._store = Store(hass, STORE_VERSION, f"{DOMAIN}.{entry.entry_id}")
+        self._ckw_prices: list[PricePoint] = []
+        self._ckw_last_fetch: datetime | None = None
         self._persist: dict[str, Any] = {
             "runtime_mode": dict(self.runtime_mode),
 
@@ -304,6 +312,73 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 DEFAULT_CELL_VOLTAGE_PROTECTION_ENABLED,
             )
         )
+
+    def _ckw_enabled(self) -> bool:
+        return bool(self.entry.data.get(CONF_CKW_ENABLED, False))
+
+    async def _fetch_ckw_prices(self) -> None:
+        """Fetch hourly prices from the public CKW API."""
+        session = async_get_clientsession(self.hass)
+        now_utc = dt_util.utcnow()
+        start = (now_utc - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        end = (now_utc + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        try:
+            resp = await session.get(
+                CKW_API_URL,
+                params={
+                    "tariff_type": "integrated",
+                    "tariff_name": "home_dynamic",
+                    "start_timestamp": start,
+                    "end_timestamp": end,
+                },
+                timeout=aiohttp.ClientTimeout(total=15),
+            )
+            if resp.status != 200:
+                _LOGGER.warning("CKW API returned HTTP %s", resp.status)
+                return
+            data = await resp.json()
+        except Exception as err:
+            _LOGGER.warning("CKW price fetch failed: %s", err)
+            return
+
+        tz = dt_util.get_default_time_zone()
+        out: list[PricePoint] = []
+
+        for item in (data.get("prices") or []):
+            start_s = str(item.get("start_timestamp", ""))
+            end_s = str(item.get("end_timestamp", ""))
+            integrated = item.get("integrated") or []
+            if not integrated:
+                continue
+            first = integrated[0] if isinstance(integrated[0], dict) else {}
+            value = _to_float(first.get("value"), None)
+            if not start_s or not end_s or value is None:
+                continue
+
+            # Normalize missing seconds: "2024-01-15T13:00Z" → "2024-01-15T13:00:00Z"
+            if start_s.endswith("Z") and start_s.count(":") == 1:
+                start_s = start_s[:-1] + ":00Z"
+            if end_s.endswith("Z") and end_s.count(":") == 1:
+                end_s = end_s[:-1] + ":00Z"
+
+            t_start = dt_util.parse_datetime(start_s)
+            t_end = dt_util.parse_datetime(end_s)
+            if not t_start or not t_end:
+                continue
+
+            t_start = t_start.astimezone(tz)
+            t_end = t_end.astimezone(tz)
+
+            if t_end <= t_start:
+                continue
+
+            out.append(PricePoint(start=t_start, end=t_end, price=float(value)))
+
+        out.sort(key=lambda x: x.start)
+        self._ckw_prices = out
+        self._ckw_last_fetch = dt_util.utcnow()
+        _LOGGER.debug("CKW: loaded %d hourly price slots", len(out))
 
     def _get_lowest_cell_voltage_values(self) -> list[float]:
         values: list[float] = []
@@ -471,6 +546,13 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return None, None
 
     def _get_price_now(self) -> float | None:
+        if self._ckw_enabled():
+            tz = dt_util.get_default_time_zone()
+            now = dt_util.now().astimezone(tz)
+            for p in self._ckw_prices:
+                if p.start <= now < p.end:
+                    return p.price
+            return None
         if self.entities.price_now:
             p = _to_float(self._state(self.entities.price_now), None)
             if p is not None:
@@ -618,6 +700,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Universal price parser (production hardened).
 
         Supports:
+        - CKW dynamic tariff (direct API, no HA sensor needed)
         - Tibber (attributes.data[])
         - Octopus (attributes.rates[])
         - Octopus Germany (unit_rate_forecast[])
@@ -629,6 +712,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         - Broken Octopus slots (end <= start)
         - DST edge cases
         """
+
+        if self._ckw_enabled():
+            tz = dt_util.get_default_time_zone()
+            if now.tzinfo is None:
+                now_local = dt_util.replace(now, tzinfo=tz)
+            else:
+                now_local = now.astimezone(tz)
+            return [p for p in self._ckw_prices if p.end > now_local]
 
         if not self.entities.price_export:
             return []
@@ -928,6 +1019,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if grid_import is None or grid_export is None:
                 grid_import = 0.0
                 grid_export = 0.0
+
+            if self._ckw_enabled():
+                last = self._ckw_last_fetch
+                if last is None or (now - last).total_seconds() > CKW_FETCH_INTERVAL * 60:
+                    await self._fetch_ckw_prices()
 
             price_now = self._get_price_now()
             price_points = self._parse_price_points(now)

@@ -10,7 +10,7 @@ DOMAIN = "battery_smartflow_ai"
 INTEGRATION_NAME = "Battery SmartFlow AI"
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "3.6.3"
+INTEGRATION_VERSION = "3.7.0"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -29,6 +29,17 @@ CONF_SOC_LIMIT_ENTITY = "soc_limit_entity"
 # Preis ist optional (Sommer/PV-only Nutzer)
 CONF_PRICE_EXPORT_ENTITY = "price_export_entity"  # Tibber Export (attributes.data)
 CONF_PRICE_NOW_ENTITY = "price_now_entity"        # direkter Preis-Sensor (€/kWh)
+
+# --- CKW Dynamischer Tarif ---
+CONF_CKW_ENABLED = "ckw_enabled"
+CKW_API_URL = "https://e-ckw-public-data.de-c1.eu1.cloudhub.io/api/v1/netzinformationen/energie/dynamische-preise"
+CKW_FETCH_INTERVAL = 30  # minutes
+
+# --- Währung ---
+CONF_CURRENCY = "currency"
+CURRENCY_EUR = "EUR"
+CURRENCY_CHF = "CHF"
+DEFAULT_CURRENCY = CURRENCY_EUR
 
 CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY = "additional_battery_charge_entity"
 
