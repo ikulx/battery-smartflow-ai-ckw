@@ -32,8 +32,9 @@ CONF_PRICE_NOW_ENTITY = "price_now_entity"        # direkter Preis-Sensor (€/k
 
 CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY = "additional_battery_charge_entity"
 
-# V4.0.0 optionaler PV-Forecast (zuerst Solcast)
-CONF_PV_FORECAST_ENTITY = "pv_forecast_entity"
+# V4.0.0 optionale PV-Forecast-Sensoren (zuerst Solcast)
+CONF_PV_FORECAST_TODAY_ENTITY = "pv_forecast_today_entity"
+CONF_PV_FORECAST_TOMORROW_ENTITY = "pv_forecast_tomorrow_entity"
 
 # Zendure Steuer-Entitäten
 CONF_AC_MODE_ENTITY = "ac_mode_entity"            # select input/output
