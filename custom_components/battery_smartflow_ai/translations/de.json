@@ -14,6 +14,7 @@
           "capacity_entity": "Kapazitätssensor (optional)",
           "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "pv_entity": "PV-Leistung Sensor",
+          "pv_forecast_entity": "PV-Prognose Sensor (optional)",
           "price_now_entity": "Aktueller Strompreis",
           "price_export_entity": "Preisverlauf (z. B. Tibber / EPEX)",
           "grid_mode": "Netzmessung",
@@ -34,6 +35,7 @@
           "capacity_entity": "Optionaler Sensor mit der automatisch berechneten verfügbaren Batteriekapazität in kWh (z. B. aus der Zendure-Integration). Falls gesetzt, überschreibt er die manuelle Berechnung.",
           "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird künftig für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt. Wird zur Erkennung von Überschuss verwendet.",
+          "pv_forecast_entity": "Optionaler Sensor mit PV-Prognosedaten, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
           "price_now_entity": "Sensor mit dem aktuellen Strompreis (z. B. Tibber). Wird für wirtschaftliche Entscheidungen genutzt.",
           "price_export_entity": "Sensor mit Preisprognosedaten (z. B. Tibber / EPEX). Ermöglicht Preis-Vorplanung.",
           "grid_mode": "Wähle, wie dein Netzverbrauch gemessen wird: ein kombinierter Sensor oder getrennte Sensoren für Bezug und Einspeisung.",
@@ -86,6 +88,7 @@
           "capacity_entity": "Kapazitätssensor (optional)",
           "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "pv_entity": "PV-Leistung Sensor",
+          "pv_forecast_entity": "PV-Prognose Sensor (optional)",
           "price_now_entity": "Aktueller Strompreis",
           "price_export_entity": "Preisverlauf (z. B. Tibber / EPEX)",
           "grid_mode": "Netzmessung",
@@ -106,6 +109,7 @@
           "capacity_entity": "Optionaler Sensor mit der automatisch berechneten verfügbaren Batteriekapazität in kWh (z. B. aus der Zendure-Integration). Falls gesetzt, überschreibt er die manuelle Berechnung.",
           "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird künftig für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt.",
+          "pv_forecast_entity": "Optionaler Sensor mit PV-Prognosedaten, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
           "price_now_entity": "Aktueller Strompreis. Ermöglicht preisabhängige Entladung.",
           "price_export_entity": "Preisprognosedaten für die nächsten Stunden. Ermöglicht intelligente Ladeplanung.",
           "grid_mode": "Bestimmt, wie Netzbezug und Einspeisung erfasst werden.",
@@ -304,6 +308,35 @@
       "adaptive_peak_active": {
         "name": "Adaptiver Peak erkannt"
       },
+      "forecast_status": {
+        "name": "Prognose-Status",
+        "state": {
+          "not_configured": "Nicht konfiguriert",
+          "unavailable": "Keine Prognosedaten verfügbar",
+          "available": "Prognosedaten verfügbar"
+        }
+      },
+      "pv_outlook": {
+        "name": "PV-Ausblick",
+        "state": {
+          "unknown": "Unbekannt",
+          "poor": "Schwach",
+          "mixed": "Gemischt",
+          "good": "Gut"
+        }
+      },
+      "forecast_remaining_today_kwh": {
+        "name": "PV-Prognose Rest heute"
+      },
+      "forecast_tomorrow_kwh": {
+        "name": "PV-Prognose morgen"
+      },
+      "forecast_next_3h_kwh": {
+        "name": "PV-Prognose nächste 3 Stunden"
+      },
+      "forecast_next_6h_kwh": {
+        "name": "PV-Prognose nächste 6 Stunden"
+      },
       "price_daily_average": {
         "name": "Ø Tagespreis dynamisch"
       },
@@ -409,7 +442,7 @@
           "standby": "Keine Aktion",
           "charge": "Laden",
           "discharge": "Entladen",
-          "emergency": "Notladung"
+          "emergency_charge": "Notladung"
         }
       },
       "decision_reason": {
@@ -465,6 +498,7 @@
           "discharging_active": "Entladevorgang aktiv",
           "manual_charge": "Manuelles Laden",
           "manual_discharge": "Manuelle Entladung",
+          "manual_constant_discharge": "Konstante Entladung aktiv",
           "emergency_charge": "Notladung"
         }
       },
