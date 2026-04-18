@@ -17,6 +17,7 @@ from .const import (
     # config keys
     CONF_SOC_ENTITY,
     CONF_PV_ENTITY,
+    CONF_PV_FORECAST_ENTITY,
     CONF_PRICE_EXPORT_ENTITY,
     CONF_PRICE_NOW_ENTITY,
     CONF_AC_MODE_ENTITY,
@@ -101,7 +102,6 @@ from .const import (
     ZENDURE_MODE_INPUT,
     ZENDURE_MODE_OUTPUT,
 )
-
 from .device_profiles import DEVICE_PROFILES, merge_profile_with_overrides
 from .decision_engine import (
     DecisionContext,
@@ -109,6 +109,7 @@ from .decision_engine import (
     DecisionResult,
     PricePoint,
 )
+from .forecast import build_forecast_summary
 
 _LOGGER = logging.getLogger(__name__)
 STORE_VERSION = 1
@@ -132,6 +133,7 @@ def _to_float(v: Any, default: float | None = None) -> float | None:
 class SelectedEntities:
     soc: str
     pv: str
+    pv_forecast: str | None
     price_export: str | None
     price_now: str | None
     ac_mode: str
@@ -168,6 +170,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.entities = SelectedEntities(
             soc=str(entry.data[CONF_SOC_ENTITY]),
             pv=str(entry.data[CONF_PV_ENTITY]),
+            pv_forecast=entry.data.get(CONF_PV_FORECAST_ENTITY),
             battery_ac_power=str(
                 entry.options.get(CONF_BATTERY_AC_POWER_ENTITY)
                 or entry.data.get(CONF_BATTERY_AC_POWER_ENTITY, "")
@@ -932,6 +935,13 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             price_now = self._get_price_now()
             price_points = self._parse_price_points(now)
 
+            forecast_summary = build_forecast_summary(
+                hass=self.hass,
+                entity_id=self.entities.pv_forecast,
+                now=now,
+                installed_pv_wp=self._get_installed_pv_wp(),
+            )
+
             additional_battery_charge_w = _to_float(
                 self._state(self.entities.additional_battery_charge),
                 0.0,
@@ -1070,6 +1080,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 additional_battery_charge_w=additional_battery_charge_w,
                 pv_charge_start_export_w=float(pv_charge_start_export_w),
                 cell_voltage_emergency_active=cell_voltage_emergency_active,
+                forecast=forecast_summary,
             )
 
             decision = self._engine.evaluate(ctx)
@@ -1242,6 +1253,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 additional_battery_charge_w=additional_battery_charge_w,
                 pv_charge_start_export_w=float(pv_charge_start_export_w),
                 cell_voltage_emergency_active=cell_voltage_emergency_active,
+                forecast=forecast_summary,
             )
 
             transparency_result = self._engine._with_thresholds(
@@ -1351,6 +1363,16 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "cell_voltage_resume_threshold"
                 ),
                 "cell_voltage_emergency_active": cell_voltage_emergency_active,
+                # V4.0.0 forecast transparency
+                "forecast_status": forecast_summary.status,
+                "pv_outlook": forecast_summary.pv_outlook,
+                "forecast_remaining_today_kwh": float(forecast_summary.remaining_today_kwh),
+                "forecast_tomorrow_kwh": float(forecast_summary.tomorrow_kwh),
+                "forecast_next_3h_kwh": float(forecast_summary.next_3h_kwh),
+                "forecast_next_6h_kwh": float(forecast_summary.next_6h_kwh),
+                "forecast_peak_today_w": float(forecast_summary.peak_today_w),
+                "forecast_peak_tomorrow_w": float(forecast_summary.peak_tomorrow_w),
+                "forecast_source_name": forecast_summary.source_name,
             }
 
             def _iso_or_none(val):
