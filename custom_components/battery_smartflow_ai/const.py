@@ -10,7 +10,7 @@ DOMAIN = "battery_smartflow_ai"
 INTEGRATION_NAME = "Battery SmartFlow AI"
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "3.6.4"
+INTEGRATION_VERSION = "4.0.0"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -31,6 +31,9 @@ CONF_PRICE_EXPORT_ENTITY = "price_export_entity"  # Tibber Export (attributes.da
 CONF_PRICE_NOW_ENTITY = "price_now_entity"        # direkter Preis-Sensor (€/kWh)
 
 CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY = "additional_battery_charge_entity"
+
+# V4.0.0 optionaler PV-Forecast (zuerst Solcast)
+CONF_PV_FORECAST_ENTITY = "pv_forecast_entity"
 
 # Zendure Steuer-Entitäten
 CONF_AC_MODE_ENTITY = "ac_mode_entity"            # select input/output
@@ -273,6 +276,32 @@ CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS = [
     "warning",
     "critical",
     "not_available",
+]
+
+# ==================================================
+# Forecast enums (V4.0.0)
+# Forecast bleibt immer optional.
+# ==================================================
+FORECAST_STATUS_NOT_CONFIGURED = "not_configured"
+FORECAST_STATUS_UNAVAILABLE = "unavailable"
+FORECAST_STATUS_AVAILABLE = "available"
+
+FORECAST_STATUS_ENUMS = [
+    FORECAST_STATUS_NOT_CONFIGURED,
+    FORECAST_STATUS_UNAVAILABLE,
+    FORECAST_STATUS_AVAILABLE,
+]
+
+PV_OUTLOOK_UNKNOWN = "unknown"
+PV_OUTLOOK_POOR = "poor"
+PV_OUTLOOK_MIXED = "mixed"
+PV_OUTLOOK_GOOD = "good"
+
+PV_OUTLOOK_ENUMS = [
+    PV_OUTLOOK_UNKNOWN,
+    PV_OUTLOOK_POOR,
+    PV_OUTLOOK_MIXED,
+    PV_OUTLOOK_GOOD,
 ]
 
 # ==================================================
