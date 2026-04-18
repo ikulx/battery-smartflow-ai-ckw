@@ -17,7 +17,8 @@ from .const import (
     # config keys
     CONF_SOC_ENTITY,
     CONF_PV_ENTITY,
-    CONF_PV_FORECAST_ENTITY,
+    CONF_PV_FORECAST_TODAY_ENTITY,
+    CONF_PV_FORECAST_TOMORROW_ENTITY,
     CONF_PRICE_EXPORT_ENTITY,
     CONF_PRICE_NOW_ENTITY,
     CONF_AC_MODE_ENTITY,
@@ -133,7 +134,8 @@ def _to_float(v: Any, default: float | None = None) -> float | None:
 class SelectedEntities:
     soc: str
     pv: str
-    pv_forecast: str | None
+    pv_forecast_today: str | None
+    pv_forecast_tomorrow: str | None
     price_export: str | None
     price_now: str | None
     ac_mode: str
@@ -170,7 +172,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.entities = SelectedEntities(
             soc=str(entry.data[CONF_SOC_ENTITY]),
             pv=str(entry.data[CONF_PV_ENTITY]),
-            pv_forecast=entry.data.get(CONF_PV_FORECAST_ENTITY),
+            pv_forecast_today=entry.data.get(CONF_PV_FORECAST_TODAY_ENTITY),
+            pv_forecast_tomorrow=entry.data.get(CONF_PV_FORECAST_TOMORROW_ENTITY),
             battery_ac_power=str(
                 entry.options.get(CONF_BATTERY_AC_POWER_ENTITY)
                 or entry.data.get(CONF_BATTERY_AC_POWER_ENTITY, "")
@@ -937,8 +940,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             forecast_summary = build_forecast_summary(
                 hass=self.hass,
-                entity_id=self.entities.pv_forecast,
-                now=now,
+                today_entity_id=self.entities.pv_forecast_today,
+                tomorrow_entity_id=self.entities.pv_forecast_tomorrow,
                 installed_pv_wp=self._get_installed_pv_wp(),
             )
 
