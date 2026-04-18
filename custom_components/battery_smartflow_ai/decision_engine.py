@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import List, Literal, Optional
 
 from .const import MANUAL_CONST_DISCHARGE
+from .forecast import ForecastSummary
 from .power_controller import PowerController, PowerContext
 
 
@@ -66,6 +67,9 @@ class DecisionContext:
 
     # V3.5.0 cell voltage protection
     cell_voltage_emergency_active: bool = False
+
+    # V4.0.0 optional forecast input
+    forecast: Optional[ForecastSummary] = None
 
 
 @dataclass
