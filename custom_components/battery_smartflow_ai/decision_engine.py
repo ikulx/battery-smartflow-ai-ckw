@@ -134,7 +134,10 @@ class AdditionalBatteryBlockRule(BaseRule):
 
 class PeakRule(BaseRule):
     def evaluate(self, engine, ctx):
-        if float(ctx.grid_export_w or 0.0) > 80.0:
+        export_active = float(ctx.grid_export_w or 0.0) > 80.0
+        discharge_active = float(ctx.prev_discharge_w or 0.0) > 0.0
+
+        if export_active and not discharge_active:
             return None
         if (
             ctx.soc > ctx.soc_min
@@ -176,7 +179,10 @@ class PeakRule(BaseRule):
 
 class ArbitrageRule(BaseRule):
     def evaluate(self, engine, ctx):
-        if float(ctx.grid_export_w or 0.0) > 80.0:
+        export_active = float(ctx.grid_export_w or 0.0) > 80.0
+        discharge_active = float(ctx.prev_discharge_w or 0.0) > 0.0
+
+        if export_active and not discharge_active:
             return None
         if (
             ctx.price_now is not None
