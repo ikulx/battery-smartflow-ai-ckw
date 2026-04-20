@@ -478,6 +478,82 @@ class DecisionEngine:
 
         return float(ctx.price_now) >= float(effective_threshold)
 
+    def _forecast_available(self, ctx: DecisionContext) -> bool:
+        return bool(
+            ctx.forecast is not None
+            and getattr(ctx.forecast, "status", None) == "available"
+        )
+
+    def _forecast_outlook(self, ctx: DecisionContext) -> str:
+        if not self._forecast_available(ctx):
+            return "unknown"
+        return str(getattr(ctx.forecast, "pv_outlook", "unknown") or "unknown")
+
+    def _forecast_remaining_today_kwh(self, ctx: DecisionContext) -> float:
+        if not self._forecast_available(ctx):
+            return 0.0
+        try:
+            return max(0.0, float(getattr(ctx.forecast, "remaining_today_kwh", 0.0) or 0.0))
+        except Exception:
+            return 0.0
+
+    def _forecast_tomorrow_kwh(self, ctx: DecisionContext) -> float:
+        if not self._forecast_available(ctx):
+            return 0.0
+        try:
+            return max(0.0, float(getattr(ctx.forecast, "tomorrow_kwh", 0.0) or 0.0))
+        except Exception:
+            return 0.0
+
+    def _forecast_required_kwh_factor(self, ctx: DecisionContext) -> float:
+        """
+        Soft forecast influence for planning charge need.
+
+        - good outlook: lower need for grid charge
+        - poor outlook: slightly higher need for planned grid charge
+        - mixed/unknown: mostly neutral
+        """
+        outlook = self._forecast_outlook(ctx)
+
+        if outlook == "good":
+            return 0.60
+        if outlook == "mixed":
+            return 0.85
+        if outlook == "poor":
+            return 1.10
+        return 1.00
+
+    def _forecast_supports_waiting(
+        self,
+        ctx: DecisionContext,
+        base_required_kwh: float,
+    ) -> bool:
+        """
+        Return True if forecast suggests that we can likely wait instead of
+        starting a price-driven grid charge now.
+
+        This is intentionally conservative and only active with a clearly good
+        outlook and meaningful expected PV energy.
+        """
+        if not self._forecast_available(ctx):
+            return False
+
+        if self._forecast_outlook(ctx) != "good":
+            return False
+
+        remaining_today_kwh = self._forecast_remaining_today_kwh(ctx)
+        tomorrow_kwh = self._forecast_tomorrow_kwh(ctx)
+
+        required = max(0.0, float(base_required_kwh or 0.0))
+
+        if required <= 0.0:
+            return True
+
+        enough_today = remaining_today_kwh >= max(1.5, required * 0.50)
+        enough_tomorrow = tomorrow_kwh >= max(2.0, required * 0.85)
+
+        return enough_today or enough_tomorrow
+
     def _profile_for_discharge(self, profile: dict) -> dict:
         mapped = dict(profile)
         mapped["DEADBAND_W"] = profile.get("DISCHARGE_DEADBAND_W", profile.get("DEADBAND_W"))
@@ -593,12 +669,19 @@ class DecisionEngine:
         second_peak = future_peaks_sorted[1].start if len(future_peaks_sorted) >= 2 else None
 
         soc_gap_pct = max(0.0, ctx.soc_max - ctx.soc)
-        required_kwh = ctx.battery_capacity_kwh * (soc_gap_pct / 100.0)
+        base_required_kwh = ctx.battery_capacity_kwh * (soc_gap_pct / 100.0)
 
         if second_peak is not None:
             hours_between_peaks = (second_peak - next_peak).total_seconds() / 3600.0
             if hours_between_peaks < 6:
-                required_kwh *= 1.4
+                base_required_kwh *= 1.4
+
+        if self._forecast_supports_waiting(ctx, base_required_kwh):
+            return None
+
+        required_kwh = base_required_kwh * self._forecast_required_kwh_factor(ctx)
+        required_kwh = min(required_kwh, base_required_kwh)
+        required_kwh = max(required_kwh, min(base_required_kwh, 0.25))
 
         charge_power_kw = ctx.max_charge_w / 1000.0
         if charge_power_kw <= 0:
@@ -625,6 +708,14 @@ class DecisionEngine:
                     return None
 
         if ctx.now >= latest_start:
+            reason = "planning_latest_start"
+            if self._forecast_available(ctx):
+                outlook = self._forecast_outlook(ctx)
+                if outlook == "poor":
+                    reason = "planning_forecast_poor"
+                elif outlook == "mixed":
+                    reason = "planning_forecast_mixed"
+
             return self._with_thresholds(
                 ctx,
                 DecisionResult(
@@ -632,7 +723,7 @@ class DecisionEngine:
                     ac_mode="input",
                     charge_w=ctx.max_charge_w,
                     discharge_w=0.0,
-                    reason="planning_latest_start",
+                    reason=reason,
                     target_soc=ctx.soc_max,
                 ),
             )
