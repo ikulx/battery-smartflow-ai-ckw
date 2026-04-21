@@ -873,6 +873,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if reason == "valley_boost_charge_mixed_forecast":
             return "valley_boost_mixed"
 
+        if reason == "planning_forecast_reality_override":
+            return "planning_reality_override"
+
+        if reason == "very_cheap_force_charge":
+            return "very_cheap"
+            
         if reason == "very_cheap_force_charge":
             return "very_cheap"
             
@@ -1118,6 +1124,23 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 forecast=forecast_summary,
             )
 
+            base_required_kwh = battery_capacity_kwh * max(0.0, float(soc_max) - float(soc)) / 100.0
+
+            if (
+                self._engine._forecast_supports_waiting(ctx, base_required_kwh)
+                and self._engine._is_valley_price_now(ctx)
+                and self._engine._is_real_pv_underperforming(ctx)
+            ):
+                self._persist["forecast_wait_block_counter"] = int(
+                    self._persist.get("forecast_wait_block_counter", 0)
+                ) + 1
+            else:
+                self._persist["forecast_wait_block_counter"] = 0
+
+            ctx.forecast_wait_block_counter = int(
+                self._persist.get("forecast_wait_block_counter", 0)
+            )
+            
             decision = self._engine.evaluate(ctx)
 
             charge_price_applied = None
@@ -1415,6 +1438,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "forecast_peak_today_w": float(forecast_summary.peak_today_w),
                 "forecast_peak_tomorrow_w": float(forecast_summary.peak_tomorrow_w),
                 "forecast_source_name": forecast_summary.source_name,
+                "forecast_wait_block_counter": int(self._persist.get("forecast_wait_block_counter", 0)),
             }
 
             def _iso_or_none(val):
