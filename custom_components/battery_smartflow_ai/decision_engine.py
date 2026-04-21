@@ -805,7 +805,7 @@ class DecisionEngine:
                 if not cheapest_slots:
                     return None
 
-                    cheapest_prices = [p.price for p in cheapest_slots]
+                cheapest_prices = [p.price for p in cheapest_slots]
                 if ctx.price_now > max(cheapest_prices):
                     return None
 
