@@ -306,6 +306,21 @@ PV_OUTLOOK_ENUMS = [
 ]
 
 # ==================================================
+# Charge strategy enums (V4.0.0 transparency)
+# ==================================================
+CHARGE_STRATEGY_ENUMS = [
+    "none",
+    "pv_surplus",
+    "planning_latest_start",
+    "planning_forecast_poor",
+    "planning_forecast_mixed",
+    "valley_boost",
+    "valley_boost_mixed",
+    "emergency",
+    "manual",
+]
+
+# ==================================================
 # Zendure AC Mode options
 # ==================================================
 ZENDURE_MODE_INPUT = "input"
