@@ -846,6 +846,33 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return RECO_EMERGENCY
         return RECO_STANDBY
 
+    def _map_charge_strategy(self, ai_mode: str, action: str, reason: str) -> str:
+        if ai_mode == AI_MODE_MANUAL:
+            return "manual"
+
+        if action == "emergency":
+            return "emergency"
+
+        if reason == "pv_surplus_charge":
+            return "pv_surplus"
+
+        if reason == "planning_latest_start":
+            return "planning_latest_start"
+
+        if reason == "planning_forecast_poor":
+            return "planning_forecast_poor"
+
+        if reason == "planning_forecast_mixed":
+            return "planning_forecast_mixed"
+
+        if reason == "valley_boost_charge":
+            return "valley_boost"
+
+        if reason == "valley_boost_charge_mixed_forecast":
+            return "valley_boost_mixed"
+
+        return "none"
+    
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             if self._persist.get("last_ts") is None:
@@ -1224,6 +1251,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             recommendation = self._map_reco(decision.action)
 
+            charge_strategy = self._map_charge_strategy(
+                ai_mode=ai_mode,
+                action=decision.action,
+                reason=decision.reason,
+            )
+
             transparency_ctx = DecisionContext(
                 now=now,
                 soc=soc,
@@ -1312,6 +1345,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "ai_mode": ai_mode,
                 "manual_action": manual_action,
                 "decision_reason": decision.reason,
+                "charge_strategy": charge_strategy,
                 "adaptive_peak_active": adaptive_peak_active,
                 "device_profile": self.device_profile_key,
                 "profile_max_input_w": profile_max_in,
