@@ -246,11 +246,13 @@ class ValleyBoostRule(BaseRule):
             return None
 
         charge_w = ctx.max_charge_w
+        reason = "valley_boost_charge"
 
         # Bei gemischter Prognose ValleyBoost etwas entschärfen,
         # aber nicht komplett blockieren.
         if engine._forecast_available(ctx) and engine._forecast_outlook(ctx) == "mixed":
             charge_w = max(300.0, float(ctx.max_charge_w) * 0.75)
+            reason = "valley_boost_charge_mixed_forecast"
 
         return engine._with_thresholds(
             ctx,
@@ -259,10 +261,10 @@ class ValleyBoostRule(BaseRule):
                 ac_mode="input",
                 charge_w=charge_w,
                 discharge_w=0.0,
-                reason="valley_boost_charge",
+                reason=reason,
             ),
         )
-
+        
 
 class PvRule(BaseRule):
     def evaluate(self, engine, ctx):
