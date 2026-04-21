@@ -121,7 +121,7 @@ def _read_sensor_kwh(
     return _to_float(st.state, None), True
 
 
-def _read_today_sensor_attrs(
+def _read_sensor_attrs(
     hass: HomeAssistant,
     entity_id: str | None,
 ) -> tuple[dict[str, Any], bool]:
@@ -214,9 +214,43 @@ def _compute_peak_kw_for_date(
     return peak_kw
 
 
+def _compute_peaks_for_sensor(
+    hass: HomeAssistant,
+    entity_id: str | None,
+) -> tuple[float, float]:
+    """
+    Returns:
+        peak_today_w, peak_tomorrow_w
+
+    Works on the sensor's own attribute set.
+    """
+    attrs, found = _read_sensor_attrs(hass, entity_id)
+    if not found:
+        return 0.0, 0.0
+
+    now_local = dt_util.as_local(dt_util.utcnow())
+    today = now_local.date()
+    tomorrow = (now_local + timedelta(days=1)).date()
+
+    hourly = _iter_hourly_intervals(attrs)
+    if hourly:
+        peak_today_w = _compute_peak_kw_for_date(hourly, today) * 1000.0
+        peak_tomorrow_w = _compute_peak_kw_for_date(hourly, tomorrow) * 1000.0
+        return peak_today_w, peak_tomorrow_w
+
+    halfhour = _iter_halfhour_intervals(attrs)
+    if halfhour:
+        peak_today_w = _compute_peak_kw_for_date(halfhour, today) * 1000.0
+        peak_tomorrow_w = _compute_peak_kw_for_date(halfhour, tomorrow) * 1000.0
+        return peak_today_w, peak_tomorrow_w
+
+    return 0.0, 0.0
+
+
 def _compute_subday_metrics(
     hass: HomeAssistant,
     today_entity_id: str | None,
+    tomorrow_entity_id: str | None,
 ) -> tuple[float, float, float, float]:
     """
     Returns:
@@ -226,13 +260,12 @@ def _compute_subday_metrics(
     - detailedHourly (preferred)
     - fallback to detailedForecast
     """
-    attrs, found = _read_today_sensor_attrs(hass, today_entity_id)
+    attrs, found = _read_sensor_attrs(hass, today_entity_id)
     if not found:
-        return 0.0, 0.0, 0.0, 0.0
+        _, peak_tomorrow_w = _compute_peaks_for_sensor(hass, tomorrow_entity_id)
+        return 0.0, 0.0, 0.0, peak_tomorrow_w
 
     now_local = dt_util.as_local(dt_util.utcnow())
-    today = now_local.date()
-    tomorrow = (now_local + timedelta(days=1)).date()
 
     hourly = _iter_hourly_intervals(attrs)
     if hourly:
@@ -248,8 +281,8 @@ def _compute_subday_metrics(
             hours_ahead=6.0,
             slot_minutes=60,
         )
-        peak_today_w = _compute_peak_kw_for_date(hourly, today) * 1000.0
-        peak_tomorrow_w = _compute_peak_kw_for_date(hourly, tomorrow) * 1000.0
+        peak_today_w, _ = _compute_peaks_for_sensor(hass, today_entity_id)
+        _, peak_tomorrow_w = _compute_peaks_for_sensor(hass, tomorrow_entity_id)
         return next_3h_kwh, next_6h_kwh, peak_today_w, peak_tomorrow_w
 
     halfhour = _iter_halfhour_intervals(attrs)
@@ -266,11 +299,12 @@ def _compute_subday_metrics(
             hours_ahead=6.0,
             slot_minutes=30,
         )
-        peak_today_w = _compute_peak_kw_for_date(halfhour, today) * 1000.0
-        peak_tomorrow_w = _compute_peak_kw_for_date(halfhour, tomorrow) * 1000.0
+        peak_today_w, _ = _compute_peaks_for_sensor(hass, today_entity_id)
+        _, peak_tomorrow_w = _compute_peaks_for_sensor(hass, tomorrow_entity_id)
         return next_3h_kwh, next_6h_kwh, peak_today_w, peak_tomorrow_w
 
-    return 0.0, 0.0, 0.0, 0.0
+    _, peak_tomorrow_w = _compute_peaks_for_sensor(hass, tomorrow_entity_id)
+    return 0.0, 0.0, 0.0, peak_tomorrow_w
 
 
 def build_forecast_summary(
@@ -283,7 +317,9 @@ def build_forecast_summary(
     Build a normalized optional forecast summary from two daily forecast sensors.
 
     - today/tomorrow totals come from sensor states
-    - 3h/6h and peaks come from today sensor attributes when available
+    - 3h/6h come from today sensor attributes when available
+    - peak today comes from today sensor attributes
+    - peak tomorrow comes from tomorrow sensor attributes
     - forecast always remains optional
     """
     if not today_entity_id and not tomorrow_entity_id:
@@ -313,6 +349,7 @@ def build_forecast_summary(
     next_3h_kwh, next_6h_kwh, peak_today_w, peak_tomorrow_w = _compute_subday_metrics(
         hass=hass,
         today_entity_id=today_entity_id,
+        tomorrow_entity_id=tomorrow_entity_id,
     )
 
     pv_outlook = _classify_pv_outlook(
