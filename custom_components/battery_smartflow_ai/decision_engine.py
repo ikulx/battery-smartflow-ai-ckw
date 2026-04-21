@@ -132,6 +132,90 @@ class AdditionalBatteryBlockRule(BaseRule):
         return None
 
 
+class ManualRule(BaseRule):
+    def evaluate(self, engine, ctx):
+        if ctx.ai_mode != "manual":
+            return None
+
+        if ctx.manual_action == "charge":
+            return engine._with_thresholds(
+                ctx,
+                DecisionResult(
+                    action="charge",
+                    ac_mode="input",
+                    charge_w=ctx.max_charge_w,
+                    discharge_w=0.0,
+                    reason="manual_charge",
+                ),
+            )
+
+        if ctx.manual_action == MANUAL_CONST_DISCHARGE:
+            return engine._with_thresholds(
+                ctx,
+                DecisionResult(
+                    action="discharge",
+                    ac_mode="output",
+                    charge_w=0.0,
+                    discharge_w=float(ctx.max_discharge_w),
+                    reason="manual_constant_discharge",
+                ),
+            )
+
+        if ctx.manual_action == "discharge":
+            discharge_w = engine._delta_discharge(ctx)
+            return engine._with_thresholds(
+                ctx,
+                DecisionResult(
+                    action="discharge",
+                    ac_mode="output",
+                    charge_w=0.0,
+                    discharge_w=discharge_w,
+                    reason="manual_discharge",
+                ),
+            )
+
+        return engine._with_thresholds(
+            ctx,
+            DecisionResult(
+                action="idle",
+                ac_mode="input",
+                charge_w=0.0,
+                discharge_w=0.0,
+                reason="manual_idle",
+            ),
+        )
+
+
+class VeryCheapRule(BaseRule):
+    def evaluate(self, engine, ctx):
+        if ctx.price_now is None or ctx.very_cheap_price is None:
+            return None
+
+        if ctx.soc >= ctx.soc_max:
+            return None
+
+        try:
+            very_cheap_price = float(ctx.very_cheap_price)
+            price_now = float(ctx.price_now)
+        except Exception:
+            return None
+
+        if price_now > very_cheap_price:
+            return None
+
+        return engine._with_thresholds(
+            ctx,
+            DecisionResult(
+                action="charge",
+                ac_mode="input",
+                charge_w=ctx.max_charge_w,
+                discharge_w=0.0,
+                reason="very_cheap_force_charge",
+                target_soc=ctx.soc_max,
+            ),
+        )
+
+
 class PeakRule(BaseRule):
     def evaluate(self, engine, ctx):
         export_active = float(ctx.grid_export_w or 0.0) > 80.0
@@ -239,17 +323,12 @@ class ValleyBoostRule(BaseRule):
         soc_gap_pct = max(0.0, ctx.soc_max - ctx.soc)
         base_required_kwh = ctx.battery_capacity_kwh * (soc_gap_pct / 100.0)
 
-        # Forecast-aware guard:
-        # Wenn gute PV-Prognose vorliegt und Warten plausibel ist,
-        # soll ValleyBoost nicht die vorsichtige Planning-Logik aushebeln.
         if engine._forecast_supports_waiting(ctx, base_required_kwh):
             return None
 
         charge_w = ctx.max_charge_w
         reason = "valley_boost_charge"
 
-        # Bei gemischter Prognose ValleyBoost etwas entschärfen,
-        # aber nicht komplett blockieren.
         if engine._forecast_available(ctx) and engine._forecast_outlook(ctx) == "mixed":
             charge_w = max(300.0, float(ctx.max_charge_w) * 0.75)
             reason = "valley_boost_charge_mixed_forecast"
@@ -264,7 +343,7 @@ class ValleyBoostRule(BaseRule):
                 reason=reason,
             ),
         )
-        
+
 
 class PvRule(BaseRule):
     def evaluate(self, engine, ctx):
@@ -344,66 +423,13 @@ class SummerRule(BaseRule):
         return None
 
 
-class ManualRule(BaseRule):
-    def evaluate(self, engine, ctx):
-        if ctx.ai_mode != "manual":
-            return None
-
-        if ctx.manual_action == "charge":
-            return engine._with_thresholds(
-                ctx,
-                DecisionResult(
-                    action="charge",
-                    ac_mode="input",
-                    charge_w=ctx.max_charge_w,
-                    discharge_w=0.0,
-                    reason="manual_charge",
-                ),
-            )
-
-        if ctx.manual_action == MANUAL_CONST_DISCHARGE:
-            return engine._with_thresholds(
-                ctx,
-                DecisionResult(
-                    action="discharge",
-                    ac_mode="output",
-                    charge_w=0.0,
-                    discharge_w=float(ctx.max_discharge_w),
-                    reason="manual_constant_discharge",
-                ),
-            )
-
-        if ctx.manual_action == "discharge":
-            discharge_w = engine._delta_discharge(ctx)
-            return engine._with_thresholds(
-                ctx,
-                DecisionResult(
-                    action="discharge",
-                    ac_mode="output",
-                    charge_w=0.0,
-                    discharge_w=discharge_w,
-                    reason="manual_discharge",
-                ),
-            )
-
-        return engine._with_thresholds(
-            ctx,
-            DecisionResult(
-                action="idle",
-                ac_mode="input",
-                charge_w=0.0,
-                discharge_w=0.0,
-                reason="manual_idle",
-            ),
-        )
-
-
 class DecisionEngine:
     def __init__(self):
         self._rules = [
             EmergencyRule(),
             AdditionalBatteryBlockRule(),
             ManualRule(),
+            VeryCheapRule(),
             PvRule(),
             PeakRule(),
             ArbitrageRule(),
