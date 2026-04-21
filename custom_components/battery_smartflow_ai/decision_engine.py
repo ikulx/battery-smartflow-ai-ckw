@@ -71,7 +71,11 @@ class DecisionContext:
     # V4.0.0 optional forecast input
     forecast: Optional[ForecastSummary] = None
 
-    # V4.0.0 live override helper
+    # PV charge hysteresis / debounce
+    pv_charge_start_counter: int = 0
+    pv_charge_stop_counter: int = 0
+
+    # Forecast reality override
     forecast_wait_block_counter: int = 0
 
 
@@ -361,11 +365,13 @@ class PvRule(BaseRule):
         pv_w = float(ctx.pv_w or 0.0)
         prev_charge_w = float(ctx.prev_charge_w or 0.0)
         prev_discharge_w = float(ctx.prev_discharge_w or 0.0)
+
         start_export_threshold = float(ctx.pv_charge_start_export_w or 0.0)
+        hold_export_threshold = max(20.0, start_export_threshold * 0.5)
 
-        has_direct_surplus = export_w >= start_export_threshold
-
+        charge_active = prev_charge_w > 0.0
         discharge_active = prev_discharge_w > 0.0
+
         if discharge_active:
             return None
 
@@ -379,13 +385,24 @@ class PvRule(BaseRule):
         )
 
         keepalive_charge = (
-            prev_charge_w > 0.0
+            charge_active
             and pv_w >= max(150.0, prev_charge_w * 0.35)
             and not valley_active
         )
 
-        if not has_direct_surplus and not keepalive_charge:
-            return None
+        has_start_surplus = export_w >= start_export_threshold
+        has_hold_surplus = export_w >= hold_export_threshold
+
+        if not charge_active:
+            if not has_start_surplus and not keepalive_charge:
+                return None
+
+            if has_start_surplus and int(ctx.pv_charge_start_counter or 0) < 3:
+                return None
+        else:
+            if not has_hold_surplus and not keepalive_charge:
+                if int(ctx.pv_charge_stop_counter or 0) >= 4:
+                    return None
 
         charge_w = engine._delta_charge(ctx)
 
