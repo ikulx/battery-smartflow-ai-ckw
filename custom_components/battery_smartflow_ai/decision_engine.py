@@ -236,12 +236,28 @@ class ValleyBoostRule(BaseRule):
         if ctx.pv_w < 100:
             return None
 
+        soc_gap_pct = max(0.0, ctx.soc_max - ctx.soc)
+        base_required_kwh = ctx.battery_capacity_kwh * (soc_gap_pct / 100.0)
+
+        # Forecast-aware guard:
+        # Wenn gute PV-Prognose vorliegt und Warten plausibel ist,
+        # soll ValleyBoost nicht die vorsichtige Planning-Logik aushebeln.
+        if engine._forecast_supports_waiting(ctx, base_required_kwh):
+            return None
+
+        charge_w = ctx.max_charge_w
+
+        # Bei gemischter Prognose ValleyBoost etwas entschärfen,
+        # aber nicht komplett blockieren.
+        if engine._forecast_available(ctx) and engine._forecast_outlook(ctx) == "mixed":
+            charge_w = max(300.0, float(ctx.max_charge_w) * 0.75)
+
         return engine._with_thresholds(
             ctx,
             DecisionResult(
                 action="charge",
                 ac_mode="input",
-                charge_w=ctx.max_charge_w,
+                charge_w=charge_w,
                 discharge_w=0.0,
                 reason="valley_boost_charge",
             ),
