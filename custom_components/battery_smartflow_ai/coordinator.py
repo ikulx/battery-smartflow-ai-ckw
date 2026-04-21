@@ -241,6 +241,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "cell_voltage_resume_threshold": None,
             "cell_voltage_soc_plausibility": "not_available",
 
+            "forecast_wait_block_counter": 0,
+
             # debug
             "debug": "init",
         }
