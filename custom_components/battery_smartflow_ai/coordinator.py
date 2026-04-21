@@ -879,9 +879,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if reason == "very_cheap_force_charge":
             return "very_cheap"
             
-        if reason == "very_cheap_force_charge":
-            return "very_cheap"
-            
         return "none"
     
     async def _async_update_data(self) -> dict[str, Any]:
@@ -1318,6 +1315,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 pv_charge_start_export_w=float(pv_charge_start_export_w),
                 cell_voltage_emergency_active=cell_voltage_emergency_active,
                 forecast=forecast_summary,
+                forecast_wait_block_counter=int(
+                    self._persist.get("forecast_wait_block_counter", 0)
+                ),
             )
 
             transparency_result = self._engine._with_thresholds(
