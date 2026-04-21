@@ -318,6 +318,7 @@ CHARGE_STRATEGY_ENUMS = [
     "valley_boost_mixed",
     "emergency",
     "manual",
+    "very_cheap",
 ]
 
 # ==================================================
