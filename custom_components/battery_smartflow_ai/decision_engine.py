@@ -139,10 +139,8 @@ class PeakRule(BaseRule):
 
         if export_active and not discharge_active:
             return None
-        if (
-            ctx.soc > ctx.soc_min
-            and ctx.ai_mode in ("automatic", "winter")
-        ):
+
+        if ctx.soc > ctx.soc_min and ctx.ai_mode in ("automatic", "winter"):
             if (
                 engine._detect_adaptive_peak(ctx)
                 and engine._is_effective_discharge_price_reached(ctx)
@@ -184,6 +182,7 @@ class ArbitrageRule(BaseRule):
 
         if export_active and not discharge_active:
             return None
+
         if (
             ctx.price_now is not None
             and ctx.avg_charge_price is not None
@@ -505,22 +504,39 @@ class DecisionEngine:
         except Exception:
             return 0.0
 
+    def _forecast_next_3h_kwh(self, ctx: DecisionContext) -> float:
+        if not self._forecast_available(ctx):
+            return 0.0
+        try:
+            return max(0.0, float(getattr(ctx.forecast, "next_3h_kwh", 0.0) or 0.0))
+        except Exception:
+            return 0.0
+
+    def _forecast_next_6h_kwh(self, ctx: DecisionContext) -> float:
+        if not self._forecast_available(ctx):
+            return 0.0
+        try:
+            return max(0.0, float(getattr(ctx.forecast, "next_6h_kwh", 0.0) or 0.0))
+        except Exception:
+            return 0.0
+
     def _forecast_required_kwh_factor(self, ctx: DecisionContext) -> float:
         """
         Soft forecast influence for planning charge need.
 
         - good outlook: lower need for grid charge
-        - poor outlook: slightly higher need for planned grid charge
-        - mixed/unknown: mostly neutral
+        - mixed outlook: slightly reduced need
+        - poor outlook: slightly increased need
+        - unknown: neutral
         """
         outlook = self._forecast_outlook(ctx)
 
         if outlook == "good":
             return 0.60
         if outlook == "mixed":
-            return 0.85
+            return 0.90
         if outlook == "poor":
-            return 1.10
+            return 1.15
         return 1.00
 
     def _forecast_supports_waiting(
@@ -529,11 +545,9 @@ class DecisionEngine:
         base_required_kwh: float,
     ) -> bool:
         """
-        Return True if forecast suggests that we can likely wait instead of
-        starting a price-driven grid charge now.
-
-        This is intentionally conservative and only active with a clearly good
-        outlook and meaningful expected PV energy.
+        Conservative rule:
+        If forecast is clearly good and there is meaningful expected PV energy
+        soon / later today / tomorrow, we may skip a price-driven grid charge for now.
         """
         if not self._forecast_available(ctx):
             return False
@@ -541,18 +555,21 @@ class DecisionEngine:
         if self._forecast_outlook(ctx) != "good":
             return False
 
-        remaining_today_kwh = self._forecast_remaining_today_kwh(ctx)
-        tomorrow_kwh = self._forecast_tomorrow_kwh(ctx)
-
         required = max(0.0, float(base_required_kwh or 0.0))
-
         if required <= 0.0:
             return True
 
-        enough_today = remaining_today_kwh >= max(1.5, required * 0.50)
-        enough_tomorrow = tomorrow_kwh >= max(2.0, required * 0.85)
+        next_3h_kwh = self._forecast_next_3h_kwh(ctx)
+        next_6h_kwh = self._forecast_next_6h_kwh(ctx)
+        remaining_today_kwh = self._forecast_remaining_today_kwh(ctx)
+        tomorrow_kwh = self._forecast_tomorrow_kwh(ctx)
 
-        return enough_today or enough_tomorrow
+        enough_soon = next_3h_kwh >= max(0.8, required * 0.25)
+        enough_next = next_6h_kwh >= max(1.2, required * 0.40)
+        enough_today = remaining_today_kwh >= max(1.5, required * 0.55)
+        enough_tomorrow = tomorrow_kwh >= max(2.0, required * 0.95)
+
+        return enough_soon or enough_next or enough_today or enough_tomorrow
 
     def _profile_for_discharge(self, profile: dict) -> dict:
         mapped = dict(profile)
@@ -680,7 +697,6 @@ class DecisionEngine:
             return None
 
         required_kwh = base_required_kwh * self._forecast_required_kwh_factor(ctx)
-        required_kwh = min(required_kwh, base_required_kwh)
         required_kwh = max(required_kwh, min(base_required_kwh, 0.25))
 
         charge_power_kw = ctx.max_charge_w / 1000.0
