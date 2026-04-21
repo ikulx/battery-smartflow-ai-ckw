@@ -241,6 +241,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "cell_voltage_resume_threshold": None,
             "cell_voltage_soc_plausibility": "not_available",
 
+            # PV charge debounce / hysteresis
+            "pv_charge_start_counter": 0,
+            "pv_charge_stop_counter": 0,
+
             "forecast_wait_block_counter": 0,
 
             # debug
@@ -515,6 +519,41 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return pack_capacity * packs
 
+    def _update_pv_charge_hysteresis(
+        self,
+        grid_export_w: float,
+        pv_w: float,
+        pv_charge_start_export_w: float,
+    ) -> tuple[int, int]:
+        start_counter = int(self._persist.get("pv_charge_start_counter", 0) or 0)
+        stop_counter = int(self._persist.get("pv_charge_stop_counter", 0) or 0)
+
+        prev_charge_active = float(self._persist.get("prev_charge_w", 0.0) or 0.0) > 0.0
+
+        start_threshold = float(pv_charge_start_export_w or 0.0)
+        hold_threshold = max(20.0, start_threshold * 0.5)
+
+        has_start_surplus = float(grid_export_w or 0.0) >= start_threshold
+        has_hold_surplus = float(grid_export_w or 0.0) >= hold_threshold
+
+        if prev_charge_active:
+            start_counter = 0
+            if has_hold_surplus:
+                stop_counter = 0
+            else:
+                stop_counter += 1
+        else:
+            stop_counter = 0
+            if has_start_surplus:
+                start_counter += 1
+            else:
+                start_counter = 0
+
+        self._persist["pv_charge_start_counter"] = start_counter
+        self._persist["pv_charge_stop_counter"] = stop_counter
+
+        return start_counter, stop_counter
+    
     def _update_discharge_resume_hysteresis(
         self,
         soc: float,
@@ -1011,6 +1050,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 DEFAULT_PV_CHARGE_START_EXPORT_W,
             )
 
+            pv_charge_start_counter, pv_charge_stop_counter = self._update_pv_charge_hysteresis(
+                grid_export_w=float(grid_export or 0.0),
+                pv_w=float(pv_w or 0.0),
+                pv_charge_start_export_w=float(pv_charge_start_export_w),
+            )
+
             very_cheap_price = self.runtime_settings.get("very_cheap_price", None)
             if very_cheap_price is not None:
                 try:
@@ -1119,6 +1164,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 pv_charge_start_export_w=float(pv_charge_start_export_w),
                 cell_voltage_emergency_active=cell_voltage_emergency_active,
                 forecast=forecast_summary,
+                pv_charge_start_counter=int(pv_charge_start_counter),
+                pv_charge_stop_counter=int(pv_charge_stop_counter),
+                forecast_wait_block_counter=int(self._persist.get("forecast_wait_block_counter", 0)),
             )
 
             base_required_kwh = battery_capacity_kwh * max(0.0, float(soc_max) - float(soc)) / 100.0
@@ -1315,9 +1363,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 pv_charge_start_export_w=float(pv_charge_start_export_w),
                 cell_voltage_emergency_active=cell_voltage_emergency_active,
                 forecast=forecast_summary,
-                forecast_wait_block_counter=int(
-                    self._persist.get("forecast_wait_block_counter", 0)
-                ),
+                pv_charge_start_counter=int(pv_charge_start_counter),
+                pv_charge_stop_counter=int(pv_charge_stop_counter),
+                forecast_wait_block_counter=int(self._persist.get("forecast_wait_block_counter", 0)),
             )
 
             transparency_result = self._engine._with_thresholds(
@@ -1381,6 +1429,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "soc_limit": soc_limit,
                 "additional_battery_charge_w": additional_battery_charge_w,
                 "pv_charge_start_export_w": float(pv_charge_start_export_w),
+                "pv_charge_start_counter": int(self._persist.get("pv_charge_start_counter", 0)),
+                "pv_charge_stop_counter": int(self._persist.get("pv_charge_stop_counter", 0)),
+                "pv_charge_hold_export_threshold_w": max(20.0, float(pv_charge_start_export_w) * 0.5),
                 "installed_pv_wp": self._get_installed_pv_wp(),
                 "soc_limit_status": (
                     "not_configured"
