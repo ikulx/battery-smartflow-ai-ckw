@@ -871,6 +871,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if reason == "valley_boost_charge_mixed_forecast":
             return "valley_boost_mixed"
 
+        if reason == "very_cheap_force_charge":
+            return "very_cheap"
+            
         return "none"
     
     async def _async_update_data(self) -> dict[str, Any]:
