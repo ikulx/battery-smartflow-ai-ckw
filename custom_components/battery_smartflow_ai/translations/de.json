@@ -329,6 +329,20 @@
           "good": "Gut"
         }
       },
+      "charge_strategy": {
+        "name": "Ladestrategie",
+        "state": {
+          "none": "Keine spezielle Ladestrategie aktiv",
+          "pv_surplus": "PV-Überschussladung",
+          "planning_latest_start": "Preisladung am spätesten Startzeitpunkt",
+          "planning_forecast_poor": "Preisladung wegen schwacher PV-Prognose",
+          "planning_forecast_mixed": "Preisladung bei gemischter PV-Prognose",
+          "valley_boost": "Preis-Tal-Ladung",
+          "valley_boost_mixed": "Preis-Tal-Ladung, wegen Prognose abgeschwächt",
+          "emergency": "Notladung",
+          "manual": "Manuelle Ladestrategie"
+        }
+      },      
       "forecast_remaining_today_kwh": {
         "name": "PV-Prognose Rest heute"
       },
