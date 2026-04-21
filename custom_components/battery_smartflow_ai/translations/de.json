@@ -339,6 +339,7 @@
           "planning_forecast_mixed": "Preisladung bei gemischter PV-Prognose",
           "valley_boost": "Preis-Tal-Ladung",
           "valley_boost_mixed": "Preis-Tal-Ladung, wegen Prognose abgeschwächt",
+          "very_cheap": "Sehr-billig-Schwelle: Maximalladung",
           "emergency": "Notladung",
           "manual": "Manuelle Ladestrategie"
         }
@@ -494,6 +495,7 @@
           "planning_forecast_poor": "Preisladung wegen schwacher PV-Prognose",
           "planning_forecast_mixed": "Preisladung bei gemischter PV-Prognose",
           "valley_boost_charge_mixed_forecast": "Preis-Tal erkannt, aber wegen gemischter PV-Prognose abgeschwächt",
+          "very_cheap_force_charge": "Sehr-billig-Schwelle erreicht: Maximalladung aktiv",
           "additional_battery_charging_block": "Zusatzakku lädt: Entladung blockiert",
           "soc_min_resume_block": "Entladung blockiert (Wiederfreigabe-Schwelle noch nicht erreicht)",
           "cell_voltage_cutoff_block": "Entladung blockiert (Zellspannungs-Schutz aktiv)",
