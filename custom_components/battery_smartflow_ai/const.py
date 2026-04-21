@@ -314,11 +314,12 @@ CHARGE_STRATEGY_ENUMS = [
     "planning_latest_start",
     "planning_forecast_poor",
     "planning_forecast_mixed",
+    "planning_reality_override",
     "valley_boost",
     "valley_boost_mixed",
+    "very_cheap",
     "emergency",
     "manual",
-    "very_cheap",
 ]
 
 # ==================================================
