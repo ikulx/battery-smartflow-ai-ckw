@@ -71,6 +71,9 @@ class DecisionContext:
     # V4.0.0 optional forecast input
     forecast: Optional[ForecastSummary] = None
 
+    # V4.0.0 live override helper
+    forecast_wait_block_counter: int = 0
+
 
 @dataclass
 class DecisionResult:
@@ -615,6 +618,32 @@ class DecisionEngine:
 
         return enough_soon or enough_next or enough_today or enough_tomorrow
 
+    def _is_valley_price_now(self, ctx: DecisionContext) -> bool:
+        if ctx.price_now is None or not ctx.price_points:
+            return False
+        prices = [p.price for p in ctx.price_points]
+        if not prices:
+            return False
+        valley_threshold = self._compute_valley_threshold(prices, ctx.valley_factor)
+        return float(ctx.price_now) <= float(valley_threshold)
+
+    def _is_real_pv_underperforming(self, ctx: DecisionContext) -> bool:
+        export_too_low = float(ctx.grid_export_w or 0.0) < max(20.0, float(ctx.pv_charge_start_export_w or 0.0) * 0.50)
+        pv_too_low = float(ctx.pv_w or 0.0) < max(150.0, float(ctx.house_load_w or 0.0) * 0.65)
+        deficit_present = float(ctx.grid_import_w or 0.0) > 60.0 or float(ctx.pv_w or 0.0) < float(ctx.house_load_w or 0.0)
+        return export_too_low and pv_too_low and deficit_present
+
+    def _forecast_wait_should_be_overridden(self, ctx: DecisionContext, base_required_kwh: float) -> bool:
+        if not self._forecast_supports_waiting(ctx, base_required_kwh):
+            return False
+        if not self._is_valley_price_now(ctx):
+            return False
+        if ctx.soc >= ctx.soc_max:
+            return False
+        if not self._is_real_pv_underperforming(ctx):
+            return False
+        return int(ctx.forecast_wait_block_counter or 0) >= 3
+
     def _profile_for_discharge(self, profile: dict) -> dict:
         mapped = dict(profile)
         mapped["DEADBAND_W"] = profile.get("DISCHARGE_DEADBAND_W", profile.get("DEADBAND_W"))
@@ -737,6 +766,19 @@ class DecisionEngine:
             if hours_between_peaks < 6:
                 base_required_kwh *= 1.4
 
+        if self._forecast_wait_should_be_overridden(ctx, base_required_kwh):
+            return self._with_thresholds(
+                ctx,
+                DecisionResult(
+                    action="charge",
+                    ac_mode="input",
+                    charge_w=ctx.max_charge_w,
+                    discharge_w=0.0,
+                    reason="planning_forecast_reality_override",
+                    target_soc=ctx.soc_max,
+                ),
+            )
+
         if self._forecast_supports_waiting(ctx, base_required_kwh):
             return None
 
@@ -763,7 +805,7 @@ class DecisionEngine:
                 if not cheapest_slots:
                     return None
 
-                cheapest_prices = [p.price for p in cheapest_slots]
+                    cheapest_prices = [p.price for p in cheapest_slots]
                 if ctx.price_now > max(cheapest_prices):
                     return None
 
