@@ -28,6 +28,7 @@ from .const import (
     CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS,
     FORECAST_STATUS_ENUMS,
     PV_OUTLOOK_ENUMS,
+    CHARGE_STRATEGY_ENUMS,
 )
 from .device_profiles import DEVICE_PROFILES
 
@@ -114,6 +115,14 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         translation_key="decision_reason",
         runtime_key="decision_reason",
         icon="mdi:head-question-outline",
+    ),
+    ZendureSensorEntityDescription(
+        key="charge_strategy",
+        translation_key="charge_strategy",
+        runtime_key="charge_strategy",
+        device_class=SensorDeviceClass.ENUM,
+        options=CHARGE_STRATEGY_ENUMS,
+        icon="mdi:strategy",
     ),
     ZendureSensorEntityDescription(
         key="adaptive_peak_active",
