@@ -312,6 +312,7 @@ def build_forecast_summary(
     today_entity_id: str | None,
     tomorrow_entity_id: str | None,
     installed_pv_wp: float = 0.0,
+    forecast_base_load_w: float = 300.0,
 ) -> ForecastSummary:
     """
     Build a normalized optional forecast summary from two daily forecast sensors.
