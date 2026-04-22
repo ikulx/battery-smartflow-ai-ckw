@@ -71,11 +71,9 @@ class DecisionContext:
     # V4.0.0 optional forecast input
     forecast: Optional[ForecastSummary] = None
 
-    # PV charge hysteresis / debounce
+    # Runtime counters / debounce
     pv_charge_start_counter: int = 0
     pv_charge_stop_counter: int = 0
-
-    # Forecast reality override
     forecast_wait_block_counter: int = 0
 
 
@@ -137,90 +135,6 @@ class AdditionalBatteryBlockRule(BaseRule):
                 ),
             )
         return None
-
-
-class ManualRule(BaseRule):
-    def evaluate(self, engine, ctx):
-        if ctx.ai_mode != "manual":
-            return None
-
-        if ctx.manual_action == "charge":
-            return engine._with_thresholds(
-                ctx,
-                DecisionResult(
-                    action="charge",
-                    ac_mode="input",
-                    charge_w=ctx.max_charge_w,
-                    discharge_w=0.0,
-                    reason="manual_charge",
-                ),
-            )
-
-        if ctx.manual_action == MANUAL_CONST_DISCHARGE:
-            return engine._with_thresholds(
-                ctx,
-                DecisionResult(
-                    action="discharge",
-                    ac_mode="output",
-                    charge_w=0.0,
-                    discharge_w=float(ctx.max_discharge_w),
-                    reason="manual_constant_discharge",
-                ),
-            )
-
-        if ctx.manual_action == "discharge":
-            discharge_w = engine._delta_discharge(ctx)
-            return engine._with_thresholds(
-                ctx,
-                DecisionResult(
-                    action="discharge",
-                    ac_mode="output",
-                    charge_w=0.0,
-                    discharge_w=discharge_w,
-                    reason="manual_discharge",
-                ),
-            )
-
-        return engine._with_thresholds(
-            ctx,
-            DecisionResult(
-                action="idle",
-                ac_mode="input",
-                charge_w=0.0,
-                discharge_w=0.0,
-                reason="manual_idle",
-            ),
-        )
-
-
-class VeryCheapRule(BaseRule):
-    def evaluate(self, engine, ctx):
-        if ctx.price_now is None or ctx.very_cheap_price is None:
-            return None
-
-        if ctx.soc >= ctx.soc_max:
-            return None
-
-        try:
-            very_cheap_price = float(ctx.very_cheap_price)
-            price_now = float(ctx.price_now)
-        except Exception:
-            return None
-
-        if price_now > very_cheap_price:
-            return None
-
-        return engine._with_thresholds(
-            ctx,
-            DecisionResult(
-                action="charge",
-                ac_mode="input",
-                charge_w=ctx.max_charge_w,
-                discharge_w=0.0,
-                reason="very_cheap_force_charge",
-                target_soc=ctx.soc_max,
-            ),
-        )
 
 
 class PeakRule(BaseRule):
@@ -301,6 +215,33 @@ class PlanningRule(BaseRule):
         return engine._evaluate_adaptive_planning(ctx)
 
 
+class VeryCheapRule(BaseRule):
+    def evaluate(self, engine, ctx):
+        if ctx.ai_mode not in ("automatic", "winter"):
+            return None
+
+        if ctx.price_now is None or ctx.very_cheap_price is None:
+            return None
+
+        if ctx.soc >= ctx.soc_max:
+            return None
+
+        if float(ctx.price_now) > float(ctx.very_cheap_price):
+            return None
+
+        return engine._with_thresholds(
+            ctx,
+            DecisionResult(
+                action="charge",
+                ac_mode="input",
+                charge_w=float(ctx.max_charge_w),
+                discharge_w=0.0,
+                reason="very_cheap_force_charge",
+                target_soc=ctx.soc_max,
+            ),
+        )
+
+
 class ValleyBoostRule(BaseRule):
     def evaluate(self, engine, ctx):
         if ctx.ai_mode not in ("winter", "automatic") or ctx.season != "winter":
@@ -352,6 +293,75 @@ class ValleyBoostRule(BaseRule):
         )
 
 
+class ValleyOpportunityRule(BaseRule):
+    def evaluate(self, engine, ctx):
+        """
+        Opportunistische Tal-Ladung:
+        Wenn Preis im Tal ist, Akku noch Platz hat und real kaum PV hilft,
+        soll nicht passiv gewartet werden.
+        """
+        if ctx.ai_mode not in ("automatic", "winter") or ctx.season != "winter":
+            return None
+
+        if ctx.price_now is None:
+            return None
+
+        if ctx.soc >= ctx.soc_max:
+            return None
+
+        if not ctx.price_points:
+            return None
+
+        if not engine._is_valley_price_now(ctx):
+            return None
+
+        # Diese Regel ist bewusst für die Situation gedacht:
+        # Preis gut, aber real kaum noch PV/Überschuss.
+        if not engine._is_real_pv_underperforming(ctx):
+            return None
+
+        soc_gap_pct = max(0.0, ctx.soc_max - ctx.soc)
+        required_kwh = ctx.battery_capacity_kwh * (soc_gap_pct / 100.0)
+
+        if required_kwh <= 0.0:
+            return None
+
+        # Bei sehr kleiner Lücke nicht unnötig hart laden
+        charge_w = float(ctx.max_charge_w)
+        reason = "valley_opportunity_charge"
+
+        # Gute Prognose + nur leichte Unterdeckung -> noch zurückhaltend bleiben
+        if engine._forecast_available(ctx):
+            outlook = engine._forecast_outlook(ctx)
+
+            if outlook == "good":
+                # Wenn Forecast gut ist, soll die Opportunity-Regel nur greifen,
+                # wenn die Realität schon mehrfach klar dagegen spricht.
+                if int(ctx.forecast_wait_block_counter or 0) < 2:
+                    return None
+                charge_w = max(400.0, float(ctx.max_charge_w) * 0.70)
+
+            elif outlook == "mixed":
+                charge_w = max(500.0, float(ctx.max_charge_w) * 0.80)
+                reason = "valley_opportunity_charge_mixed_forecast"
+
+        # Wenn bereits minimale PV-Ladung läuft, nicht auf 0/1 springen,
+        # sondern sauber in AC-Ladung übernehmen.
+        charge_w = max(charge_w, 400.0)
+
+        return engine._with_thresholds(
+            ctx,
+            DecisionResult(
+                action="charge",
+                ac_mode="input",
+                charge_w=charge_w,
+                discharge_w=0.0,
+                reason=reason,
+                target_soc=ctx.soc_max,
+            ),
+        )
+
+
 class PvRule(BaseRule):
     def evaluate(self, engine, ctx):
         planning = engine._evaluate_adaptive_planning(ctx)
@@ -365,13 +375,11 @@ class PvRule(BaseRule):
         pv_w = float(ctx.pv_w or 0.0)
         prev_charge_w = float(ctx.prev_charge_w or 0.0)
         prev_discharge_w = float(ctx.prev_discharge_w or 0.0)
-
         start_export_threshold = float(ctx.pv_charge_start_export_w or 0.0)
-        hold_export_threshold = max(20.0, start_export_threshold * 0.5)
 
-        charge_active = prev_charge_w > 0.0
+        has_direct_surplus = export_w >= start_export_threshold
+
         discharge_active = prev_discharge_w > 0.0
-
         if discharge_active:
             return None
 
@@ -384,25 +392,24 @@ class PvRule(BaseRule):
             and ctx.price_now <= engine._compute_valley_threshold(prices, ctx.valley_factor)
         )
 
+        # Debounce/Hysterese aus dem Coordinator
+        start_counter = int(ctx.pv_charge_start_counter or 0)
+        stop_counter = int(ctx.pv_charge_stop_counter or 0)
+
         keepalive_charge = (
-            charge_active
-            and pv_w >= max(150.0, prev_charge_w * 0.35)
+            prev_charge_w > 0.0
+            and (
+                export_w >= max(20.0, start_export_threshold * 0.5)
+                or stop_counter < 3
+            )
             and not valley_active
         )
 
-        has_start_surplus = export_w >= start_export_threshold
-        has_hold_surplus = export_w >= hold_export_threshold
+        # Start nicht sofort bei 1 Zyklus
+        start_allowed = has_direct_surplus and start_counter >= 2
 
-        if not charge_active:
-            if not has_start_surplus and not keepalive_charge:
-                return None
-
-            if has_start_surplus and int(ctx.pv_charge_start_counter or 0) < 3:
-                return None
-        else:
-            if not has_hold_surplus and not keepalive_charge:
-                if int(ctx.pv_charge_stop_counter or 0) >= 4:
-                    return None
+        if not start_allowed and not keepalive_charge:
+            return None
 
         charge_w = engine._delta_charge(ctx)
 
@@ -443,6 +450,60 @@ class SummerRule(BaseRule):
         return None
 
 
+class ManualRule(BaseRule):
+    def evaluate(self, engine, ctx):
+        if ctx.ai_mode != "manual":
+            return None
+
+        if ctx.manual_action == "charge":
+            return engine._with_thresholds(
+                ctx,
+                DecisionResult(
+                    action="charge",
+                    ac_mode="input",
+                    charge_w=ctx.max_charge_w,
+                    discharge_w=0.0,
+                    reason="manual_charge",
+                ),
+            )
+
+        if ctx.manual_action == MANUAL_CONST_DISCHARGE:
+            return engine._with_thresholds(
+                ctx,
+                DecisionResult(
+                    action="discharge",
+                    ac_mode="output",
+                    charge_w=0.0,
+                    discharge_w=float(ctx.max_discharge_w),
+                    reason="manual_constant_discharge",
+                ),
+            )
+
+        if ctx.manual_action == "discharge":
+            discharge_w = engine._delta_discharge(ctx)
+            return engine._with_thresholds(
+                ctx,
+                DecisionResult(
+                    action="discharge",
+                    ac_mode="output",
+                    charge_w=0.0,
+                    discharge_w=discharge_w,
+                    reason="manual_discharge",
+                ),
+            )
+
+        return engine._with_thresholds(
+            ctx,
+            DecisionResult(
+                action="idle",
+                ac_mode="input",
+                charge_w=0.0,
+                discharge_w=0.0,
+                reason="manual_idle",
+            ),
+        )
+
+
 class DecisionEngine:
     def __init__(self):
         self._rules = [
@@ -455,6 +516,7 @@ class DecisionEngine:
             ArbitrageRule(),
             PlanningRule(),
             ValleyBoostRule(),
+            ValleyOpportunityRule(),
             SummerRule(),
         ]
 
@@ -541,6 +603,17 @@ class DecisionEngine:
 
         return float(ctx.price_now) >= float(effective_threshold)
 
+    def _is_valley_price_now(self, ctx: DecisionContext) -> bool:
+        if ctx.price_now is None or not ctx.price_points:
+            return False
+
+        prices = [p.price for p in ctx.price_points]
+        if not prices:
+            return False
+
+        valley_threshold = self._compute_valley_threshold(prices, ctx.valley_factor)
+        return float(ctx.price_now) <= float(valley_threshold)
+
     def _forecast_available(self, ctx: DecisionContext) -> bool:
         return bool(
             ctx.forecast is not None
@@ -588,10 +661,9 @@ class DecisionEngine:
         """
         Soft forecast influence for planning charge need.
 
-        - good outlook: lower need for grid charge
+        - good outlook: lower need
         - mixed outlook: slightly reduced need
         - poor outlook: slightly increased need
-        - unknown: neutral
         """
         outlook = self._forecast_outlook(ctx)
 
@@ -608,11 +680,6 @@ class DecisionEngine:
         ctx: DecisionContext,
         base_required_kwh: float,
     ) -> bool:
-        """
-        Conservative rule:
-        If forecast is clearly good and there is meaningful expected PV energy
-        soon / later today / tomorrow, we may skip a price-driven grid charge for now.
-        """
         if not self._forecast_available(ctx):
             return False
 
@@ -635,31 +702,21 @@ class DecisionEngine:
 
         return enough_soon or enough_next or enough_today or enough_tomorrow
 
-    def _is_valley_price_now(self, ctx: DecisionContext) -> bool:
-        if ctx.price_now is None or not ctx.price_points:
-            return False
-        prices = [p.price for p in ctx.price_points]
-        if not prices:
-            return False
-        valley_threshold = self._compute_valley_threshold(prices, ctx.valley_factor)
-        return float(ctx.price_now) <= float(valley_threshold)
-
     def _is_real_pv_underperforming(self, ctx: DecisionContext) -> bool:
-        export_too_low = float(ctx.grid_export_w or 0.0) < max(20.0, float(ctx.pv_charge_start_export_w or 0.0) * 0.50)
-        pv_too_low = float(ctx.pv_w or 0.0) < max(150.0, float(ctx.house_load_w or 0.0) * 0.65)
-        deficit_present = float(ctx.grid_import_w or 0.0) > 60.0 or float(ctx.pv_w or 0.0) < float(ctx.house_load_w or 0.0)
-        return export_too_low and pv_too_low and deficit_present
+        """
+        Realität schlägt Prognose:
+        wenig PV / kaum Überschuss / echter Bezug trotz vermeintlich guter Lage.
+        """
+        export_w = float(ctx.grid_export_w or 0.0)
+        import_w = float(ctx.grid_import_w or 0.0)
+        pv_w = float(ctx.pv_w or 0.0)
+        start_export_threshold = float(ctx.pv_charge_start_export_w or 0.0)
 
-    def _forecast_wait_should_be_overridden(self, ctx: DecisionContext, base_required_kwh: float) -> bool:
-        if not self._forecast_supports_waiting(ctx, base_required_kwh):
-            return False
-        if not self._is_valley_price_now(ctx):
-            return False
-        if ctx.soc >= ctx.soc_max:
-            return False
-        if not self._is_real_pv_underperforming(ctx):
-            return False
-        return int(ctx.forecast_wait_block_counter or 0) >= 3
+        weak_export = export_w < max(40.0, start_export_threshold * 0.50)
+        weak_pv = pv_w < max(250.0, start_export_threshold * 2.0)
+        real_import = import_w > 80.0
+
+        return (weak_export and weak_pv) or real_import
 
     def _profile_for_discharge(self, profile: dict) -> dict:
         mapped = dict(profile)
@@ -747,7 +804,7 @@ class DecisionEngine:
         if not prices:
             return None
 
-        if ctx.very_cheap_price is not None and ctx.price_now > ctx.very_cheap_price:
+        if ctx.very_cheap_price is not None and ctx.price_now <= ctx.very_cheap_price:
             return None
 
         valley_threshold = self._compute_valley_threshold(prices, ctx.valley_factor)
@@ -783,21 +840,15 @@ class DecisionEngine:
             if hours_between_peaks < 6:
                 base_required_kwh *= 1.4
 
-        if self._forecast_wait_should_be_overridden(ctx, base_required_kwh):
-            return self._with_thresholds(
-                ctx,
-                DecisionResult(
-                    action="charge",
-                    ac_mode="input",
-                    charge_w=ctx.max_charge_w,
-                    discharge_w=0.0,
-                    reason="planning_forecast_reality_override",
-                    target_soc=ctx.soc_max,
-                ),
-            )
-
         if self._forecast_supports_waiting(ctx, base_required_kwh):
-            return None
+            # Aber: Wenn Prognose gut ist, Realität aber wiederholt schwach ausfällt,
+            # darf später die Opportunity-Regel übernehmen.
+            if not (
+                self._is_valley_price_now(ctx)
+                and self._is_real_pv_underperforming(ctx)
+                and int(ctx.forecast_wait_block_counter or 0) >= 2
+            ):
+                return None
 
         required_kwh = base_required_kwh * self._forecast_required_kwh_factor(ctx)
         required_kwh = max(required_kwh, min(base_required_kwh, 0.25))
@@ -834,6 +885,12 @@ class DecisionEngine:
                     reason = "planning_forecast_poor"
                 elif outlook == "mixed":
                     reason = "planning_forecast_mixed"
+                elif (
+                    outlook == "good"
+                    and self._is_real_pv_underperforming(ctx)
+                    and int(ctx.forecast_wait_block_counter or 0) >= 2
+                ):
+                    reason = "planning_forecast_reality_override"
 
             return self._with_thresholds(
                 ctx,
