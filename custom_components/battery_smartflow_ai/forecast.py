@@ -157,11 +157,21 @@ def _get_interval_power_kw(item: dict[str, Any]) -> float | None:
     return _to_float(item.get("pv_estimate"), None)
 
 
+def _net_interval_energy_kwh(
+    energy_kwh: float,
+    duration_h: float,
+    base_load_w: float,
+) -> float:
+    base_kwh = (max(0.0, float(base_load_w or 0.0)) / 1000.0) * max(0.0, float(duration_h or 0.0))
+    return max(0.0, float(energy_kwh or 0.0) - base_kwh)
+
+
 def _compute_window_energy_from_intervals(
     intervals: list[dict[str, Any]],
     now_local: datetime,
     hours_ahead: float,
     slot_minutes: int,
+    forecast_base_load_w: float,
 ) -> float:
     if not intervals:
         return 0.0
@@ -189,7 +199,13 @@ def _compute_window_energy_from_intervals(
         if overlap_h <= 0:
             continue
 
-        total_kwh += float(power_kw) * overlap_h
+        gross_kwh = float(power_kw) * overlap_h
+        net_kwh = _net_interval_energy_kwh(
+            energy_kwh=gross_kwh,
+            duration_h=overlap_h,
+            base_load_w=forecast_base_load_w,
+        )
+        total_kwh += net_kwh
 
     return total_kwh
 
@@ -221,8 +237,6 @@ def _compute_peaks_for_sensor(
     """
     Returns:
         peak_today_w, peak_tomorrow_w
-
-    Works on the sensor's own attribute set.
     """
     attrs, found = _read_sensor_attrs(hass, entity_id)
     if not found:
@@ -247,18 +261,72 @@ def _compute_peaks_for_sensor(
     return 0.0, 0.0
 
 
+def _compute_daily_net_energy_for_sensor(
+    hass: HomeAssistant,
+    entity_id: str | None,
+    fallback_state_kwh: float | None,
+    target_date,
+    forecast_base_load_w: float,
+) -> float:
+    attrs, found = _read_sensor_attrs(hass, entity_id)
+    if not found:
+        return max(0.0, float(fallback_state_kwh or 0.0))
+
+    hourly = _iter_hourly_intervals(attrs)
+    if hourly:
+        total_kwh = 0.0
+        for item in hourly:
+            start = _normalize_dt(item.get("period_start"))
+            if start is None or start.date() != target_date:
+                continue
+
+            power_kw = _get_interval_power_kw(item)
+            if power_kw is None or power_kw <= 0:
+                continue
+
+            gross_kwh = float(power_kw) * 1.0
+            total_kwh += _net_interval_energy_kwh(
+                energy_kwh=gross_kwh,
+                duration_h=1.0,
+                base_load_w=forecast_base_load_w,
+            )
+        return total_kwh
+
+    halfhour = _iter_halfhour_intervals(attrs)
+    if halfhour:
+        total_kwh = 0.0
+        for item in halfhour:
+            start = _normalize_dt(item.get("period_start"))
+            if start is None or start.date() != target_date:
+                continue
+
+            power_kw = _get_interval_power_kw(item)
+            if power_kw is None or power_kw <= 0:
+                continue
+
+            gross_kwh = float(power_kw) * 0.5
+            total_kwh += _net_interval_energy_kwh(
+                energy_kwh=gross_kwh,
+                duration_h=0.5,
+                base_load_w=forecast_base_load_w,
+            )
+        return total_kwh
+
+    return max(0.0, float(fallback_state_kwh or 0.0))
+
+
 def _compute_subday_metrics(
     hass: HomeAssistant,
     today_entity_id: str | None,
     tomorrow_entity_id: str | None,
+    forecast_base_load_w: float,
 ) -> tuple[float, float, float, float]:
     """
     Returns:
         next_3h_kwh, next_6h_kwh, peak_today_w, peak_tomorrow_w
 
-    Priority:
-    - detailedHourly (preferred)
-    - fallback to detailedForecast
+    - next_3h / next_6h are NET after base load
+    - peaks remain gross W
     """
     attrs, found = _read_sensor_attrs(hass, today_entity_id)
     if not found:
@@ -274,12 +342,14 @@ def _compute_subday_metrics(
             now_local=now_local,
             hours_ahead=3.0,
             slot_minutes=60,
+            forecast_base_load_w=forecast_base_load_w,
         )
         next_6h_kwh = _compute_window_energy_from_intervals(
             hourly,
             now_local=now_local,
             hours_ahead=6.0,
             slot_minutes=60,
+            forecast_base_load_w=forecast_base_load_w,
         )
         peak_today_w, _ = _compute_peaks_for_sensor(hass, today_entity_id)
         _, peak_tomorrow_w = _compute_peaks_for_sensor(hass, tomorrow_entity_id)
@@ -292,12 +362,14 @@ def _compute_subday_metrics(
             now_local=now_local,
             hours_ahead=3.0,
             slot_minutes=30,
+            forecast_base_load_w=forecast_base_load_w,
         )
         next_6h_kwh = _compute_window_energy_from_intervals(
             halfhour,
             now_local=now_local,
             hours_ahead=6.0,
             slot_minutes=30,
+            forecast_base_load_w=forecast_base_load_w,
         )
         peak_today_w, _ = _compute_peaks_for_sensor(hass, today_entity_id)
         _, peak_tomorrow_w = _compute_peaks_for_sensor(hass, tomorrow_entity_id)
@@ -317,11 +389,10 @@ def build_forecast_summary(
     """
     Build a normalized optional forecast summary from two daily forecast sensors.
 
-    - today/tomorrow totals come from sensor states
-    - 3h/6h come from today sensor attributes when available
-    - peak today comes from today sensor attributes
-    - peak tomorrow comes from tomorrow sensor attributes
-    - forecast always remains optional
+    - today/tomorrow totals are NET after base load where interval data is available
+    - next_3h / next_6h are NET after base load
+    - peaks remain gross W
+    - forecast remains optional
     """
     if not today_entity_id and not tomorrow_entity_id:
         return ForecastSummary(
@@ -330,12 +401,12 @@ def build_forecast_summary(
             pv_outlook=PV_OUTLOOK_UNKNOWN,
         )
 
-    today_kwh, today_found = _read_sensor_kwh(hass, today_entity_id)
-    tomorrow_kwh, tomorrow_found = _read_sensor_kwh(hass, tomorrow_entity_id)
+    today_kwh_raw, today_found = _read_sensor_kwh(hass, today_entity_id)
+    tomorrow_kwh_raw, tomorrow_found = _read_sensor_kwh(hass, tomorrow_entity_id)
 
     any_configured = bool(today_entity_id or tomorrow_entity_id)
     any_found = bool(today_found or tomorrow_found)
-    any_valid = today_kwh is not None or tomorrow_kwh is not None
+    any_valid = today_kwh_raw is not None or tomorrow_kwh_raw is not None
 
     if any_configured and (not any_found or not any_valid):
         return ForecastSummary(
@@ -344,13 +415,31 @@ def build_forecast_summary(
             pv_outlook=PV_OUTLOOK_UNKNOWN,
         )
 
-    remaining_today_kwh = max(0.0, float(today_kwh or 0.0))
-    tomorrow_kwh_val = max(0.0, float(tomorrow_kwh or 0.0))
+    now_local = dt_util.as_local(dt_util.utcnow())
+    today = now_local.date()
+    tomorrow = (now_local + timedelta(days=1)).date()
+
+    remaining_today_kwh = _compute_daily_net_energy_for_sensor(
+        hass=hass,
+        entity_id=today_entity_id,
+        fallback_state_kwh=today_kwh_raw,
+        target_date=today,
+        forecast_base_load_w=forecast_base_load_w,
+    )
+
+    tomorrow_kwh_val = _compute_daily_net_energy_for_sensor(
+        hass=hass,
+        entity_id=tomorrow_entity_id,
+        fallback_state_kwh=tomorrow_kwh_raw,
+        target_date=tomorrow,
+        forecast_base_load_w=forecast_base_load_w,
+    )
 
     next_3h_kwh, next_6h_kwh, peak_today_w, peak_tomorrow_w = _compute_subday_metrics(
         hass=hass,
         today_entity_id=today_entity_id,
         tomorrow_entity_id=tomorrow_entity_id,
+        forecast_base_load_w=forecast_base_load_w,
     )
 
     pv_outlook = _classify_pv_outlook(
@@ -363,11 +452,11 @@ def build_forecast_summary(
     return ForecastSummary(
         status=FORECAST_STATUS_AVAILABLE,
         source_name="Solcast",
-        remaining_today_kwh=round(remaining_today_kwh, 3),
-        tomorrow_kwh=round(tomorrow_kwh_val, 3),
-        next_3h_kwh=round(next_3h_kwh, 3),
-        next_6h_kwh=round(next_6h_kwh, 3),
-        peak_today_w=round(peak_today_w, 1),
-        peak_tomorrow_w=round(peak_tomorrow_w, 1),
+        remaining_today_kwh=round(float(remaining_today_kwh), 3),
+        tomorrow_kwh=round(float(tomorrow_kwh_val), 3),
+        next_3h_kwh=round(float(next_3h_kwh), 3),
+        next_6h_kwh=round(float(next_6h_kwh), 3),
+        peak_today_w=round(float(peak_today_w), 1),
+        peak_tomorrow_w=round(float(peak_tomorrow_w), 1),
         pv_outlook=pv_outlook,
     )
