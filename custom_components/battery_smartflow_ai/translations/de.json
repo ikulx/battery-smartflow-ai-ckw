@@ -303,6 +303,9 @@
       },
       "very_cheap_price": {
         "name": "Sehr-billig Schwelle"
+      },
+      "forecast_base_load": {
+        "name": "Grundlast"
       }
     },
     "sensor": {
