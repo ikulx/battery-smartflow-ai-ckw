@@ -925,6 +925,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if reason == "very_cheap_force_charge":
             return "very_cheap"
+
+        if reason == "valley_opportunity_charge":
+            return "valley_opportunity"
+
+        if reason == "valley_opportunity_charge_mixed_forecast":
+            return "valley_opportunity_mixed"
             
         return "none"
     
