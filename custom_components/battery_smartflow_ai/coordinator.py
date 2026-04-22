@@ -521,6 +521,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _update_pv_charge_hysteresis(
         self,
+        grid_import_w: float,
         grid_export_w: float,
         pv_w: float,
         pv_charge_start_export_w: float,
@@ -532,13 +533,18 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         start_threshold = float(pv_charge_start_export_w or 0.0)
         hold_threshold = max(20.0, start_threshold * 0.5)
+        stop_import_tolerance_w = 80.0
 
         has_start_surplus = float(grid_export_w or 0.0) >= start_threshold
         has_hold_surplus = float(grid_export_w or 0.0) >= hold_threshold
+        import_is_small = float(grid_import_w or 0.0) <= stop_import_tolerance_w
 
         if prev_charge_active:
             start_counter = 0
-            if has_hold_surplus:
+
+            # Laufende PV-Ladung nicht wegen kleinem Übersteuern sofort stoppen.
+            # Solange der Bezug klein bleibt, darf der Delta-Regler sanft abregeln.
+            if has_hold_surplus or import_is_small:
                 stop_counter = 0
             else:
                 stop_counter += 1
@@ -1051,6 +1057,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
             pv_charge_start_counter, pv_charge_stop_counter = self._update_pv_charge_hysteresis(
+                grid_import_w=float(grid_import or 0.0),
                 grid_export_w=float(grid_export or 0.0),
                 pv_w=float(pv_w or 0.0),
                 pv_charge_start_export_w=float(pv_charge_start_export_w),
@@ -1432,6 +1439,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "pv_charge_start_counter": int(self._persist.get("pv_charge_start_counter", 0)),
                 "pv_charge_stop_counter": int(self._persist.get("pv_charge_stop_counter", 0)),
                 "pv_charge_hold_export_threshold_w": max(20.0, float(pv_charge_start_export_w) * 0.5),
+                "pv_charge_stop_import_tolerance_w": 80.0,
                 "installed_pv_wp": self._get_installed_pv_wp(),
                 "soc_limit_status": (
                     "not_configured"
