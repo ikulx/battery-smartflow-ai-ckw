@@ -58,6 +58,7 @@ from .const import (
     SETTING_CELL_VOLTAGE_CUTOFF,
     SETTING_CELL_VOLTAGE_RESUME,
     SETTING_PV_CHARGE_START_EXPORT_W,
+    SETTING_FORECAST_BASE_LOAD,
     # defaults
     DEFAULT_SOC_MIN,
     DEFAULT_SOC_MAX,
@@ -79,6 +80,7 @@ from .const import (
     DEFAULT_CELL_VOLTAGE_CUTOFF,
     DEFAULT_CELL_VOLTAGE_RESUME,
     DEFAULT_PV_CHARGE_START_EXPORT_W,
+    DEFAULT_FORECAST_BASE_LOAD,
     # modes
     AI_MODE_AUTOMATIC,
     AI_MODE_SUMMER,
@@ -1006,6 +1008,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 SETTING_PROFIT_MARGIN_PCT,
                 DEFAULT_PROFIT_MARGIN_PCT,
             )
+            forecast_base_load_w = self._get_setting(
+                SETTING_FORECAST_BASE_LOAD,
+                DEFAULT_FORECAST_BASE_LOAD,
+            )
 
             ai_mode = str(self.runtime_mode.get("ai_mode", AI_MODE_AUTOMATIC))
             manual_action = str(self.runtime_mode.get("manual_action", MANUAL_STANDBY))
@@ -1023,6 +1029,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 today_entity_id=self.entities.pv_forecast_today,
                 tomorrow_entity_id=self.entities.pv_forecast_tomorrow,
                 installed_pv_wp=self._get_installed_pv_wp(),
+                forecast_base_load_w=float(forecast_base_load_w),
             )
 
             additional_battery_charge_w = _to_float(
@@ -1498,6 +1505,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "forecast_peak_tomorrow_w": float(forecast_summary.peak_tomorrow_w),
                 "forecast_source_name": forecast_summary.source_name,
                 "forecast_wait_block_counter": int(self._persist.get("forecast_wait_block_counter", 0)),
+                "forecast_base_load_w": float(forecast_base_load_w),
             }
 
             def _iso_or_none(val):
