@@ -39,6 +39,8 @@ from .const import (
     DEFAULT_VERY_CHEAP_PRICE,
     SETTING_PV_CHARGE_START_EXPORT_W,
     DEFAULT_PV_CHARGE_START_EXPORT_W,
+    SETTING_FORECAST_BASE_LOAD,
+    DEFAULT_FORECAST_BASE_LOAD,
 )
 
 
@@ -96,6 +98,16 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         native_step=10,
         native_unit_of_measurement="W",
         icon="mdi:solar-power-variant",
+    ),
+    ZendureNumberEntityDescription(
+        key=SETTING_FORECAST_BASE_LOAD,
+        translation_key="forecast_base_load",
+        runtime_key=SETTING_FORECAST_BASE_LOAD,
+        native_min_value=0,
+        native_max_value=3000,
+        native_step=10,
+        native_unit_of_measurement="W",
+        icon="mdi:home-lightning-bolt",
     ),
     ZendureNumberEntityDescription(
         key=SETTING_SOC_MIN,
@@ -187,6 +199,7 @@ def _default_for_key(key: str) -> float:
         SETTING_VALLEY_FACTOR: DEFAULT_VALLEY_FACTOR,
         SETTING_VERY_CHEAP_PRICE: DEFAULT_VERY_CHEAP_PRICE,
         SETTING_PV_CHARGE_START_EXPORT_W: DEFAULT_PV_CHARGE_START_EXPORT_W,
+        SETTING_FORECAST_BASE_LOAD: DEFAULT_FORECAST_BASE_LOAD,
         SETTING_SOC_MIN: DEFAULT_SOC_MIN,
         SETTING_SOC_MAX: DEFAULT_SOC_MAX,
         SETTING_MAX_CHARGE: DEFAULT_MAX_CHARGE,
