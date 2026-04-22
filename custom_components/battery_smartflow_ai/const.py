@@ -91,6 +91,8 @@ SETTING_CELL_VOLTAGE_RESUME = "cell_voltage_resume"
 
 SETTING_PV_CHARGE_START_EXPORT_W = "pv_charge_start_export_w"
 
+SETTING_FORECAST_BASE_LOAD = "forecast_base_load"
+
 # Default
 DEFAULT_PACK_CAPACITY_KWH = 2.88
 DEFAULT_BATTERY_PACKS = 1
@@ -109,6 +111,8 @@ DEFAULT_CELL_VOLTAGE_CUTOFF = 3.00
 DEFAULT_CELL_VOLTAGE_RESUME = 3.18
 
 DEFAULT_PV_CHARGE_START_EXPORT_W = 80.0
+
+DEFAULT_FORECAST_BASE_LOAD = 300.0
 
 # --------------------------------------------------
 # Device profiles (V1.5.x / V3.2.0 overrides)
