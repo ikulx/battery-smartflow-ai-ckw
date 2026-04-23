@@ -354,7 +354,7 @@
         }
       },      
       "forecast_remaining_today_kwh": {
-        "name": "PV-Prognose Rest heute"
+        "name": "PV-Prognose heute"
       },
       "forecast_tomorrow_kwh": {
         "name": "PV-Prognose morgen"
