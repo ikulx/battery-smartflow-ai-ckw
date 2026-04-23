@@ -344,11 +344,8 @@
           "very_cheap": "Sehr-billig-Schwelle: Maximalladung",
           "valley_boost": "Preis-Tal-Ladung",
           "valley_boost_mixed": "Preis-Tal-Ladung, wegen Prognose abgeschwächt",
-          "very_cheap": "Sehr-billig-Schwelle: Maximalladung",
           "emergency": "Notladung",
           "manual": "Manuelle Ladestrategie",
-          "planning_reality_override": "Preisladung wegen schwacher realer PV trotz guter Prognose",
-          "very_cheap": "Maximalladung wegen Sehr-billig-Schwelle",
           "valley_opportunity": "Opportunistische Tal-Ladung",
           "valley_opportunity_mixed": "Opportunistische Tal-Ladung bei gemischter Prognose"
         }
@@ -507,7 +504,6 @@
           "valley_opportunity_charge_mixed_forecast": "Preis-Tal genutzt bei gemischter Prognose und schwacher realer PV",
           "valley_boost_charge_mixed_forecast": "Preis-Tal erkannt, aber wegen gemischter PV-Prognose abgeschwächt",
           "planning_forecast_reality_override": "Preisladung gestartet: reale PV zu schwach trotz guter Prognose",
-          "very_cheap_force_charge": "Sehr-billig-Schwelle erreicht: Maximalladung aktiv",
           "very_cheap_force_charge": "Sehr-billig-Schwelle erreicht: Maximalladung aktiv",
           "additional_battery_charging_block": "Zusatzakku lädt: Entladung blockiert",
           "soc_min_resume_block": "Entladung blockiert (Wiederfreigabe-Schwelle noch nicht erreicht)",
