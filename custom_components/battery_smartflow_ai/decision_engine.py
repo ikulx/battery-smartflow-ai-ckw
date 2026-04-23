@@ -212,6 +212,8 @@ class ArbitrageRule(BaseRule):
 
 class PlanningRule(BaseRule):
     def evaluate(self, engine, ctx):
+        if engine._pv_morning_transition_active(ctx):
+            return None
         return engine._evaluate_adaptive_planning(ctx)
 
 
@@ -244,6 +246,9 @@ class VeryCheapRule(BaseRule):
 
 class ValleyBoostRule(BaseRule):
     def evaluate(self, engine, ctx):
+        if engine._pv_morning_transition_active(ctx):
+            return None
+
         if ctx.ai_mode not in ("winter", "automatic") or ctx.season != "winter":
             return None
 
@@ -295,6 +300,9 @@ class ValleyBoostRule(BaseRule):
 
 class ValleyOpportunityRule(BaseRule):
     def evaluate(self, engine, ctx):
+        if engine._pv_morning_transition_active(ctx):
+            return None
+
         if ctx.ai_mode not in ("automatic", "winter") or ctx.season != "winter":
             return None
 
@@ -359,6 +367,7 @@ class PvRule(BaseRule):
             return None
 
         export_w = float(ctx.grid_export_w or 0.0)
+        import_w = float(ctx.grid_import_w or 0.0)
         prev_charge_w = float(ctx.prev_charge_w or 0.0)
         prev_discharge_w = float(ctx.prev_discharge_w or 0.0)
         start_export_threshold = float(ctx.pv_charge_start_export_w or 0.0)
@@ -387,7 +396,8 @@ class PvRule(BaseRule):
             and not valley_active
         )
 
-        start_allowed = has_direct_surplus and start_counter >= 2
+        soft_start_ready = engine._pv_soft_start_ready(ctx)
+        start_allowed = (has_direct_surplus and start_counter >= 2) or soft_start_ready
 
         if not start_allowed and not keepalive_charge:
             return None
@@ -396,6 +406,11 @@ class PvRule(BaseRule):
 
         if keepalive_charge:
             charge_w = max(charge_w, engine._charge_keepalive_w(ctx))
+
+        # In der frühen PV-Anlaufphase nicht sofort wieder auf 0 kippen
+        if soft_start_ready and not keepalive_charge:
+            if import_w <= 60.0:
+                charge_w = max(charge_w, 80.0)
 
         charge_w = min(float(charge_w), float(ctx.max_charge_w))
 
@@ -692,11 +707,58 @@ class DecisionEngine:
         return (weak_export and weak_pv) or real_import
 
     def _charge_keepalive_w(self, ctx: DecisionContext) -> float:
-        """
-        Kleiner Stützwert, damit laufende PV-Ladung bei Wolken nicht
-        sofort auf 0 W zusammenbricht und in idle kippt.
-        """
         return min(float(ctx.max_charge_w), 80.0)
+
+    def _pv_morning_transition_active(self, ctx: DecisionContext) -> bool:
+        """
+        Frühe PV-Anlaufphase:
+        PV steigt bereits, Netzbezug ist klein bis moderat, Export ist an der Schwelle,
+        aber die Lage ist noch nicht stabil genug für dauernde Strategiewechsel.
+        """
+        if ctx.ai_mode == "manual":
+            return False
+
+        if ctx.soc >= ctx.soc_max:
+            return False
+
+        if float(ctx.prev_charge_w or 0.0) > 0.0:
+            return False
+
+        if float(ctx.prev_discharge_w or 0.0) > 0.0:
+            return False
+
+        pv_w = float(ctx.pv_w or 0.0)
+        export_w = float(ctx.grid_export_w or 0.0)
+        import_w = float(ctx.grid_import_w or 0.0)
+        house_load_w = float(ctx.house_load_w or 0.0)
+        start_threshold = float(ctx.pv_charge_start_export_w or 0.0)
+
+        near_export = export_w >= max(10.0, start_threshold * 0.20)
+        pv_covering_load = pv_w >= max(180.0, house_load_w * 0.80)
+        small_import = import_w <= max(120.0, start_threshold)
+
+        return pv_covering_load and small_import and near_export
+
+    def _pv_soft_start_ready(self, ctx: DecisionContext) -> bool:
+        """
+        Weicher PV-Start:
+        bevor echter stabiler Überschuss vorliegt, darf die PV-Ladung
+        schon einrasten, wenn PV die Hauslast fast deckt und der Restbezug klein ist.
+        """
+        if ctx.soc >= ctx.soc_max:
+            return False
+
+        pv_w = float(ctx.pv_w or 0.0)
+        export_w = float(ctx.grid_export_w or 0.0)
+        import_w = float(ctx.grid_import_w or 0.0)
+        house_load_w = float(ctx.house_load_w or 0.0)
+        start_threshold = float(ctx.pv_charge_start_export_w or 0.0)
+
+        pv_nearly_covers_load = pv_w >= max(200.0, house_load_w * 0.90)
+        small_import = import_w <= 60.0
+        some_export = export_w >= max(10.0, start_threshold * 0.15)
+
+        return pv_nearly_covers_load and small_import and some_export
 
     def _profile_for_discharge(self, profile: dict) -> dict:
         mapped = dict(profile)
