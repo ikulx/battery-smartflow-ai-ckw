@@ -295,11 +295,6 @@ class ValleyBoostRule(BaseRule):
 
 class ValleyOpportunityRule(BaseRule):
     def evaluate(self, engine, ctx):
-        """
-        Opportunistische Tal-Ladung:
-        Wenn Preis im Tal ist, Akku noch Platz hat und real kaum PV hilft,
-        soll nicht passiv gewartet werden.
-        """
         if ctx.ai_mode not in ("automatic", "winter") or ctx.season != "winter":
             return None
 
@@ -315,8 +310,6 @@ class ValleyOpportunityRule(BaseRule):
         if not engine._is_valley_price_now(ctx):
             return None
 
-        # Diese Regel ist bewusst für die Situation gedacht:
-        # Preis gut, aber real kaum noch PV/Überschuss.
         if not engine._is_real_pv_underperforming(ctx):
             return None
 
@@ -326,17 +319,13 @@ class ValleyOpportunityRule(BaseRule):
         if required_kwh <= 0.0:
             return None
 
-        # Bei sehr kleiner Lücke nicht unnötig hart laden
         charge_w = float(ctx.max_charge_w)
         reason = "valley_opportunity_charge"
 
-        # Gute Prognose + nur leichte Unterdeckung -> noch zurückhaltend bleiben
         if engine._forecast_available(ctx):
             outlook = engine._forecast_outlook(ctx)
 
             if outlook == "good":
-                # Wenn Forecast gut ist, soll die Opportunity-Regel nur greifen,
-                # wenn die Realität schon mehrfach klar dagegen spricht.
                 if int(ctx.forecast_wait_block_counter or 0) < 2:
                     return None
                 charge_w = max(400.0, float(ctx.max_charge_w) * 0.70)
@@ -345,8 +334,6 @@ class ValleyOpportunityRule(BaseRule):
                 charge_w = max(500.0, float(ctx.max_charge_w) * 0.80)
                 reason = "valley_opportunity_charge_mixed_forecast"
 
-        # Wenn bereits minimale PV-Ladung läuft, nicht auf 0/1 springen,
-        # sondern sauber in AC-Ladung übernehmen.
         charge_w = max(charge_w, 400.0)
 
         return engine._with_thresholds(
@@ -372,7 +359,6 @@ class PvRule(BaseRule):
             return None
 
         export_w = float(ctx.grid_export_w or 0.0)
-        pv_w = float(ctx.pv_w or 0.0)
         prev_charge_w = float(ctx.prev_charge_w or 0.0)
         prev_discharge_w = float(ctx.prev_discharge_w or 0.0)
         start_export_threshold = float(ctx.pv_charge_start_export_w or 0.0)
@@ -392,26 +378,26 @@ class PvRule(BaseRule):
             and ctx.price_now <= engine._compute_valley_threshold(prices, ctx.valley_factor)
         )
 
-        # Debounce/Hysterese aus dem Coordinator
         start_counter = int(ctx.pv_charge_start_counter or 0)
         stop_counter = int(ctx.pv_charge_stop_counter or 0)
 
         keepalive_charge = (
             prev_charge_w > 0.0
-            and (
-                export_w >= max(20.0, start_export_threshold * 0.5)
-                or stop_counter < 3
-            )
+            and stop_counter < 6
             and not valley_active
         )
 
-        # Start nicht sofort bei 1 Zyklus
         start_allowed = has_direct_surplus and start_counter >= 2
 
         if not start_allowed and not keepalive_charge:
             return None
 
         charge_w = engine._delta_charge(ctx)
+
+        if keepalive_charge:
+            charge_w = max(charge_w, engine._charge_keepalive_w(ctx))
+
+        charge_w = min(float(charge_w), float(ctx.max_charge_w))
 
         if charge_w > 0:
             return engine._with_thresholds(
@@ -658,20 +644,11 @@ class DecisionEngine:
             return 0.0
 
     def _forecast_required_kwh_factor(self, ctx: DecisionContext) -> float:
-        """
-        Soft forecast influence for planning charge need.
-
-        - good outlook: lower need
-        - mixed outlook: slightly reduced need
-        - poor outlook: slightly increased need
-        """
-        outlook = self._forecast_outlook(ctx)
-
-        if outlook == "good":
+        if self._forecast_outlook(ctx) == "good":
             return 0.60
-        if outlook == "mixed":
+        if self._forecast_outlook(ctx) == "mixed":
             return 0.90
-        if outlook == "poor":
+        if self._forecast_outlook(ctx) == "poor":
             return 1.15
         return 1.00
 
@@ -703,10 +680,6 @@ class DecisionEngine:
         return enough_soon or enough_next or enough_today or enough_tomorrow
 
     def _is_real_pv_underperforming(self, ctx: DecisionContext) -> bool:
-        """
-        Realität schlägt Prognose:
-        wenig PV / kaum Überschuss / echter Bezug trotz vermeintlich guter Lage.
-        """
         export_w = float(ctx.grid_export_w or 0.0)
         import_w = float(ctx.grid_import_w or 0.0)
         pv_w = float(ctx.pv_w or 0.0)
@@ -717,6 +690,13 @@ class DecisionEngine:
         real_import = import_w > 80.0
 
         return (weak_export and weak_pv) or real_import
+
+    def _charge_keepalive_w(self, ctx: DecisionContext) -> float:
+        """
+        Kleiner Stützwert, damit laufende PV-Ladung bei Wolken nicht
+        sofort auf 0 W zusammenbricht und in idle kippt.
+        """
+        return min(float(ctx.max_charge_w), 80.0)
 
     def _profile_for_discharge(self, profile: dict) -> dict:
         mapped = dict(profile)
@@ -841,8 +821,6 @@ class DecisionEngine:
                 base_required_kwh *= 1.4
 
         if self._forecast_supports_waiting(ctx, base_required_kwh):
-            # Aber: Wenn Prognose gut ist, Realität aber wiederholt schwach ausfällt,
-            # darf später die Opportunity-Regel übernehmen.
             if not (
                 self._is_valley_price_now(ctx)
                 and self._is_real_pv_underperforming(ctx)
