@@ -124,15 +124,9 @@ class EmergencyRule(BaseRule):
 class AdditionalBatteryBlockRule(BaseRule):
     def evaluate(self, engine, ctx):
         if float(ctx.additional_battery_charge_w or 0.0) > 0.0:
-            return engine._with_thresholds(
+            return engine._idle_result(
                 ctx,
-                DecisionResult(
-                    action="idle",
-                    ac_mode="input",
-                    charge_w=0.0,
-                    discharge_w=0.0,
-                    reason="additional_battery_charging_block",
-                ),
+                reason="additional_battery_charging_block",
             )
         return None
 
@@ -407,7 +401,6 @@ class PvRule(BaseRule):
         if keepalive_charge:
             charge_w = max(charge_w, engine._charge_keepalive_w(ctx))
 
-        # In der frühen PV-Anlaufphase nicht sofort wieder auf 0 kippen
         if soft_start_ready and not keepalive_charge:
             if import_w <= 60.0:
                 charge_w = max(charge_w, 80.0)
@@ -448,6 +441,10 @@ class SummerRule(BaseRule):
                             reason="summer_cover_deficit",
                         ),
                     )
+            return engine._idle_result(
+                ctx,
+                reason="idle",
+            )
         return None
 
 
@@ -493,15 +490,9 @@ class ManualRule(BaseRule):
                 ),
             )
 
-        return engine._with_thresholds(
+        return engine._idle_result(
             ctx,
-            DecisionResult(
-                action="idle",
-                ac_mode="input",
-                charge_w=0.0,
-                discharge_w=0.0,
-                reason="manual_idle",
-            ),
+            reason="manual_idle",
         )
 
 
@@ -520,6 +511,22 @@ class DecisionEngine:
             ValleyOpportunityRule(),
             SummerRule(),
         ]
+
+    def _idle_result(self, ctx: DecisionContext, reason: str = "idle") -> DecisionResult:
+        """
+        Neutraler Idle-Zustand:
+        OUTPUT + 0 W statt INPUT + 0 W, damit kein versteckter Lade-/Akku-Bias entsteht.
+        """
+        return self._with_thresholds(
+            ctx,
+            DecisionResult(
+                action="idle",
+                ac_mode="output",
+                charge_w=0.0,
+                discharge_w=0.0,
+                reason=reason,
+            ),
+        )
 
     def _compute_base_price(self, prices: List[float]) -> float:
         return sum(prices) / len(prices)
@@ -710,11 +717,6 @@ class DecisionEngine:
         return min(float(ctx.max_charge_w), 80.0)
 
     def _pv_morning_transition_active(self, ctx: DecisionContext) -> bool:
-        """
-        Frühe PV-Anlaufphase:
-        PV steigt bereits, Netzbezug ist klein bis moderat, Export ist an der Schwelle,
-        aber die Lage ist noch nicht stabil genug für dauernde Strategiewechsel.
-        """
         if ctx.ai_mode == "manual":
             return False
 
@@ -740,11 +742,6 @@ class DecisionEngine:
         return pv_covering_load and small_import and near_export
 
     def _pv_soft_start_ready(self, ctx: DecisionContext) -> bool:
-        """
-        Weicher PV-Start:
-        bevor echter stabiler Überschuss vorliegt, darf die PV-Ladung
-        schon einrasten, wenn PV die Hauslast fast deckt und der Restbezug klein ist.
-        """
         if ctx.soc >= ctx.soc_max:
             return False
 
@@ -952,13 +949,7 @@ class DecisionEngine:
             if result:
                 return result
 
-        return self._with_thresholds(
+        return self._idle_result(
             ctx,
-            DecisionResult(
-                action="idle",
-                ac_mode="input",
-                charge_w=0.0,
-                discharge_w=0.0,
-                reason="idle",
-            ),
+            reason="idle",
         )
