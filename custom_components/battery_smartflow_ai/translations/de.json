@@ -508,7 +508,8 @@
           "additional_battery_charging_block": "Zusatzakku lädt: Entladung blockiert",
           "soc_min_resume_block": "Entladung blockiert (Wiederfreigabe-Schwelle noch nicht erreicht)",
           "cell_voltage_cutoff_block": "Entladung blockiert (Zellspannungs-Schutz aktiv)",
-          "cell_voltage_emergency_charge": "Notladung aktiv (Zellspannung kritisch)"
+          "cell_voltage_emergency_charge": "Notladung aktiv (Zellspannung kritisch)",
+          "pv_charge_blocked_by_discharge_protection": "PV-Ladung blockiert, da Entladung noch durch SoC-/Zellschutz gesperrt ist"
         }
       },
       "next_planned_action": {
