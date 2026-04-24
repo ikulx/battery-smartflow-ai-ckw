@@ -384,20 +384,32 @@ class PvRule(BaseRule):
         start_counter = int(ctx.pv_charge_start_counter or 0)
         stop_counter = int(ctx.pv_charge_stop_counter or 0)
 
-        keepalive_charge = (
-            prev_charge_w > 0.0
-            and stop_counter < 6
-            and not valley_active
-        )
+        charge_already_active = prev_charge_w > 0.0
 
         soft_start_ready = engine._pv_soft_start_ready(ctx)
         start_allowed = (has_direct_surplus and start_counter >= 2) or soft_start_ready
+
+        # Laufende PV-Ladung deutlich stärker halten.
+        # Solange keine echte anhaltende Schwäche vorliegt, bleiben wir im PV-Zweig.
+        stop_due_to_weakness = (
+            stop_counter >= 6
+            and import_w > 120.0
+            and export_w < max(10.0, start_export_threshold * 0.15)
+        )
+
+        keepalive_charge = (
+            charge_already_active
+            and not valley_active
+            and not stop_due_to_weakness
+        )
 
         if not start_allowed and not keepalive_charge:
             return None
 
         charge_w = engine._delta_charge(ctx)
 
+        # Wenn die PV-Ladung bereits läuft, soll primär die Leistung geregelt werden,
+        # nicht der ganze Ladezustand verloren gehen.
         if keepalive_charge:
             charge_w = max(charge_w, engine._charge_keepalive_w(ctx))
 
