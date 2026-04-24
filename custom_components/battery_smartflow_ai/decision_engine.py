@@ -76,6 +76,10 @@ class DecisionContext:
     pv_charge_stop_counter: int = 0
     forecast_wait_block_counter: int = 0
 
+    # Protection state from coordinator
+    discharge_blocked_by_soc_min: bool = False
+    cell_voltage_discharge_blocked: bool = False
+
 
 @dataclass
 class DecisionResult:
@@ -368,10 +372,15 @@ class PvRule(BaseRule):
 
         has_direct_surplus = export_w >= start_export_threshold
 
+        protection_active = (
+            engine._low_soc_protection_strict(ctx)
+            and engine._discharge_protection_active(ctx)
+        )
+
         discharge_active = prev_discharge_w > 0.0
         if discharge_active:
             return None
-
+            
         prices = [p.price for p in ctx.price_points] if ctx.price_points else []
         valley_active = (
             ctx.ai_mode in ("automatic", "winter")
@@ -386,7 +395,12 @@ class PvRule(BaseRule):
 
         charge_already_active = prev_charge_w > 0.0
 
-        soft_start_ready = engine._pv_soft_start_ready(ctx)
+        soft_start_ready = (
+            False
+            if protection_active and engine._low_soc_pv_charge_requires_export(ctx)
+            else engine._pv_soft_start_ready(ctx)
+        )
+
         start_allowed = (has_direct_surplus and start_counter >= 2) or soft_start_ready
 
         # Laufende PV-Ladung deutlich stärker halten.
@@ -407,6 +421,19 @@ class PvRule(BaseRule):
             return None
 
         charge_w = engine._delta_charge(ctx)
+
+        if protection_active and engine._low_soc_pv_charge_requires_export(ctx):
+            # SF800Pro / Low-SoC-Schutz:
+            # In der Entlade-Sperrzone darf PV nur dann in den Akku,
+            # wenn wirklich stabiler Export vorhanden ist.
+            # Kein Soft-Start, kein Akku-Vorrang, kein Laden bei Netzbezug.
+            if not has_direct_surplus or start_counter < 2:
+                return None
+
+            if import_w > 30.0:
+                return None
+
+            charge_w = min(float(charge_w), max(0.0, export_w))
 
         # Wenn die PV-Ladung bereits läuft, soll primär die Leistung geregelt werden,
         # nicht der ganze Ladezustand verloren gehen.
@@ -440,7 +467,13 @@ class SummerRule(BaseRule):
             ctx.ai_mode == "summer"
             or (ctx.ai_mode == "automatic" and ctx.season == "summer")
         ):
-            if ctx.soc > ctx.soc_min:
+            if (
+                ctx.soc > ctx.soc_min
+                and not (
+                    engine._low_soc_protection_strict(ctx)
+                    and engine._discharge_protection_active(ctx)
+                )
+            ):
                 discharge_w = engine._delta_discharge(ctx)
                 if discharge_w > 0:
                     return engine._with_thresholds(
@@ -538,6 +571,27 @@ class DecisionEngine:
                 discharge_w=0.0,
                 reason=reason,
             ),
+        )
+
+    def _profile_flag(self, ctx: DecisionContext, key: str, default: bool = False) -> bool:
+        try:
+            return bool(ctx.profile.get(key, default))
+        except Exception:
+            return bool(default)
+
+    def _low_soc_protection_strict(self, ctx: DecisionContext) -> bool:
+        return self._profile_flag(ctx, "LOW_SOC_PROTECTION_STRICT", False)
+
+    def _low_soc_pv_charge_requires_export(self, ctx: DecisionContext) -> bool:
+        return self._profile_flag(ctx, "LOW_SOC_PV_CHARGE_REQUIRES_EXPORT", False)
+
+    def _low_soc_discharge_requires_cell_resume(self, ctx: DecisionContext) -> bool:
+        return self._profile_flag(ctx, "LOW_SOC_DISCHARGE_REQUIRES_CELL_RESUME", False)
+
+    def _discharge_protection_active(self, ctx: DecisionContext) -> bool:
+        return bool(
+            ctx.discharge_blocked_by_soc_min
+            or ctx.cell_voltage_discharge_blocked
         )
 
     def _compute_base_price(self, prices: List[float]) -> float:
