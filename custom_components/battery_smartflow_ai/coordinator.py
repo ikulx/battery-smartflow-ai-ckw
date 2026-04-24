@@ -1187,6 +1187,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 pv_charge_start_counter=int(pv_charge_start_counter),
                 pv_charge_stop_counter=int(pv_charge_stop_counter),
                 forecast_wait_block_counter=int(self._persist.get("forecast_wait_block_counter", 0)),
+                discharge_blocked_by_soc_min=bool(discharge_blocked_by_soc_min),
+                cell_voltage_discharge_blocked=bool(cell_voltage_discharge_blocked),
             )
 
             base_required_kwh = battery_capacity_kwh * max(0.0, float(soc_max) - float(soc)) / 100.0
@@ -1207,6 +1209,35 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             
             decision = self._engine.evaluate(ctx)
+
+            strict_low_soc_protection = bool(profile.get("LOW_SOC_PROTECTION_STRICT", False))
+            low_soc_pv_charge_requires_export = bool(
+                profile.get("LOW_SOC_PV_CHARGE_REQUIRES_EXPORT", False)
+            )
+            protection_active = bool(
+                discharge_blocked_by_soc_min or cell_voltage_discharge_blocked
+            )
+
+            if (
+                strict_low_soc_protection
+                and low_soc_pv_charge_requires_export
+                and protection_active
+                and decision.ac_mode == "input"
+                and float(decision.charge_w or 0.0) > 0.0
+                and decision.reason == "pv_surplus_charge"
+            ):
+                # SF800Pro-Schutz:
+                # In der Low-SoC-/Zellschutz-Sperrzone darf PV-Ladung nur bei echtem,
+                # stabilem Export stattfinden. Kein Akku-Vorrang bei kleiner PV-Anlaufleistung.
+                if (
+                    float(grid_export or 0.0) < float(pv_charge_start_export_w)
+                    or float(grid_import or 0.0) > 30.0
+                ):
+                    decision.charge_w = 0.0
+                    decision.discharge_w = 0.0
+                    decision.action = "idle"
+                    decision.ac_mode = "output"
+                    decision.reason = "pv_charge_blocked_by_discharge_protection"
 
             charge_price_applied = None
             charge_source = "no_charge_delta"
@@ -1294,12 +1325,20 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 decision.action = "idle"
                 decision.reason = "soc_limit_lower"
 
-            if decision.ac_mode == "output" and discharge_blocked_by_soc_min:
+            if (
+                decision.ac_mode == "output"
+                and float(decision.discharge_w or 0.0) > 0.0
+                and discharge_blocked_by_soc_min
+            ):
                 decision.discharge_w = 0.0
                 decision.action = "idle"
                 decision.reason = "soc_min_resume_block"
 
-            if decision.ac_mode == "output" and cell_voltage_discharge_blocked:
+            if (
+                decision.ac_mode == "output"
+                and float(decision.discharge_w or 0.0) > 0.0
+                and cell_voltage_discharge_blocked
+            ):
                 decision.discharge_w = 0.0
                 decision.action = "idle"
                 decision.reason = "cell_voltage_cutoff_block"
@@ -1386,6 +1425,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 pv_charge_start_counter=int(pv_charge_start_counter),
                 pv_charge_stop_counter=int(pv_charge_stop_counter),
                 forecast_wait_block_counter=int(self._persist.get("forecast_wait_block_counter", 0)),
+                discharge_blocked_by_soc_min=bool(discharge_blocked_by_soc_min),
+                cell_voltage_discharge_blocked=bool(cell_voltage_discharge_blocked),
             )
 
             transparency_result = self._engine._with_thresholds(
@@ -1433,6 +1474,16 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._persist.get("discharge_resume_soc", float(soc_min))
                 ),
                 "soc_discharge_resume_margin": float(resume_margin),
+                "low_soc_protection_strict": bool(profile.get("LOW_SOC_PROTECTION_STRICT", False)),
+                "low_soc_pv_charge_requires_export": bool(
+                    profile.get("LOW_SOC_PV_CHARGE_REQUIRES_EXPORT", False)
+                ),
+                "low_soc_discharge_requires_cell_resume": bool(
+                    profile.get("LOW_SOC_DISCHARGE_REQUIRES_CELL_RESUME", False)
+                ),
+                "discharge_protection_active": bool(
+                    discharge_blocked_by_soc_min or cell_voltage_discharge_blocked
+                ),
                 "max_charge": max_charge,
                 "max_discharge": max_discharge,
                 "set_mode": ac_mode,
