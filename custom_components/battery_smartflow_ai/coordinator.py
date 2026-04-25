@@ -1545,6 +1545,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "soc_limit": soc_limit,
                 "additional_battery_charge_w": additional_battery_charge_w,
                 "pv_charge_start_export_w": float(pv_charge_start_export_w),
+                "pv_charge_latched": bool(pv_charge_latched),
                 "pv_charge_start_counter": int(self._persist.get("pv_charge_start_counter", 0)),
                 "pv_charge_stop_counter": int(self._persist.get("pv_charge_stop_counter", 0)),
                 "pv_charge_hold_export_threshold_w": max(20.0, float(pv_charge_start_export_w) * 0.5),
