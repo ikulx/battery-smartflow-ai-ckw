@@ -414,7 +414,6 @@ class PvRule(BaseRule):
 
         keepalive_charge = (
             charge_already_active
-            and not valley_active
             and not stop_due_to_weakness
         )
 
@@ -428,7 +427,10 @@ class PvRule(BaseRule):
             # In der Entlade-Sperrzone darf PV nur dann in den Akku,
             # wenn wirklich stabiler Export vorhanden ist.
             # Kein Soft-Start, kein Akku-Vorrang, kein Laden bei Netzbezug.
-            if not has_direct_surplus or start_counter < 2:
+            if not has_direct_surplus:
+                return None
+
+            if not charge_already_active and start_counter < 2:
                 return None
 
             if import_w > 30.0:
