@@ -249,6 +249,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             "forecast_wait_block_counter": 0,
 
+            # PV charge debounce / hysteresis
+            "pv_charge_start_counter": 0,
+            "pv_charge_stop_counter": 0,
+            "pv_charge_latched": False,
+
             # debug
             "debug": "init",
         }
@@ -527,40 +532,76 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         grid_export_w: float,
         pv_w: float,
         pv_charge_start_export_w: float,
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, bool]:
         start_counter = int(self._persist.get("pv_charge_start_counter", 0) or 0)
         stop_counter = int(self._persist.get("pv_charge_stop_counter", 0) or 0)
-
-        prev_charge_active = float(self._persist.get("prev_charge_w", 0.0) or 0.0) > 0.0
+        latched = bool(self._persist.get("pv_charge_latched", False))
 
         start_threshold = float(pv_charge_start_export_w or 0.0)
-        hold_threshold = max(20.0, start_threshold * 0.5)
-        stop_import_tolerance_w = 80.0
 
-        has_start_surplus = float(grid_export_w or 0.0) >= start_threshold
-        has_hold_surplus = float(grid_export_w or 0.0) >= hold_threshold
-        import_is_small = float(grid_import_w or 0.0) <= stop_import_tolerance_w
+        # Start darf erst bei echtem Export erfolgen.
+        start_required_cycles = 2
 
-        if prev_charge_active:
+        # Stop bewusst träger, damit Wolken/Regelrauschen nicht sofort abbrechen.
+        stop_required_cycles = 8
+
+        # Halteschwelle: laufende PV-Ladung bleibt auch bei kleinerem Export aktiv.
+        hold_export_threshold = max(20.0, start_threshold * 0.5)
+
+        # Kleiner Import ist bei laufender Regelung erlaubt, weil der Delta-Regler
+        # die Ladeleistung sanft zurücknehmen soll.
+        small_import_tolerance_w = 100.0
+
+        # Echte Schwäche: deutlicher Import und praktisch kein Export.
+        hard_import_threshold_w = 140.0
+        weak_export_threshold = max(10.0, start_threshold * 0.15)
+
+        export_w = max(0.0, float(grid_export_w or 0.0))
+        import_w = max(0.0, float(grid_import_w or 0.0))
+
+        has_start_surplus = export_w >= start_threshold
+
+        has_hold_surplus = export_w >= hold_export_threshold
+        import_is_small = import_w <= small_import_tolerance_w
+
+        real_weakness = (
+            import_w >= hard_import_threshold_w
+            and export_w <= weak_export_threshold
+        )
+
+        if latched:
             start_counter = 0
 
-            # Laufende PV-Ladung nicht wegen kleinem Übersteuern sofort stoppen.
-            # Solange der Bezug klein bleibt, darf der Delta-Regler sanft abregeln.
-            if has_hold_surplus or import_is_small:
+            if real_weakness:
+                stop_counter += 1
+            elif has_hold_surplus or import_is_small:
                 stop_counter = 0
             else:
+                # Grauzone: nicht sofort stoppen, aber langsam zählen.
                 stop_counter += 1
+
+            if stop_counter >= stop_required_cycles:
+                latched = False
+                stop_counter = 0
+
         else:
             stop_counter = 0
+
             if has_start_surplus:
                 start_counter += 1
             else:
                 start_counter = 0
 
+            if start_counter >= start_required_cycles:
+                latched = True
+                start_counter = 0
+                stop_counter = 0
+
         self._persist["pv_charge_start_counter"] = start_counter
         self._persist["pv_charge_stop_counter"] = stop_counter
+        self._persist["pv_charge_latched"] = latched
 
-        return start_counter, stop_counter
+        return start_counter, stop_counter, latched
     
     def _update_discharge_resume_hysteresis(
         self,
@@ -1069,11 +1110,13 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 DEFAULT_PV_CHARGE_START_EXPORT_W,
             )
 
-            pv_charge_start_counter, pv_charge_stop_counter = self._update_pv_charge_hysteresis(
-                grid_import_w=float(grid_import or 0.0),
-                grid_export_w=float(grid_export or 0.0),
-                pv_w=float(pv_w or 0.0),
-                pv_charge_start_export_w=float(pv_charge_start_export_w),
+            pv_charge_start_counter, pv_charge_stop_counter, pv_charge_latched = (
+                self._update_pv_charge_hysteresis(
+                    grid_import_w=float(grid_import or 0.0),
+                    grid_export_w=float(grid_export or 0.0),
+                    pv_w=float(pv_w or 0.0),
+                    pv_charge_start_export_w=float(pv_charge_start_export_w),
+                )
             )
 
             very_cheap_price = self.runtime_settings.get("very_cheap_price", None)
