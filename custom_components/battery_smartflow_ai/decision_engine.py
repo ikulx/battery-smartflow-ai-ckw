@@ -75,6 +75,7 @@ class DecisionContext:
     pv_charge_start_counter: int = 0
     pv_charge_stop_counter: int = 0
     forecast_wait_block_counter: int = 0
+    pv_charge_latched: bool = False
 
     # Protection state from coordinator
     discharge_blocked_by_soc_min: bool = False
