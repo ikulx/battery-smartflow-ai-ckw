@@ -28,6 +28,9 @@ from .const import (
     CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS,
     CONF_CURRENCY,
     CURRENCY_CHF,
+    FORECAST_STATUS_ENUMS,
+    PV_OUTLOOK_ENUMS,
+    CHARGE_STRATEGY_ENUMS,
 )
 from .device_profiles import DEVICE_PROFILES
 
@@ -128,6 +131,14 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         icon="mdi:head-question-outline",
     ),
     ZendureSensorEntityDescription(
+        key="charge_strategy",
+        translation_key="charge_strategy",
+        runtime_key="charge_strategy",
+        device_class=SensorDeviceClass.ENUM,
+        options=CHARGE_STRATEGY_ENUMS,
+        icon="mdi:strategy",
+    ),
+    ZendureSensorEntityDescription(
         key="adaptive_peak_active",
         translation_key="adaptive_peak_active",
         runtime_key="adaptive_peak_active",
@@ -138,6 +149,53 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         translation_key="engine_health",
         runtime_key="engine_health",
         icon="mdi:heart-pulse",
+    ),
+    # --------------------------------------------------
+    # FORECAST TRANSPARENCY (V4.0.0, optional)
+    # --------------------------------------------------
+    ZendureSensorEntityDescription(
+        key="forecast_status",
+        translation_key="forecast_status",
+        runtime_key="forecast_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=FORECAST_STATUS_ENUMS,
+        icon="mdi:cloud-search-outline",
+    ),
+    ZendureSensorEntityDescription(
+        key="pv_outlook",
+        translation_key="pv_outlook",
+        runtime_key="pv_outlook",
+        device_class=SensorDeviceClass.ENUM,
+        options=PV_OUTLOOK_ENUMS,
+        icon="mdi:weather-partly-cloudy",
+    ),
+    ZendureSensorEntityDescription(
+        key="forecast_remaining_today_kwh",
+        translation_key="forecast_remaining_today_kwh",
+        runtime_key="forecast_remaining_today_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:solar-power-variant",
+    ),
+    ZendureSensorEntityDescription(
+        key="forecast_tomorrow_kwh",
+        translation_key="forecast_tomorrow_kwh",
+        runtime_key="forecast_tomorrow_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:weather-sunset-up",
+    ),
+    ZendureSensorEntityDescription(
+        key="forecast_next_3h_kwh",
+        translation_key="forecast_next_3h_kwh",
+        runtime_key="forecast_next_3h_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:clock-fast",
+    ),
+    ZendureSensorEntityDescription(
+        key="forecast_next_6h_kwh",
+        translation_key="forecast_next_6h_kwh",
+        runtime_key="forecast_next_6h_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:clock-outline",
     ),
     # --------------------------------------------------
     # PRICE TRANSPARENCY
@@ -437,6 +495,16 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
             "cell_voltage_soc_plausibility": details.get("cell_voltage_soc_plausibility"),
             "cell_voltage_soc_warning_threshold": details.get("cell_voltage_soc_warning_threshold"),
             "cell_voltage_soc_critical_threshold": details.get("cell_voltage_soc_critical_threshold"),
+            # V4.0.0 forecast transparency
+            "forecast_status": details.get("forecast_status"),
+            "pv_outlook": details.get("pv_outlook"),
+            "forecast_remaining_today_kwh": details.get("forecast_remaining_today_kwh"),
+            "forecast_tomorrow_kwh": details.get("forecast_tomorrow_kwh"),
+            "forecast_next_3h_kwh": details.get("forecast_next_3h_kwh"),
+            "forecast_next_6h_kwh": details.get("forecast_next_6h_kwh"),
+            "forecast_peak_today_w": details.get("forecast_peak_today_w"),
+            "forecast_peak_tomorrow_w": details.get("forecast_peak_tomorrow_w"),
+            "forecast_source_name": details.get("forecast_source_name"),
         }
 
         attrs["profile_overrides"] = profile_overrides

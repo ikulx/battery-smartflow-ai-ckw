@@ -187,6 +187,13 @@ SF800PRO_PROFILE = {
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
     "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
 
+    # --- Low-SoC / cell-voltage protection behavior ---
+    # SF800Pro batteries appear more sensitive near low SoC.
+    # Keep this strict behavior profile-specific to avoid restricting stronger systems.
+    "LOW_SOC_PROTECTION_STRICT": True,
+    "LOW_SOC_PV_CHARGE_REQUIRES_EXPORT": True,
+    "LOW_SOC_DISCHARGE_REQUIRES_CELL_RESUME": True,
+
     # --- Charge controller tuning ---
     "CHARGE_DEADBAND_W": 35.0,
     "CHARGE_KP_UP": 0.40,
@@ -223,6 +230,11 @@ SF2400AC_PROFILE = {
     "KEEPALIVE_MIN_DEFICIT_W": 15.0,
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
     "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
+
+    # --- Low-SoC / cell-voltage protection behavior ---
+    "LOW_SOC_PROTECTION_STRICT": False,
+    "LOW_SOC_PV_CHARGE_REQUIRES_EXPORT": False,
+    "LOW_SOC_DISCHARGE_REQUIRES_CELL_RESUME": False,
 
     # --- Charge controller tuning ---
     "CHARGE_DEADBAND_W": 30.0,
@@ -261,6 +273,11 @@ SF2400PRO_PROFILE = {
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
     "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
 
+    # --- Low-SoC / cell-voltage protection behavior ---
+    "LOW_SOC_PROTECTION_STRICT": False,
+    "LOW_SOC_PV_CHARGE_REQUIRES_EXPORT": False,
+    "LOW_SOC_DISCHARGE_REQUIRES_CELL_RESUME": False,
+
     # --- Charge controller tuning ---
     "CHARGE_DEADBAND_W": 30.0,
     "CHARGE_KP_UP": 0.65,
@@ -297,6 +314,11 @@ SF1600AC_PROFILE = {
     "KEEPALIVE_MIN_DEFICIT_W": 15.0,
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
     "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
+
+    # --- Low-SoC / cell-voltage protection behavior ---
+    "LOW_SOC_PROTECTION_STRICT": False,
+    "LOW_SOC_PV_CHARGE_REQUIRES_EXPORT": False,
+    "LOW_SOC_DISCHARGE_REQUIRES_CELL_RESUME": False,
 
     # --- Charge controller tuning ---
     "CHARGE_DEADBAND_W": 40.0,
@@ -335,6 +357,11 @@ HYPER2000_PROFILE = {
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
     "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
 
+    # --- Low-SoC / cell-voltage protection behavior ---
+    "LOW_SOC_PROTECTION_STRICT": False,
+    "LOW_SOC_PV_CHARGE_REQUIRES_EXPORT": False,
+    "LOW_SOC_DISCHARGE_REQUIRES_CELL_RESUME": False,
+
     # --- Charge controller tuning ---
     "CHARGE_DEADBAND_W": 30.0,
     "CHARGE_KP_UP": 0.65,
@@ -371,6 +398,11 @@ HUB2000_PROFILE = {
     "KEEPALIVE_MIN_DEFICIT_W": 15.0,
     "KEEPALIVE_MIN_OUTPUT_W": 60.0,
     "SOC_DISCHARGE_RESUME_MARGIN": 3.0,
+
+    # --- Low-SoC / cell-voltage protection behavior ---
+    "LOW_SOC_PROTECTION_STRICT": False,
+    "LOW_SOC_PV_CHARGE_REQUIRES_EXPORT": False,
+    "LOW_SOC_DISCHARGE_REQUIRES_CELL_RESUME": False,
 
     # --- Charge controller tuning ---
     "CHARGE_DEADBAND_W": 30.0,

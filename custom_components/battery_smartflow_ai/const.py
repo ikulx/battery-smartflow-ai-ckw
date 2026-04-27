@@ -10,7 +10,7 @@ DOMAIN = "battery_smartflow_ai"
 INTEGRATION_NAME = "Battery SmartFlow AI"
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "3.7.0"
+INTEGRATION_VERSION = "4.0.0-RC4"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -42,6 +42,10 @@ CURRENCY_CHF = "CHF"
 DEFAULT_CURRENCY = CURRENCY_EUR
 
 CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY = "additional_battery_charge_entity"
+
+# V4.0.0 optionale PV-Forecast-Sensoren (zuerst Solcast)
+CONF_PV_FORECAST_TODAY_ENTITY = "pv_forecast_today_entity"
+CONF_PV_FORECAST_TOMORROW_ENTITY = "pv_forecast_tomorrow_entity"
 
 # Zendure Steuer-Entitäten
 CONF_AC_MODE_ENTITY = "ac_mode_entity"            # select input/output
@@ -98,6 +102,8 @@ SETTING_CELL_VOLTAGE_RESUME = "cell_voltage_resume"
 
 SETTING_PV_CHARGE_START_EXPORT_W = "pv_charge_start_export_w"
 
+SETTING_FORECAST_BASE_LOAD = "forecast_base_load"
+
 # Default
 DEFAULT_PACK_CAPACITY_KWH = 2.88
 DEFAULT_BATTERY_PACKS = 1
@@ -116,6 +122,8 @@ DEFAULT_CELL_VOLTAGE_CUTOFF = 3.00
 DEFAULT_CELL_VOLTAGE_RESUME = 3.18
 
 DEFAULT_PV_CHARGE_START_EXPORT_W = 80.0
+
+DEFAULT_FORECAST_BASE_LOAD = 300.0
 
 # --------------------------------------------------
 # Device profiles (V1.5.x / V3.2.0 overrides)
@@ -284,6 +292,49 @@ CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS = [
     "warning",
     "critical",
     "not_available",
+]
+
+# ==================================================
+# Forecast enums (V4.0.0)
+# Forecast bleibt immer optional.
+# ==================================================
+FORECAST_STATUS_NOT_CONFIGURED = "not_configured"
+FORECAST_STATUS_UNAVAILABLE = "unavailable"
+FORECAST_STATUS_AVAILABLE = "available"
+
+FORECAST_STATUS_ENUMS = [
+    FORECAST_STATUS_NOT_CONFIGURED,
+    FORECAST_STATUS_UNAVAILABLE,
+    FORECAST_STATUS_AVAILABLE,
+]
+
+PV_OUTLOOK_UNKNOWN = "unknown"
+PV_OUTLOOK_POOR = "poor"
+PV_OUTLOOK_MIXED = "mixed"
+PV_OUTLOOK_GOOD = "good"
+
+PV_OUTLOOK_ENUMS = [
+    PV_OUTLOOK_UNKNOWN,
+    PV_OUTLOOK_POOR,
+    PV_OUTLOOK_MIXED,
+    PV_OUTLOOK_GOOD,
+]
+
+# ==================================================
+# Charge strategy enums (V4.0.0 transparency)
+# ==================================================
+CHARGE_STRATEGY_ENUMS = [
+    "none",
+    "pv_surplus",
+    "planning_latest_start",
+    "planning_forecast_poor",
+    "planning_forecast_mixed",
+    "planning_reality_override",
+    "valley_boost",
+    "valley_boost_mixed",
+    "very_cheap",
+    "emergency",
+    "manual",
 ]
 
 # ==================================================

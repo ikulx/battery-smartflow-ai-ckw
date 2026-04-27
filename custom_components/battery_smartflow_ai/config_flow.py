@@ -11,6 +11,8 @@ from .const import (
     DOMAIN,
     CONF_SOC_ENTITY,
     CONF_PV_ENTITY,
+    CONF_PV_FORECAST_TODAY_ENTITY,
+    CONF_PV_FORECAST_TOMORROW_ENTITY,
     CONF_BATTERY_AC_POWER_ENTITY,
     CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY,
     CONF_PRICE_EXPORT_ENTITY,
@@ -98,6 +100,12 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not self._user_input.get(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY):
                 self._user_input.pop(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY, None)
 
+            if not self._user_input.get(CONF_PV_FORECAST_TODAY_ENTITY):
+                self._user_input.pop(CONF_PV_FORECAST_TODAY_ENTITY, None)
+
+            if not self._user_input.get(CONF_PV_FORECAST_TOMORROW_ENTITY):
+                self._user_input.pop(CONF_PV_FORECAST_TOMORROW_ENTITY, None)
+
             if grid_mode != GRID_MODE_SINGLE:
                 self._user_input.pop(CONF_GRID_POWER_ENTITY, None)
 
@@ -168,6 +176,12 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not cleaned.get(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY):
                 cleaned.pop(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY, None)
+
+            if not cleaned.get(CONF_PV_FORECAST_TODAY_ENTITY):
+                cleaned.pop(CONF_PV_FORECAST_TODAY_ENTITY, None)
+
+            if not cleaned.get(CONF_PV_FORECAST_TOMORROW_ENTITY):
+                cleaned.pop(CONF_PV_FORECAST_TOMORROW_ENTITY, None)
 
             if not errors:
                 return self.async_update_reload_and_abort(
@@ -269,6 +283,40 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor")
         )
+
+        pv_forecast_today_val = _val(CONF_PV_FORECAST_TODAY_ENTITY)
+        if pv_forecast_today_val:
+            schema[
+                vol.Optional(
+                    CONF_PV_FORECAST_TODAY_ENTITY,
+                    default=pv_forecast_today_val,
+                )
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+        else:
+            schema[
+                vol.Optional(CONF_PV_FORECAST_TODAY_ENTITY)
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+
+        pv_forecast_tomorrow_val = _val(CONF_PV_FORECAST_TOMORROW_ENTITY)
+        if pv_forecast_tomorrow_val:
+            schema[
+                vol.Optional(
+                    CONF_PV_FORECAST_TOMORROW_ENTITY,
+                    default=pv_forecast_tomorrow_val,
+                )
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+        else:
+            schema[
+                vol.Optional(CONF_PV_FORECAST_TOMORROW_ENTITY)
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
 
         schema[
             vol.Required(

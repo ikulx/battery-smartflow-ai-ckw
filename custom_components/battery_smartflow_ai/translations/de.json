@@ -14,6 +14,8 @@
           "capacity_entity": "Kapazitätssensor (optional)",
           "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "pv_entity": "PV-Leistung Sensor",
+          "pv_forecast_today_entity": "PV-Prognose heute (optional)",
+          "pv_forecast_tomorrow_entity": "PV-Prognose morgen (optional)",
           "price_now_entity": "Aktueller Strompreis",
           "price_export_entity": "Preisverlauf (z. B. Tibber / EPEX)",
           "ckw_enabled": "CKW Dynamischer Tarif (direkte API)",
@@ -36,6 +38,8 @@
           "capacity_entity": "Optionaler Sensor mit der automatisch berechneten verfügbaren Batteriekapazität in kWh (z. B. aus der Zendure-Integration). Falls gesetzt, überschreibt er die manuelle Berechnung.",
           "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird künftig für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt. Wird zur Erkennung von Überschuss verwendet.",
+          "pv_forecast_today_entity": "Optionaler Sensor mit der PV-Tagesprognose für heute, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
+          "pv_forecast_tomorrow_entity": "Optionaler Sensor mit der PV-Tagesprognose für morgen, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
           "price_now_entity": "Sensor mit dem aktuellen Strompreis (z. B. Tibber). Wird für wirtschaftliche Entscheidungen genutzt.",
           "price_export_entity": "Sensor mit Preisprognosedaten (z. B. Tibber / EPEX). Ermöglicht Preis-Vorplanung.",
           "ckw_enabled": "Aktiviert den direkten Abruf stündlicher CKW-Dynamiktarif-Preise via API. Kein separater HA-Sensor nötig. Preise werden automatisch alle 30 Minuten aktualisiert.",
@@ -90,6 +94,8 @@
           "capacity_entity": "Kapazitätssensor (optional)",
           "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "pv_entity": "PV-Leistung Sensor",
+          "pv_forecast_today_entity": "PV-Prognose heute (optional)",
+          "pv_forecast_tomorrow_entity": "PV-Prognose morgen (optional)",
           "price_now_entity": "Aktueller Strompreis",
           "price_export_entity": "Preisverlauf (z. B. Tibber / EPEX)",
           "ckw_enabled": "CKW Dynamischer Tarif (direkte API)",
@@ -112,6 +118,8 @@
           "capacity_entity": "Optionaler Sensor mit der automatisch berechneten verfügbaren Batteriekapazität in kWh (z. B. aus der Zendure-Integration). Falls gesetzt, überschreibt er die manuelle Berechnung.",
           "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird künftig für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt.",
+          "pv_forecast_today_entity": "Optionaler Sensor mit der PV-Tagesprognose für heute, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
+          "pv_forecast_tomorrow_entity": "Optionaler Sensor mit der PV-Tagesprognose für morgen, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
           "price_now_entity": "Aktueller Strompreis. Ermöglicht preisabhängige Entladung.",
           "price_export_entity": "Preisprognosedaten für die nächsten Stunden. Ermöglicht intelligente Ladeplanung.",
           "ckw_enabled": "Aktiviert den direkten Abruf stündlicher CKW-Dynamiktarif-Preise via API. Kein separater HA-Sensor nötig. Preise werden automatisch alle 30 Minuten aktualisiert.",
@@ -303,6 +311,9 @@
       },
       "very_cheap_price": {
         "name": "Sehr-billig Schwelle"
+      },
+      "forecast_base_load": {
+        "name": "Grundlast"
       }
     },
     "sensor": {
@@ -311,6 +322,53 @@
       },
       "adaptive_peak_active": {
         "name": "Adaptiver Peak erkannt"
+      },
+      "forecast_status": {
+        "name": "Prognose-Status",
+        "state": {
+          "not_configured": "Nicht konfiguriert",
+          "unavailable": "Keine Prognosedaten verfügbar",
+          "available": "Prognosedaten verfügbar"
+        }
+      },
+      "pv_outlook": {
+        "name": "PV-Ausblick",
+        "state": {
+          "unknown": "Unbekannt",
+          "poor": "Schwach",
+          "mixed": "Gemischt",
+          "good": "Gut"
+        }
+      },
+      "charge_strategy": {
+        "name": "Ladestrategie",
+        "state": {
+          "none": "Keine spezielle Ladestrategie aktiv",
+          "pv_surplus": "PV-Überschussladung",
+          "planning_latest_start": "Preisladung am spätesten Startzeitpunkt",
+          "planning_forecast_poor": "Preisladung wegen schwacher PV-Prognose",
+          "planning_forecast_mixed": "Preisladung bei gemischter PV-Prognose",
+          "planning_reality_override": "Preisladung wegen schwacher Live-PV trotz guter Prognose",
+          "very_cheap": "Sehr-billig-Schwelle: Maximalladung",
+          "valley_boost": "Preis-Tal-Ladung",
+          "valley_boost_mixed": "Preis-Tal-Ladung, wegen Prognose abgeschwächt",
+          "emergency": "Notladung",
+          "manual": "Manuelle Ladestrategie",
+          "valley_opportunity": "Opportunistische Tal-Ladung",
+          "valley_opportunity_mixed": "Opportunistische Tal-Ladung bei gemischter Prognose"
+        }
+      },      
+      "forecast_remaining_today_kwh": {
+        "name": "PV-Prognose heute"
+      },
+      "forecast_tomorrow_kwh": {
+        "name": "PV-Prognose morgen"
+      },
+      "forecast_next_3h_kwh": {
+        "name": "PV-Prognose nächste 3 Stunden"
+      },
+      "forecast_next_6h_kwh": {
+        "name": "PV-Prognose nächste 6 Stunden"
       },
       "price_daily_average": {
         "name": "Ø Tagespreis dynamisch"
@@ -420,7 +478,7 @@
           "standby": "Keine Aktion",
           "charge": "Laden",
           "discharge": "Entladen",
-          "emergency": "Notladung"
+          "emergency_charge": "Notladung"
         }
       },
       "decision_reason": {
@@ -450,10 +508,19 @@
           "adaptive_peak_discharge": "Entladen wegen Preisspitze",
           "price_based_discharge": "Preisbasierte Entladung",
           "valley_boost_charge": "Preis-Tal erkannt. Maximalladung",
+          "planning_latest_start": "Preisladung gestartet (spätester sinnvoller Startzeitpunkt erreicht)",
+          "planning_forecast_poor": "Preisladung wegen schwacher PV-Prognose",
+          "planning_forecast_mixed": "Preisladung bei gemischter PV-Prognose",
+          "valley_opportunity_charge": "Preis-Tal genutzt, da real kaum PV verfügbar ist",
+          "valley_opportunity_charge_mixed_forecast": "Preis-Tal genutzt bei gemischter Prognose und schwacher realer PV",
+          "valley_boost_charge_mixed_forecast": "Preis-Tal erkannt, aber wegen gemischter PV-Prognose abgeschwächt",
+          "planning_forecast_reality_override": "Preisladung gestartet: reale PV zu schwach trotz guter Prognose",
+          "very_cheap_force_charge": "Sehr-billig-Schwelle erreicht: Maximalladung aktiv",
           "additional_battery_charging_block": "Zusatzakku lädt: Entladung blockiert",
           "soc_min_resume_block": "Entladung blockiert (Wiederfreigabe-Schwelle noch nicht erreicht)",
           "cell_voltage_cutoff_block": "Entladung blockiert (Zellspannungs-Schutz aktiv)",
-          "cell_voltage_emergency_charge": "Notladung aktiv (Zellspannung kritisch)"
+          "cell_voltage_emergency_charge": "Notladung aktiv (Zellspannung kritisch)",
+          "pv_charge_blocked_by_discharge_protection": "PV-Ladung blockiert, da Entladung noch durch SoC-/Zellschutz gesperrt ist"
         }
       },
       "next_planned_action": {
@@ -476,6 +543,7 @@
           "discharging_active": "Entladevorgang aktiv",
           "manual_charge": "Manuelles Laden",
           "manual_discharge": "Manuelle Entladung",
+          "manual_constant_discharge": "Konstante Entladung aktiv",
           "emergency_charge": "Notladung"
         }
       },
