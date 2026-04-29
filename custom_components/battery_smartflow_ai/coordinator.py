@@ -753,6 +753,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         decision_charge_w: float,
         decision_ac_mode: str,
         price_now: float | None,
+        decision_reason: str | None = None,
     ) -> tuple[bool, float, str]:
         """Classify the source of a positive battery charge delta.
 
@@ -769,6 +770,23 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if decision_ac_mode != "input":
             return False, 0.0, "not_in_input_mode"
+
+        price_driven_charge_reasons = {
+            "very_cheap_force_charge",
+            "valley_boost_charge",
+            "valley_boost_charge_mixed_forecast",
+            "planning_latest_start",
+            "planning_forecast_poor",
+            "planning_forecast_mixed",
+            "planning_forecast_reality_override",
+            "valley_opportunity_charge",
+            "valley_opportunity_charge_mixed_forecast",
+        }
+
+        if decision_reason in price_driven_charge_reasons:
+            if price_now is not None:
+                return True, float(price_now), str(decision_reason)
+            return False, 0.0, "price_driven_charge_price_missing"
 
         charge_cmd_w = max(0.0, float(decision_charge_w or 0.0))
         if charge_cmd_w <= 0.0:
@@ -1397,6 +1415,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     decision_charge_w=float(decision.charge_w or 0.0),
                     decision_ac_mode=str(decision.ac_mode),
                     price_now=price_now,
+                    decision_reason=str(decision.reason),
                 )
 
                 charge_price_applied = float(applied_price)
