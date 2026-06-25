@@ -10,7 +10,7 @@ DOMAIN = "battery_smartflow_ai"
 INTEGRATION_NAME = "Battery SmartFlow AI"
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "4.0.0"
+INTEGRATION_VERSION = "4.2.3"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -42,6 +42,7 @@ CURRENCY_CHF = "CHF"
 DEFAULT_CURRENCY = CURRENCY_EUR
 
 CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY = "additional_battery_charge_entity"
+CONF_ADDITIONAL_BATTERY_DISCHARGE_ENTITY = "additional_battery_discharge_entity"
 
 # V4.0.0 optionale PV-Forecast-Sensoren (zuerst Solcast)
 CONF_PV_FORECAST_TODAY_ENTITY = "pv_forecast_today_entity"
@@ -86,6 +87,11 @@ LOWEST_CELL_VOLTAGE_CONFIG_KEYS = [
     CONF_LOWEST_CELL_VOLTAGE_PACK_6,
 ]
 
+CONF_OFFGRID_POWER_ENTITY = "offgrid_power_entity"
+CONF_OFFGRID_MODE_ENTITY = "offgrid_mode_entity"
+
+CONF_FEED_IN_TARIFF = "feed_in_tariff"
+
 # --- Helper constants for dynamic GUI profile override entities ---
 PROFILE_OVERRIDE_PREFIX = "profile_override_"
 
@@ -103,6 +109,10 @@ SETTING_CELL_VOLTAGE_RESUME = "cell_voltage_resume"
 SETTING_PV_CHARGE_START_EXPORT_W = "pv_charge_start_export_w"
 
 SETTING_FORECAST_BASE_LOAD = "forecast_base_load"
+
+SETTING_LEARNED_PLANNING_ENABLED = "learned_planning_enabled"
+
+SETTING_REGULATION_V42_ENABLED = "regulation_v42_enabled"
 
 # Default
 DEFAULT_PACK_CAPACITY_KWH = 2.88
@@ -125,6 +135,14 @@ DEFAULT_PV_CHARGE_START_EXPORT_W = 80.0
 
 DEFAULT_FORECAST_BASE_LOAD = 300.0
 
+DEFAULT_LEARNED_PLANNING_ENABLED = True
+
+DEFAULT_REGULATION_V42_ENABLED = False
+
+DEFAULT_OFFGRID_LOAD_ACTIVE_W = 50.0
+
+DEFAULT_FEED_IN_TARIFF = 0.0
+
 # --------------------------------------------------
 # Device profiles (V1.5.x / V3.2.0 overrides)
 # --------------------------------------------------
@@ -132,9 +150,11 @@ DEFAULT_FORECAST_BASE_LOAD = 300.0
 CONF_DEVICE_PROFILE = "device_profile"
 
 DEVICE_PROFILE_SF2400AC = "SF2400AC"
+DEVICE_PROFILE_SF2400PRO = "SF2400Pro"
 DEVICE_PROFILE_SF800PRO = "SF800Pro"
 DEVICE_PROFILE_SF1600AC = "SF1600AC"
 DEVICE_PROFILE_HYPER2000 = "Hyper 2000"
+DEVICE_PROFILE_HUB2000 = "HUB 2000"
 
 DEFAULT_DEVICE_PROFILE = DEVICE_PROFILE_SF2400AC
 
@@ -259,10 +279,12 @@ NEXT_ACTION_STATE_ENUMS = [
     "planned_discharge",
     "charging_active",
     "discharging_active",
+    "discharge_waiting_for_import",
     "manual_charge",
     "manual_discharge",
     "manual_constant_discharge",
     "emergency_charge",
+    "pv_house_load_passthrough_active",
 ]
 
 NEXT_PLANNED_ACTION_ENUMS = [
@@ -335,6 +357,9 @@ CHARGE_STRATEGY_ENUMS = [
     "very_cheap",
     "emergency",
     "manual",
+    "valley_opportunity",
+    "valley_opportunity_mixed",
+    "learned_planning",
 ]
 
 # ==================================================

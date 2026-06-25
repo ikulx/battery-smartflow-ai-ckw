@@ -15,6 +15,9 @@ from .const import (
     CONF_PV_FORECAST_TOMORROW_ENTITY,
     CONF_BATTERY_AC_POWER_ENTITY,
     CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY,
+    CONF_ADDITIONAL_BATTERY_DISCHARGE_ENTITY,
+    CONF_OFFGRID_POWER_ENTITY,
+    CONF_OFFGRID_MODE_ENTITY,
     CONF_PRICE_EXPORT_ENTITY,
     CONF_PRICE_NOW_ENTITY,
     CONF_AC_MODE_ENTITY,
@@ -40,6 +43,8 @@ from .const import (
     CURRENCY_EUR,
     CURRENCY_CHF,
     DEFAULT_CURRENCY,
+    CONF_FEED_IN_TARIFF,
+    DEFAULT_FEED_IN_TARIFF,
     # V3.5.0
     CONF_EXPERT_MODE_ENABLED,
     CONF_CELL_VOLTAGE_PROTECTION_ENABLED,
@@ -51,12 +56,95 @@ from .const import (
     SETTING_CELL_VOLTAGE_WARNING,
     SETTING_CELL_VOLTAGE_CUTOFF,
     SETTING_CELL_VOLTAGE_RESUME,
+    SETTING_LEARNED_PLANNING_ENABLED,
+    SETTING_REGULATION_V42_ENABLED,
     DEFAULT_CELL_VOLTAGE_WARNING,
     DEFAULT_CELL_VOLTAGE_CUTOFF,
     DEFAULT_CELL_VOLTAGE_RESUME,
+    DEFAULT_REGULATION_V42_ENABLED,
+    DEFAULT_LEARNED_PLANNING_ENABLED,
 )
 
 from .device_profiles import DEVICE_PROFILES, PROFILE_OVERRIDE_FIELDS
+
+EMPTY_ENTITY_VALUES = {
+    "",
+    "none",
+    "null",
+    "unknown",
+    "unavailable",
+}
+
+
+OPTIONAL_ENTITY_KEYS = (
+    CONF_PRICE_EXPORT_ENTITY,
+    CONF_PRICE_NOW_ENTITY,
+    CONF_SOC_LIMIT_ENTITY,
+    CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY,
+    CONF_ADDITIONAL_BATTERY_DISCHARGE_ENTITY,
+    CONF_OFFGRID_POWER_ENTITY,
+    CONF_OFFGRID_MODE_ENTITY,
+    CONF_PV_FORECAST_TODAY_ENTITY,
+    CONF_PV_FORECAST_TOMORROW_ENTITY,
+)
+
+
+def _normalize_optional_entity(value: Any) -> str | None:
+    """Normalize optional entity values stored by older config flows.
+
+    Older entries may contain string values like "None". Those are truthy,
+    but invalid as EntitySelector defaults.
+    """
+
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if cleaned.lower() in EMPTY_ENTITY_VALUES:
+            return None
+        return cleaned
+
+    return None
+
+
+def _cleanup_optional_entities(data: dict[str, Any]) -> None:
+    """Remove empty/invalid optional entity placeholders in-place."""
+
+    for key in OPTIONAL_ENTITY_KEYS:
+        value = _normalize_optional_entity(data.get(key))
+        if value is None:
+            data.pop(key, None)
+        else:
+            data[key] = value
+            
+            
+def _normalize_optional_float(value: Any, default: float = 0.0) -> float:
+    """Normalize optional numeric config values.
+
+    Accepts stored floats, ints and strings. Strings with comma decimal
+    separators are accepted for resilience, although Home Assistant number
+    selectors normally submit dot decimals.
+    """
+
+    try:
+        if value is None:
+            return float(default)
+
+        if isinstance(value, str):
+            value = value.strip().replace(",", ".")
+            if value == "" or value.lower() in EMPTY_ENTITY_VALUES:
+                return float(default)
+
+        return max(0.0, float(value))
+    except Exception:
+        return float(default)
+        
+        
+def _validate_feed_in_tariff(value: Any) -> float:
+    """Validate feed-in tariff from config/reconfigure forms."""
+
+    return _normalize_optional_float(value, DEFAULT_FEED_IN_TARIFF)
 
 
 class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -88,23 +176,12 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ):
                     errors["base"] = "grid_split_missing"
 
-            if not self._user_input.get(CONF_PRICE_EXPORT_ENTITY):
-                self._user_input.pop(CONF_PRICE_EXPORT_ENTITY, None)
-
-            if not self._user_input.get(CONF_PRICE_NOW_ENTITY):
-                self._user_input.pop(CONF_PRICE_NOW_ENTITY, None)
-
-            if not self._user_input.get(CONF_SOC_LIMIT_ENTITY):
-                self._user_input.pop(CONF_SOC_LIMIT_ENTITY, None)
-
-            if not self._user_input.get(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY):
-                self._user_input.pop(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY, None)
-
-            if not self._user_input.get(CONF_PV_FORECAST_TODAY_ENTITY):
-                self._user_input.pop(CONF_PV_FORECAST_TODAY_ENTITY, None)
-
-            if not self._user_input.get(CONF_PV_FORECAST_TOMORROW_ENTITY):
-                self._user_input.pop(CONF_PV_FORECAST_TOMORROW_ENTITY, None)
+            _cleanup_optional_entities(self._user_input)
+            
+            self._user_input[CONF_FEED_IN_TARIFF] = _normalize_optional_float(
+                self._user_input.get(CONF_FEED_IN_TARIFF),
+                DEFAULT_FEED_IN_TARIFF,
+            )
 
             if grid_mode != GRID_MODE_SINGLE:
                 self._user_input.pop(CONF_GRID_POWER_ENTITY, None)
@@ -165,23 +242,12 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ):
                     errors["base"] = "grid_split_missing"
 
-            if not cleaned.get(CONF_PRICE_EXPORT_ENTITY):
-                cleaned.pop(CONF_PRICE_EXPORT_ENTITY, None)
-
-            if not cleaned.get(CONF_PRICE_NOW_ENTITY):
-                cleaned.pop(CONF_PRICE_NOW_ENTITY, None)
-
-            if not cleaned.get(CONF_SOC_LIMIT_ENTITY):
-                cleaned.pop(CONF_SOC_LIMIT_ENTITY, None)
-
-            if not cleaned.get(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY):
-                cleaned.pop(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY, None)
-
-            if not cleaned.get(CONF_PV_FORECAST_TODAY_ENTITY):
-                cleaned.pop(CONF_PV_FORECAST_TODAY_ENTITY, None)
-
-            if not cleaned.get(CONF_PV_FORECAST_TOMORROW_ENTITY):
-                cleaned.pop(CONF_PV_FORECAST_TOMORROW_ENTITY, None)
+            _cleanup_optional_entities(cleaned)
+            
+            cleaned[CONF_FEED_IN_TARIFF] = _normalize_optional_float(
+                cleaned.get(CONF_FEED_IN_TARIFF),
+                DEFAULT_FEED_IN_TARIFF,
+            )
 
             if not errors:
                 return self.async_update_reload_and_abort(
@@ -205,9 +271,15 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entry: config_entries.ConfigEntry | None = None,
     ) -> vol.Schema:
         def _val(key: str):
-            if entry:
-                return entry.data.get(key)
-            return None
+            if not entry:
+                return None
+
+            value = entry.data.get(key)
+
+            if key in OPTIONAL_ENTITY_KEYS:
+                return _normalize_optional_entity(value)
+
+            return value
 
         schema: dict[Any, Any] = {}
 
@@ -283,6 +355,19 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor")
         )
+        
+        schema[
+            vol.Optional(
+                CONF_FEED_IN_TARIFF,
+                default=_normalize_optional_float(
+                    _val(CONF_FEED_IN_TARIFF),
+                    DEFAULT_FEED_IN_TARIFF,
+                ),
+            )
+        ] = vol.All(
+            vol.Coerce(float),
+            vol.Range(min=0.0, max=1.0),
+        )
 
         pv_forecast_today_val = _val(CONF_PV_FORECAST_TODAY_ENTITY)
         if pv_forecast_today_val:
@@ -342,6 +427,57 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY)
             ] = selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor")
+            )
+
+        additional_battery_discharge_val = _val(CONF_ADDITIONAL_BATTERY_DISCHARGE_ENTITY)
+        if additional_battery_discharge_val:
+            schema[
+                vol.Optional(
+                    CONF_ADDITIONAL_BATTERY_DISCHARGE_ENTITY,
+                    default=additional_battery_discharge_val,
+                )
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+        else:
+            schema[
+                vol.Optional(CONF_ADDITIONAL_BATTERY_DISCHARGE_ENTITY)
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+
+        offgrid_power_val = _val(CONF_OFFGRID_POWER_ENTITY)
+        if offgrid_power_val:
+            schema[
+                vol.Optional(
+                    CONF_OFFGRID_POWER_ENTITY,
+                    default=offgrid_power_val,
+                )
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+        else:
+            schema[
+                vol.Optional(CONF_OFFGRID_POWER_ENTITY)
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+
+        offgrid_mode_val = _val(CONF_OFFGRID_MODE_ENTITY)
+        if offgrid_mode_val:
+            schema[
+                vol.Optional(
+                    CONF_OFFGRID_MODE_ENTITY,
+                    default=offgrid_mode_val,
+                )
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="select")
+            )
+        else:
+            schema[
+                vol.Optional(CONF_OFFGRID_MODE_ENTITY)
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="select")
             )
 
         price_export_val = _val(CONF_PRICE_EXPORT_ENTITY)
@@ -444,9 +580,18 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entry: config_entries.ConfigEntry | None = None,
     ) -> vol.Schema:
         def _val(key: str):
-            if entry:
-                return entry.data.get(key)
-            return None
+            if not entry:
+                return None
+
+            value = entry.data.get(key)
+
+            if isinstance(value, str):
+                cleaned = value.strip()
+                if cleaned.lower() in EMPTY_ENTITY_VALUES:
+                    return None
+                return cleaned
+
+            return value
 
         schema: dict[Any, Any] = {}
 
@@ -523,7 +668,7 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         merged = self._current_options()
         merged.update(self._working_options)
         return merged
-
+        
     def _build_merged_options(
         self,
         user_input: dict[str, Any],
@@ -559,6 +704,7 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
                 continue
 
         merged_options[CONF_INSTALLED_PV_WP] = float(installed_pv_wp)
+
         merged_options[CONF_PROFILE_OVERRIDES] = profile_overrides
 
         if CONF_EXPERT_MODE_ENABLED in user_input:
@@ -569,6 +715,16 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         if CONF_CELL_VOLTAGE_PROTECTION_ENABLED in user_input:
             merged_options[CONF_CELL_VOLTAGE_PROTECTION_ENABLED] = bool(
                 user_input[CONF_CELL_VOLTAGE_PROTECTION_ENABLED]
+            )
+            
+        if SETTING_LEARNED_PLANNING_ENABLED in user_input:
+            merged_options[SETTING_LEARNED_PLANNING_ENABLED] = bool(
+                user_input[SETTING_LEARNED_PLANNING_ENABLED]
+            )
+            
+        if SETTING_REGULATION_V42_ENABLED in user_input:
+            merged_options[SETTING_REGULATION_V42_ENABLED] = bool(
+                user_input[SETTING_REGULATION_V42_ENABLED]
             )
 
         for key in LOWEST_CELL_VOLTAGE_CONFIG_KEYS:
@@ -894,6 +1050,8 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         options_schema = vol.Schema(
             {
                 vol.Optional(CONF_EXPERT_MODE_ENABLED): selector.BooleanSelector(),
+                vol.Optional(SETTING_LEARNED_PLANNING_ENABLED): selector.BooleanSelector(),
+                vol.Optional(SETTING_REGULATION_V42_ENABLED): selector.BooleanSelector(),
             }
         )
 
@@ -901,6 +1059,14 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
             CONF_EXPERT_MODE_ENABLED: preview.get(
                 CONF_EXPERT_MODE_ENABLED,
                 DEFAULT_EXPERT_MODE_ENABLED,
+            ),
+            SETTING_LEARNED_PLANNING_ENABLED: preview.get(
+                SETTING_LEARNED_PLANNING_ENABLED,
+                DEFAULT_LEARNED_PLANNING_ENABLED,
+            ),
+            SETTING_REGULATION_V42_ENABLED: preview.get(
+                SETTING_REGULATION_V42_ENABLED,
+                DEFAULT_REGULATION_V42_ENABLED,
             ),
         }
 

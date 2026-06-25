@@ -9,6 +9,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -61,6 +62,58 @@ _PRICE_PER_KWH_SENSOR_KEYS = frozenset({
 })
 _PRICE_TOTAL_SENSOR_KEYS = frozenset({"profit_eur"})
 
+LEARNED_PLANNING_STATUS_ENUMS = [
+    "not_started",
+    "collecting",
+    "insufficient_data",
+    "ready",
+    "active",
+]
+
+LEARNED_PLANNING_MODE_ENUMS = [
+    "disabled",
+    "collecting",
+    "classic_fallback",
+    "ready",
+    "wait",
+    "charge",
+    "classic",
+    "learned_wait",
+    "learned_active",
+]
+
+LEARNED_PLANNING_BLOCKING_REASON_ENUMS = [
+    "none",
+    "not_started",
+    "not_ready",
+    "not_enough_days",
+    "not_enough_usable_days",
+    "night_window_coverage_too_low",
+    "morning_window_coverage_too_low",
+    "evening_window_coverage_too_low",
+    "data_quality_too_low",
+    "no_price_data",
+    "no_deadline",
+    "no_charge_needed",
+    "invalid_search_space",
+    "deadline_too_close_start_now",
+    "latest_start_reached",
+]
+
+OFFGRID_MODE_ENUMS = [
+    "not_configured",
+    "unknown",
+    "off",
+    "normal",
+    "eco",
+]
+
+OFFGRID_RULE_REASON_ENUMS = [
+    "none",
+    "offgrid_load_active_blocks_ac_charge",
+    "offgrid_load_support",
+]
+
 
 @dataclass(frozen=True, kw_only=True)
 class ZendureSensorEntityDescription(SensorEntityDescription):
@@ -103,6 +156,7 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         options=FAULT_LEVEL_ENUMS,
         icon="mdi:alert-circle-outline",
     ),
+
     # --------------------------------------------------
     # ACTION STATE
     # --------------------------------------------------
@@ -121,6 +175,7 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:clock-start",
     ),
+
     # --------------------------------------------------
     # ENGINE TRANSPARENCY
     # --------------------------------------------------
@@ -150,6 +205,7 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         runtime_key="engine_health",
         icon="mdi:heart-pulse",
     ),
+
     # --------------------------------------------------
     # FORECAST TRANSPARENCY (V4.0.0, optional)
     # --------------------------------------------------
@@ -197,6 +253,190 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         native_unit_of_measurement="kWh",
         icon="mdi:clock-outline",
     ),
+
+    # --------------------------------------------------
+    # LEARNED CHARGE-WINDOW PLANNING (V4.1.0)
+    # visible main sensors
+    # --------------------------------------------------
+    ZendureSensorEntityDescription(
+        key="learned_planning_status",
+        translation_key="learned_planning_status",
+        runtime_key="learned_planning_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=LEARNED_PLANNING_STATUS_ENUMS,
+        icon="mdi:brain",
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_mode",
+        translation_key="learned_planning_mode",
+        runtime_key="learned_planning_mode",
+        device_class=SensorDeviceClass.ENUM,
+        options=LEARNED_PLANNING_MODE_ENUMS,
+        icon="mdi:calendar-clock",
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_optimal_charge_start",
+        translation_key="learned_planning_optimal_charge_start",
+        runtime_key="learned_planning_optimal_charge_start",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:clock-start",
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_deadline",
+        translation_key="learned_planning_deadline",
+        runtime_key="learned_planning_deadline",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:clock-alert-outline",
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_required_charge_energy_kwh",
+        translation_key="learned_planning_required_charge_energy_kwh",
+        runtime_key="learned_planning_required_charge_energy_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:battery-plus-variant",
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_effective_window_minutes",
+        translation_key="learned_planning_effective_window_minutes",
+        runtime_key="learned_planning_effective_window_minutes",
+        native_unit_of_measurement="min",
+        icon="mdi:timer-outline",
+    ),
+
+    # --------------------------------------------------
+    # LEARNED CHARGE-WINDOW PLANNING (V4.1.0)
+    # diagnostic sensors
+    # --------------------------------------------------
+    ZendureSensorEntityDescription(
+        key="learned_planning_blocking_reason",
+        translation_key="learned_planning_blocking_reason",
+        runtime_key="learned_planning_blocking_reason",
+        device_class=SensorDeviceClass.ENUM,
+        options=LEARNED_PLANNING_BLOCKING_REASON_ENUMS,
+        icon="mdi:alert-circle-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_history_days",
+        translation_key="learned_planning_history_days",
+        runtime_key="learned_planning_history_days",
+        native_unit_of_measurement="d",
+        icon="mdi:calendar-range",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_usable_days",
+        translation_key="learned_planning_usable_days",
+        runtime_key="learned_planning_usable_days",
+        native_unit_of_measurement="d",
+        icon="mdi:calendar-check-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_data_coverage",
+        translation_key="learned_planning_data_coverage",
+        runtime_key="learned_planning_data_coverage",
+        native_unit_of_measurement="%",
+        icon="mdi:database-check-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_sample_count",
+        translation_key="learned_planning_sample_count",
+        runtime_key="learned_planning_sample_count",
+        icon="mdi:counter",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_expected_consumption_kwh",
+        translation_key="learned_planning_expected_consumption_kwh",
+        runtime_key="learned_planning_expected_consumption_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:home-lightning-bolt-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_available_battery_energy_kwh",
+        translation_key="learned_planning_available_battery_energy_kwh",
+        runtime_key="learned_planning_available_battery_energy_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:battery-high",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_reserve_margin_kwh",
+        translation_key="learned_planning_reserve_margin_kwh",
+        runtime_key="learned_planning_reserve_margin_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:shield-battery-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_forecast_adjustment_kwh",
+        translation_key="learned_planning_forecast_adjustment_kwh",
+        runtime_key="learned_planning_forecast_adjustment_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:weather-cloudy-alert",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_effective_charge_power_w",
+        translation_key="learned_planning_effective_charge_power_w",
+        runtime_key="learned_planning_effective_charge_power_w",
+        native_unit_of_measurement="W",
+        icon="mdi:ev-station",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_effective_window_slots",
+        translation_key="learned_planning_effective_window_slots",
+        runtime_key="learned_planning_effective_window_slots",
+        icon="mdi:view-grid-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_planning_window_score",
+        translation_key="learned_planning_window_score",
+        runtime_key="learned_planning_window_score",
+        native_unit_of_measurement="€/kWh",
+        icon="mdi:chart-bell-curve",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_profile_typical_daily_consumption_kwh",
+        translation_key="learned_profile_typical_daily_consumption_kwh",
+        runtime_key="learned_profile_typical_daily_consumption_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:home-lightning-bolt-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_profile_average_house_load_w",
+        translation_key="learned_profile_average_house_load_w",
+        runtime_key="learned_profile_average_house_load_w",
+        native_unit_of_measurement="W",
+        icon="mdi:home-analytics",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_profile_current_slot_consumption_kwh",
+        translation_key="learned_profile_current_slot_consumption_kwh",
+        runtime_key="learned_profile_current_slot_consumption_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:clock-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="learned_profile_current_slot_average_w",
+        translation_key="learned_profile_current_slot_average_w",
+        runtime_key="learned_profile_current_slot_average_w",
+        native_unit_of_measurement="W",
+        icon="mdi:clock-fast",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+
     # --------------------------------------------------
     # PRICE TRANSPARENCY
     # --------------------------------------------------
@@ -249,6 +489,56 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         native_unit_of_measurement="€/kWh",
         icon="mdi:currency-eur",
     ),
+
+    # --------------------------------------------------
+    # OFF-GRID / INSELSTECKDOSE (V4.2.x, optional)
+    # --------------------------------------------------
+    ZendureSensorEntityDescription(
+        key="offgrid_power_w",
+        translation_key="offgrid_power_w",
+        runtime_key="offgrid_power_w",
+        native_unit_of_measurement="W",
+        icon="mdi:power-socket-de",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="offgrid_mode",
+        translation_key="offgrid_mode",
+        runtime_key="offgrid_mode",
+        device_class=SensorDeviceClass.ENUM,
+        options=OFFGRID_MODE_ENUMS,
+        icon="mdi:power-socket-de",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="offgrid_load_active",
+        translation_key="offgrid_load_active",
+        runtime_key="offgrid_load_active",
+        icon="mdi:power-plug-battery",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="offgrid_rule_reason",
+        translation_key="offgrid_rule_reason",
+        runtime_key="offgrid_rule_reason",
+        device_class=SensorDeviceClass.ENUM,
+        options=OFFGRID_RULE_REASON_ENUMS,
+        icon="mdi:shield-power",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="offgrid_source_active",
+        translation_key="offgrid_source_active",
+        runtime_key="offgrid_source_active",
+        icon="mdi:solar-power-variant",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+
+    # --------------------------------------------------
+    # ECONOMICS
+    # --------------------------------------------------
+
     # --------------------------------------------------
     # ECONOMICS
     # --------------------------------------------------
@@ -266,6 +556,7 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         native_unit_of_measurement="€",
         icon="mdi:cash",
     ),
+
     # --------------------------------------------------
     # CELL VOLTAGE (V3.5.0)
     # --------------------------------------------------
@@ -304,6 +595,7 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         runtime_key="cell_voltage_discharge_blocked",
         icon="mdi:battery-lock",
     ),
+
     # --------------------------------------------------
     # DEVICE / MODE
     # --------------------------------------------------
@@ -413,7 +705,7 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
                 return None
 
         if self.device_class == SensorDeviceClass.TIMESTAMP:
-            val = data.get(key)
+            val = details.get(key, data.get(key))
             if val is None:
                 return None
             if hasattr(val, "tzinfo"):
@@ -434,6 +726,12 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
 
         if val is None:
             return None
+
+        if key == "learned_planning_data_coverage":
+            try:
+                return round(float(val) * 100.0, 1)
+            except Exception:
+                return None
 
         if self.entity_description.native_unit_of_measurement:
             try:
@@ -478,6 +776,7 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
             "season_winter_pv_threshold": season_thresholds.get("winter_pv_threshold"),
             "season_winter_export_threshold": season_thresholds.get("winter_export_threshold"),
             "season_counter": season_thresholds.get("counter"),
+
             # V3.5.0 cell voltage transparency
             "expert_mode_enabled": details.get("expert_mode_enabled"),
             "cell_voltage_protection_enabled": details.get("cell_voltage_protection_enabled"),
@@ -485,26 +784,6 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
                 "configured_lowest_cell_voltage_sensor_count"
             ),
             "global_lowest_cell_voltage": details.get("global_lowest_cell_voltage"),
-            "cell_voltage_status": details.get("cell_voltage_status"),
-            "cell_voltage_warning": details.get("cell_voltage_warning"),
-            "cell_voltage_cutoff": details.get("cell_voltage_cutoff"),
-            "cell_voltage_resume": details.get("cell_voltage_resume"),
-            "cell_voltage_emergency_active": details.get("cell_voltage_emergency_active"),
-            "cell_voltage_discharge_blocked": details.get("cell_voltage_discharge_blocked"),
-            "cell_voltage_resume_threshold": details.get("cell_voltage_resume_threshold"),
-            "cell_voltage_soc_plausibility": details.get("cell_voltage_soc_plausibility"),
-            "cell_voltage_soc_warning_threshold": details.get("cell_voltage_soc_warning_threshold"),
-            "cell_voltage_soc_critical_threshold": details.get("cell_voltage_soc_critical_threshold"),
-            # V4.0.0 forecast transparency
-            "forecast_status": details.get("forecast_status"),
-            "pv_outlook": details.get("pv_outlook"),
-            "forecast_remaining_today_kwh": details.get("forecast_remaining_today_kwh"),
-            "forecast_tomorrow_kwh": details.get("forecast_tomorrow_kwh"),
-            "forecast_next_3h_kwh": details.get("forecast_next_3h_kwh"),
-            "forecast_next_6h_kwh": details.get("forecast_next_6h_kwh"),
-            "forecast_peak_today_w": details.get("forecast_peak_today_w"),
-            "forecast_peak_tomorrow_w": details.get("forecast_peak_tomorrow_w"),
-            "forecast_source_name": details.get("forecast_source_name"),
         }
 
         attrs["profile_overrides"] = profile_overrides
@@ -512,12 +791,20 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
         return attrs
 
     def _handle_coordinator_update(self) -> None:
-        data = self.coordinator.data or {}
-        details = dict(data.get("details") or {})
+        """Update sensor attributes without duplicating the full details block.
+
+        Important for Home Assistant Recorder:
+        The coordinator details dictionary can be large and changes often.
+        Attaching it to every sensor causes massive database growth because
+        every sensor state stores its own copy of the attributes.
+        """
+
+        attrs: dict | None = None
 
         if self.entity_description.runtime_key == "device_profile":
-            details.update(self._build_device_profile_attributes())
+            attrs = self._build_device_profile_attributes()
         elif self.entity_description.runtime_key == "price_forecast":
+            data = self.coordinator.data or {}
             forecast = data.get("price_forecast") or []
             self._attr_extra_state_attributes = {
                 "prices": [{"start": p["start"], "price": p["price"]} for p in forecast]
@@ -525,5 +812,5 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
             super()._handle_coordinator_update()
             return
 
-        self._attr_extra_state_attributes = details
+        self._attr_extra_state_attributes = attrs
         super()._handle_coordinator_update()
