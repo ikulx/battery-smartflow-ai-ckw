@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 from .const import MANUAL_CONST_DISCHARGE
 from .forecast import ForecastSummary
@@ -12,7 +12,7 @@ from .power_controller import PowerController, PowerContext
 
 AiMode = Literal["automatic", "summer", "winter", "manual"]
 ZendureMode = Literal["input", "output"]
-ActionType = Literal["idle", "charge", "discharge", "emergency"]
+ActionType = Literal["idle", "charge", "discharge", "emergency", "passthrough"]
 
 
 @dataclass
@@ -59,17 +59,30 @@ class DecisionContext:
     battery_capacity_kwh: float
 
     additional_battery_charge_w: float = 0.0
+    additional_battery_discharge_w: float = 0.0
     pv_charge_start_export_w: float = 80.0
 
     peak_factor: float = 1.35
     valley_factor: float = 0.85
     very_cheap_price: Optional[float] = None
+    
+    # V4.2.3-Beta3:
+    # Opportunity cost of using PV for charging instead of exporting it.
+    # If no feed-in tariff is available, 0.0 is conservative: only zero/negative
+    # grid prices may override currently useful PV.
+    feed_in_tariff: float = 0.0
 
     # V3.5.0 cell voltage protection
     cell_voltage_emergency_active: bool = False
 
     # V4.0.0 optional forecast input
     forecast: Optional[ForecastSummary] = None
+
+    # V4.1.0 learned charge-window planning
+    # Passed in from coordinator as an object from learned_planning.py.
+    # Keep this typed as Any to avoid circular imports.
+    learned_charge_plan: Any | None = None
+    learned_planning_enabled: bool = False
 
     # Runtime counters / debounce
     pv_charge_start_counter: int = 0
@@ -80,6 +93,19 @@ class DecisionContext:
     # Protection state from coordinator
     discharge_blocked_by_soc_min: bool = False
     cell_voltage_discharge_blocked: bool = False
+
+    # SF800Pro PV house-load passthrough state
+    pv_houseload_passthrough_active: bool = False
+    pv_houseload_passthrough_target_w: float = 0.0
+    pv_houseload_passthrough_stop_reason: str = "none"
+    
+    # V4.2.x Off-Grid / Inselsteckdose
+    offgrid_power_w: float = 0.0
+    offgrid_mode: str = "not_configured"
+    offgrid_available: bool = False
+    offgrid_active: bool = False
+    offgrid_load_active: bool = False
+    offgrid_source_active: bool = False
 
 
 @dataclass
@@ -136,12 +162,17 @@ class AdditionalBatteryBlockRule(BaseRule):
         return None
 
 
+class AdditionalBatteryDischargeBlockRule(BaseRule):
+    def evaluate(self, engine, ctx):
+        # Zusatzakku-Entladung darf nur Ladeentscheidungen verhindern.
+        # Sie darf keine Entladung blockieren, insbesondere keine manuelle
+        # konstante Entladung.
+        return None
+
+
 class PeakRule(BaseRule):
     def evaluate(self, engine, ctx):
-        export_active = float(ctx.grid_export_w or 0.0) > 80.0
-        discharge_active = float(ctx.prev_discharge_w or 0.0) > 0.0
-
-        if export_active and not discharge_active:
+        if engine._pv_surplus_blocks_discharge(ctx):
             return None
 
         if ctx.soc > ctx.soc_min and ctx.ai_mode in ("automatic", "winter"):
@@ -150,6 +181,11 @@ class PeakRule(BaseRule):
                 and engine._is_effective_discharge_price_reached(ctx)
             ):
                 discharge_w = engine._delta_discharge(ctx)
+                discharge_w = max(
+                    float(discharge_w or 0.0),
+                    engine._discharge_keepalive_w(ctx),
+                )
+
                 return engine._with_thresholds(
                     ctx,
                     DecisionResult(
@@ -166,6 +202,11 @@ class PeakRule(BaseRule):
                 and ctx.price_now >= ctx.very_expensive_threshold
             ):
                 discharge_w = engine._delta_discharge(ctx)
+                discharge_w = max(
+                    float(discharge_w or 0.0),
+                    engine._discharge_keepalive_w(ctx),
+                )
+
                 return engine._with_thresholds(
                     ctx,
                     DecisionResult(
@@ -181,10 +222,7 @@ class PeakRule(BaseRule):
 
 class ArbitrageRule(BaseRule):
     def evaluate(self, engine, ctx):
-        export_active = float(ctx.grid_export_w or 0.0) > 80.0
-        discharge_active = float(ctx.prev_discharge_w or 0.0) > 0.0
-
-        if export_active and not discharge_active:
+        if engine._pv_surplus_blocks_discharge(ctx):
             return None
 
         if (
@@ -192,10 +230,14 @@ class ArbitrageRule(BaseRule):
             and ctx.avg_charge_price is not None
             and ctx.soc > ctx.soc_min
             and ctx.ai_mode in ("automatic", "winter")
-            and engine._is_market_discharge_window(ctx)
             and engine._is_effective_discharge_price_reached(ctx)
         ):
             discharge_w = engine._delta_discharge(ctx)
+            discharge_w = max(
+                float(discharge_w or 0.0),
+                engine._discharge_keepalive_w(ctx),
+            )
+
             return engine._with_thresholds(
                 ctx,
                 DecisionResult(
@@ -206,6 +248,107 @@ class ArbitrageRule(BaseRule):
                     reason="price_based_discharge",
                 ),
             )
+        return None
+
+
+class LearnedPlanningRule(BaseRule):
+    def evaluate(self, engine, ctx):
+        """V4.1.0 learned charge-window planning.
+
+        Safe activation gate:
+        - completely inactive unless learned_planning_enabled is True
+        - only uses plans with status ready/active
+        - only handles learned wait/charge decisions
+        - classic planning remains fallback
+        """
+        if not bool(getattr(ctx, "learned_planning_enabled", False)):
+            return None
+
+        plan = getattr(ctx, "learned_charge_plan", None)
+        if plan is None:
+            return None
+
+        if ctx.ai_mode not in ("automatic", "winter"):
+            return None
+
+        if ctx.soc >= ctx.soc_max:
+            return None
+
+        if ctx.price_now is None or not ctx.price_points:
+            return None
+
+        if ctx.battery_capacity_kwh <= 0 or ctx.max_charge_w <= 0:
+            return None
+
+        if float(ctx.additional_battery_charge_w or 0.0) > 0.0:
+            return None
+
+        status = str(getattr(plan, "status", "") or "")
+        mode = str(getattr(plan, "mode", "") or "")
+        decision_reason = str(getattr(plan, "decision_reason", "") or "")
+
+        if status not in ("ready", "active"):
+            return None
+
+        required_kwh = float(
+            getattr(plan, "required_charge_energy_kwh", 0.0) or 0.0
+        )
+        if required_kwh <= 0.0:
+            return None
+
+        if decision_reason == "learned_charge_window_no_charge_needed":
+            return None
+
+        if mode == "wait" or decision_reason == "learned_charge_window_wait":
+            # Learned waiting must not suppress classic immediate charging rules.
+            # If the learned planner only wants to wait, continue with the normal
+            # planning / valley / forecast rules below.
+            return None
+
+        if mode == "charge" or decision_reason in (
+            "learned_charge_window_active",
+            "learned_charge_window_latest_start_reached",
+            "learned_charge_window_deadline_too_close_start_now",
+        ):
+            planned_power_w = float(
+                getattr(plan, "effective_charge_power_w", 0.0) or 0.0
+            )
+
+            if planned_power_w <= 0.0:
+                planned_power_w = float(ctx.max_charge_w)
+
+            charge_w = min(
+                float(ctx.max_charge_w),
+                max(100.0, planned_power_w),
+            )
+
+            reason = (
+                decision_reason
+                if decision_reason
+                in (
+                    "learned_charge_window_active",
+                    "learned_charge_window_latest_start_reached",
+                    "learned_charge_window_deadline_too_close_start_now",
+                )
+                else "learned_charge_window_active"
+            )
+
+            block = engine._charge_blocked_by_additional_battery_discharge(ctx)
+            if block is not None:
+                return block
+
+            return engine._with_thresholds(
+                ctx,
+                DecisionResult(
+                    action="charge",
+                    ac_mode="input",
+                    charge_w=charge_w,
+                    discharge_w=0.0,
+                    reason=reason,
+                    target_soc=ctx.soc_max,
+                ),
+            )
+
         return None
 
 
@@ -229,6 +372,18 @@ class VeryCheapRule(BaseRule):
 
         if float(ctx.price_now) > float(ctx.very_cheap_price):
             return None
+
+        # V4.2.3-Beta3:
+        # Do not let a user-defined very-cheap threshold blindly suppress useful
+        # PV charging. PV should keep priority unless grid energy is really
+        # cheaper than the PV opportunity cost, e.g. zero/negative prices or
+        # price below feed-in tariff.
+        if engine._optional_grid_charge_should_wait_for_pv(ctx):
+            return None
+
+        block = engine._charge_blocked_by_additional_battery_discharge(ctx)
+        if block is not None:
+            return block
 
         return engine._with_thresholds(
             ctx,
@@ -271,6 +426,13 @@ class ValleyBoostRule(BaseRule):
 
         if ctx.pv_w < 100:
             return None
+            
+        # V4.2.3-Beta3:
+        # Valley boost is still optional grid charging. If useful PV is already
+        # available and grid energy is not cheaper than PV opportunity cost,
+        # keep PV charging priority.
+        if engine._optional_grid_charge_should_wait_for_pv(ctx):
+            return None
 
         soc_gap_pct = max(0.0, ctx.soc_max - ctx.soc)
         base_required_kwh = ctx.battery_capacity_kwh * (soc_gap_pct / 100.0)
@@ -284,6 +446,10 @@ class ValleyBoostRule(BaseRule):
         if engine._forecast_available(ctx) and engine._forecast_outlook(ctx) == "mixed":
             charge_w = max(300.0, float(ctx.max_charge_w) * 0.75)
             reason = "valley_boost_charge_mixed_forecast"
+
+        block = engine._charge_blocked_by_additional_battery_discharge(ctx)
+        if block is not None:
+            return block
 
         return engine._with_thresholds(
             ctx,
@@ -317,6 +483,13 @@ class ValleyOpportunityRule(BaseRule):
         if not engine._is_valley_price_now(ctx):
             return None
 
+        # V4.2.3-Beta3:
+        # Valley opportunity is only optional grid charging. It must not take over
+        # while useful PV is available or already charging the battery, unless grid
+        # energy is economically better than using/exporting PV.
+        if engine._optional_grid_charge_should_wait_for_pv(ctx):
+            return None
+
         if not engine._is_real_pv_underperforming(ctx):
             return None
 
@@ -343,6 +516,10 @@ class ValleyOpportunityRule(BaseRule):
 
         charge_w = max(charge_w, 400.0)
 
+        block = engine._charge_blocked_by_additional_battery_discharge(ctx)
+        if block is not None:
+            return block
+
         return engine._with_thresholds(
             ctx,
             DecisionResult(
@@ -356,6 +533,35 @@ class ValleyOpportunityRule(BaseRule):
         )
 
 
+class PvHouseLoadPassthroughRule(BaseRule):
+    def evaluate(self, engine, ctx):
+        if not engine._pv_houseload_passthrough_enabled(ctx):
+            return None
+
+        if ctx.ai_mode == "summer" or (
+            ctx.ai_mode == "automatic" and ctx.season == "summer"
+        ):
+            return None
+
+        if not bool(ctx.pv_houseload_passthrough_active):
+            return None
+
+        target_w = max(0.0, float(ctx.pv_houseload_passthrough_target_w or 0.0))
+        if target_w <= 0.0:
+            return None
+
+        return engine._with_thresholds(
+            ctx,
+            DecisionResult(
+                action="passthrough",
+                ac_mode="output",
+                charge_w=0.0,
+                discharge_w=min(target_w, float(ctx.max_discharge_w)),
+                reason="pv_house_load_passthrough",
+            ),
+        )
+
+
 class PvRule(BaseRule):
     def evaluate(self, engine, ctx):
         planning = engine._evaluate_adaptive_planning(ctx)
@@ -363,6 +569,12 @@ class PvRule(BaseRule):
             return None
 
         if ctx.soc >= ctx.soc_max:
+            return None
+
+        if (
+            engine._pv_houseload_passthrough_enabled(ctx)
+            and bool(ctx.pv_houseload_passthrough_active)
+        ):
             return None
 
         export_w = float(ctx.grid_export_w or 0.0)
@@ -378,10 +590,13 @@ class PvRule(BaseRule):
             and engine._discharge_protection_active(ctx)
         )
 
+        # A previous 60 W discharge keepalive must not suppress PV surplus charge.
+        # If there is real PV surplus, PV charging may take over even when
+        # prev_discharge_w is still > 0 from the previous cycle.
         discharge_active = prev_discharge_w > 0.0
-        if discharge_active:
+        if discharge_active and not engine._pv_surplus_blocks_discharge(ctx):
             return None
-            
+
         prices = [p.price for p in ctx.price_points] if ctx.price_points else []
         valley_active = (
             ctx.ai_mode in ("automatic", "winter")
@@ -396,13 +611,30 @@ class PvRule(BaseRule):
 
         charge_already_active = bool(ctx.pv_charge_latched)
 
+        sf800_passthrough_enabled = engine._pv_houseload_passthrough_enabled(ctx)
+
         soft_start_ready = (
             False
-            if protection_active and engine._low_soc_pv_charge_requires_export(ctx)
+            if (
+                sf800_passthrough_enabled
+                or (protection_active and engine._low_soc_pv_charge_requires_export(ctx))
+            )
             else engine._pv_soft_start_ready(ctx)
         )
 
-        start_allowed = (has_direct_surplus and start_counter >= 2) or soft_start_ready
+        required_start_cycles = 6 if sf800_passthrough_enabled else 2
+
+        # The user-configured "PV-Ladestart ab Einspeisung" must be a real
+        # hard start threshold for new PV charging.
+        #
+        # Soft-start may help to keep or smooth an already active PV charge,
+        # but it must not start a new INPUT/PV charge below the configured
+        # export threshold. Otherwise BSFAI can enter PV charging too early
+        # during weak morning PV and cause INPUT/OUTPUT/status flicker.
+        start_allowed = (
+            has_direct_surplus
+            and start_counter >= required_start_cycles
+        )
 
         # Laufende PV-Ladung deutlich stärker halten.
         # Solange keine echte anhaltende Schwäche vorliegt, bleiben wir im PV-Zweig.
@@ -441,15 +673,29 @@ class PvRule(BaseRule):
         # Wenn die PV-Ladung bereits läuft, soll primär die Leistung geregelt werden,
         # nicht der ganze Ladezustand verloren gehen.
         if keepalive_charge:
-            charge_w = max(charge_w, engine._charge_keepalive_w(ctx))
+            if sf800_passthrough_enabled:
+                # Beim SF800Pro darf INPUT nicht künstlich über 80 W gehalten werden,
+                # wenn kein echter stabiler Export vorhanden ist.
+                if not has_direct_surplus:
+                    return None
+            else:
+                charge_w = max(charge_w, engine._charge_keepalive_w(ctx))
 
-        if soft_start_ready and not keepalive_charge:
+        if (
+            soft_start_ready
+            and keepalive_charge
+            and not sf800_passthrough_enabled
+        ):
             if import_w <= 60.0:
                 charge_w = max(charge_w, 80.0)
 
         charge_w = min(float(charge_w), float(ctx.max_charge_w))
 
         if charge_w > 0:
+            block = engine._charge_blocked_by_additional_battery_discharge(ctx)
+            if block is not None:
+                return block
+
             return engine._with_thresholds(
                 ctx,
                 DecisionResult(
@@ -477,6 +723,14 @@ class SummerRule(BaseRule):
                     and engine._discharge_protection_active(ctx)
                 )
             ):
+                # V4.2.3-Beta5:
+                # Do not request summer house-load discharge while PV already
+                # nearly covers the load and real grid import is small/absent.
+                # This avoids false summer_cover_deficit decisions during
+                # active PV surplus charging.
+                if engine._pv_surplus_blocks_discharge(ctx):
+                    return None
+
                 discharge_w = engine._delta_discharge(ctx)
                 if discharge_w > 0:
                     return engine._with_thresholds(
@@ -502,6 +756,10 @@ class ManualRule(BaseRule):
             return None
 
         if ctx.manual_action == "charge":
+            block = engine._charge_blocked_by_additional_battery_discharge(ctx)
+            if block is not None:
+                return block
+
             return engine._with_thresholds(
                 ctx,
                 DecisionResult(
@@ -549,11 +807,14 @@ class DecisionEngine:
         self._rules = [
             EmergencyRule(),
             AdditionalBatteryBlockRule(),
+            AdditionalBatteryDischargeBlockRule(),
             ManualRule(),
             VeryCheapRule(),
+            PvHouseLoadPassthroughRule(),
             PvRule(),
             PeakRule(),
             ArbitrageRule(),
+            LearnedPlanningRule(),
             PlanningRule(),
             ValleyBoostRule(),
             ValleyOpportunityRule(),
@@ -576,6 +837,29 @@ class DecisionEngine:
             ),
         )
 
+    def _additional_battery_discharge_blocks_charge(
+        self,
+        ctx: DecisionContext,
+    ) -> bool:
+        """Return True when a second battery is discharging.
+
+        This must only block charging decisions. Discharging decisions,
+        especially manual constant discharge, must remain allowed.
+        """
+        return float(ctx.additional_battery_discharge_w or 0.0) > 50.0
+
+    def _charge_blocked_by_additional_battery_discharge(
+        self,
+        ctx: DecisionContext,
+    ) -> DecisionResult | None:
+        if not self._additional_battery_discharge_blocks_charge(ctx):
+            return None
+
+        return self._idle_result(
+            ctx,
+            reason="additional_battery_discharging_block",
+        )
+
     def _profile_flag(self, ctx: DecisionContext, key: str, default: bool = False) -> bool:
         try:
             return bool(ctx.profile.get(key, default))
@@ -591,11 +875,193 @@ class DecisionEngine:
     def _low_soc_discharge_requires_cell_resume(self, ctx: DecisionContext) -> bool:
         return self._profile_flag(ctx, "LOW_SOC_DISCHARGE_REQUIRES_CELL_RESUME", False)
 
+    def _pv_houseload_passthrough_enabled(self, ctx: DecisionContext) -> bool:
+        return self._profile_flag(ctx, "PV_HOUSELOAD_PASSTHROUGH", False)
+
     def _discharge_protection_active(self, ctx: DecisionContext) -> bool:
         return bool(
             ctx.discharge_blocked_by_soc_min
             or ctx.cell_voltage_discharge_blocked
         )
+        
+    def _pv_surplus_blocks_discharge(self, ctx: DecisionContext) -> bool:
+        """Return True when real PV surplus should prevent price/peak discharge.
+
+        This must block a new economic discharge when there is real PV export,
+        but it must not kill an already active discharge just because the
+        output regulation briefly overshoots into small export.
+
+        A small previous discharge keepalive, e.g. 60 W, is not treated as a
+        real active discharge.
+        """
+
+        export_w = float(ctx.grid_export_w or 0.0)
+        import_w = float(ctx.grid_import_w or 0.0)
+        prev_discharge_w = float(ctx.prev_discharge_w or 0.0)
+        start_export_threshold = float(ctx.pv_charge_start_export_w or 80.0)
+
+        surplus_threshold_w = max(40.0, start_export_threshold * 0.50)
+
+        if export_w <= surplus_threshold_w:
+            return False
+
+        if import_w > 30.0:
+            return False
+
+        keepalive_w = float(self._discharge_keepalive_w(ctx) or 60.0)
+        real_active_discharge_threshold_w = max(120.0, keepalive_w * 1.5)
+
+        # If a real discharge is already active, do not let the DecisionEngine
+        # collapse to idle because of short export. The V4.2 ModeArbiter and
+        # PowerController handle the ramp-down / exit stability.
+        if prev_discharge_w >= real_active_discharge_threshold_w:
+            return False
+
+        # No real active discharge, only idle/old keepalive:
+        # PV surplus should block starting or keeping economic discharge.
+        return True
+        
+    def _pv_power_is_relevant_for_charging(self, ctx: DecisionContext) -> bool:
+        """Return True when current PV should keep priority over optional grid charge.
+
+        This intentionally does not rely only on grid export. During active INPUT
+        charging the device may absorb PV directly, so the grid export sensor can
+        stay near 0 W even though PV is clearly available and already charging the
+        battery.
+        """
+
+        if ctx.soc >= ctx.soc_max:
+            return False
+
+        if self._additional_battery_discharge_blocks_charge(ctx):
+            return False
+
+        pv_w = max(0.0, float(ctx.pv_w or 0.0))
+        house_load_w = max(0.0, float(ctx.house_load_w or 0.0))
+        export_w = max(0.0, float(ctx.grid_export_w or 0.0))
+        import_w = max(0.0, float(ctx.grid_import_w or 0.0))
+        prev_charge_w = max(0.0, float(ctx.prev_charge_w or 0.0))
+
+        start_export_threshold = max(
+            0.0,
+            float(ctx.pv_charge_start_export_w or 0.0),
+        )
+
+        # Direct export is the strongest signal.
+        if export_w >= max(30.0, start_export_threshold * 0.40):
+            return True
+
+        # If PV is already charging the battery, grid export may be 0.
+        # Keep PV priority as long as PV power is meaningful.
+        if prev_charge_w > 0.0 and pv_w >= max(180.0, house_load_w * 0.75):
+            return True
+
+        # Strong standalone PV signal: PV clearly covers house load and leaves
+        # meaningful remaining power for charging.
+        if pv_w >= house_load_w + max(120.0, start_export_threshold):
+            return True
+
+        # Fallback for low house-load systems: PV is clearly available and there
+        # is no strong external import pressure.
+        if pv_w >= max(300.0, house_load_w * 1.50) and import_w <= 250.0:
+            return True
+
+        return False
+
+    def _grid_charge_is_cheaper_than_pv(self, ctx: DecisionContext) -> bool:
+        """Return True when grid charging is economically better than using PV.
+
+        PV is not strictly free if exporting would earn a feed-in tariff. The
+        opportunity cost of PV is therefore the feed-in tariff. If no tariff is
+        configured/passed, 0.0 is used, which means only zero or negative grid
+        prices may override PV.
+        """
+
+        if ctx.price_now is None:
+            return False
+
+        try:
+            price_now = float(ctx.price_now)
+        except Exception:
+            return False
+
+        try:
+            pv_opportunity_price = max(0.0, float(ctx.feed_in_tariff or 0.0))
+        except Exception:
+            pv_opportunity_price = 0.0
+
+        # Small epsilon avoids oscillation on equal/rounded values.
+        return price_now <= (pv_opportunity_price - 0.001)
+
+    def _optional_grid_charge_should_wait_for_pv(self, ctx: DecisionContext) -> bool:
+        """Return True when optional grid charging should not override current PV.
+
+        Applies to opportunity/comfort charging, not to emergency, manual charge,
+        learned/deadline charge or other hard safety reasons.
+        """
+
+        if not self._pv_power_is_relevant_for_charging(ctx):
+            return False
+
+        if self._grid_charge_is_cheaper_than_pv(ctx):
+            return False
+
+        return True
+        
+    def _pv_surplus_should_prefer_pv_charge(self, ctx: DecisionContext) -> bool:
+        """Return True when normal valley-opportunity charging should not
+        replace PV surplus charging.
+
+        Valley opportunity charging is only an optional cheap-price charge.
+        If PV surplus charging is already active/latched or clearly possible,
+        PV charging should keep priority. This prevents strategy flapping
+        between pv_surplus_charge and valley_opportunity_charge.
+
+        Important:
+        During an active INPUT/PV charge phase the charge itself can create
+        temporary grid import. That import must not be interpreted as a reason
+        to switch from PV surplus charging to valley-opportunity charging.
+        """
+
+        if ctx.soc >= ctx.soc_max:
+            return False
+
+        export_w = float(ctx.grid_export_w or 0.0)
+        import_w = float(ctx.grid_import_w or 0.0)
+        pv_w = float(ctx.pv_w or 0.0)
+        house_load_w = float(ctx.house_load_w or 0.0)
+        start_export_threshold = float(ctx.pv_charge_start_export_w or 0.0)
+
+        # Strongest rule:
+        # If PV charge is latched, ValleyOpportunity must not take over.
+        # The PV charge hysteresis / latch logic is responsible for deciding
+        # when PV charging has really ended.
+        if bool(ctx.pv_charge_latched):
+            return True
+
+        # If PV charge start confirmation is currently running, do not switch
+        # to valley opportunity for one or two cycles.
+        if int(ctx.pv_charge_start_counter or 0) > 0:
+            return True
+
+        # If PV charge stop confirmation is counting, keep ValleyOpportunity out
+        # until the PV hysteresis has fully released.
+        if int(ctx.pv_charge_stop_counter or 0) > 0:
+            return True
+
+        # Direct export means PV surplus is actually available.
+        if export_w >= max(40.0, start_export_threshold * 0.50):
+            return True
+
+        # Fallback when the grid export signal is noisy or delayed:
+        # PV clearly exceeds the known house load and there is no strong import.
+        if (
+            pv_w >= house_load_w + max(80.0, start_export_threshold * 0.50)
+            and import_w <= 180.0
+        ):
+            return True
+
+        return False
 
     def _compute_base_price(self, prices: List[float]) -> float:
         return sum(prices) / len(prices)
@@ -632,14 +1098,59 @@ class DecisionEngine:
         valley_threshold = self._compute_valley_threshold(prices, ctx.valley_factor)
         economic_threshold = self._compute_economic_discharge_threshold(ctx)
 
+        try:
+            configured_expensive_threshold = float(ctx.expensive_threshold)
+        except Exception:
+            configured_expensive_threshold = 0.0
+
+        configured_expensive_threshold = max(0.0, configured_expensive_threshold)
+
+        avg_charge_price = ctx.avg_charge_price
+        try:
+            avg_charge_price_float = (
+                float(avg_charge_price)
+                if avg_charge_price is not None
+                else None
+            )
+        except Exception:
+            avg_charge_price_float = None
+
+        # Beta11:
+        # The user-configured expensive threshold must protect against false
+        # discharge when the stored average charge price is missing or effectively
+        # zero, e.g. after PV-only charging. In that case, avg_charge_price * margin
+        # would be near zero and normal prices such as 0.14 €/kWh could otherwise
+        # look profitable.
+        #
+        # If a real charge price exists, do not force every economic discharge up
+        # to the expensive threshold. Otherwise Automatic/Winter mode becomes too
+        # restrictive and may stop discharging entirely after the Beta7 threshold
+        # hardening.
+        avg_price_missing_or_zero = (
+            avg_charge_price_float is None
+            or avg_charge_price_float <= 0.0001
+        )
+
         if economic_threshold is None:
-            return market_peak_threshold
+            return max(market_peak_threshold, configured_expensive_threshold)
+
+        if avg_price_missing_or_zero:
+            return max(
+                market_peak_threshold,
+                configured_expensive_threshold,
+                valley_threshold,
+            )
 
         market_anchor = market_peak_threshold * 0.82
+
         effective = (market_anchor * 0.70) + (economic_threshold * 0.30)
 
         effective = max(effective, economic_threshold)
         effective = max(effective, valley_threshold)
+
+        # Do not force valid economic discharge to the configured expensive
+        # threshold. The configured threshold remains relevant when no real
+        # charge price exists and for the separate very-expensive force logic.
         effective = min(effective, market_peak_threshold)
 
         return effective
@@ -784,6 +1295,20 @@ class DecisionEngine:
 
     def _charge_keepalive_w(self, ctx: DecisionContext) -> float:
         return min(float(ctx.max_charge_w), 80.0)
+
+    def _discharge_keepalive_w(self, ctx: DecisionContext) -> float:
+        try:
+            keepalive = float(ctx.profile.get("KEEPALIVE_MIN_OUTPUT_W", 60.0) or 60.0)
+        except Exception:
+            keepalive = 60.0
+
+        return max(
+            0.0,
+            min(
+                float(ctx.max_discharge_w),
+                keepalive,
+            ),
+        )
 
     def _pv_morning_transition_active(self, ctx: DecisionContext) -> bool:
         if ctx.ai_mode == "manual":
@@ -997,6 +1522,10 @@ class DecisionEngine:
                     and int(ctx.forecast_wait_block_counter or 0) >= 2
                 ):
                     reason = "planning_forecast_reality_override"
+
+            block = self._charge_blocked_by_additional_battery_discharge(ctx)
+            if block is not None:
+                return block
 
             return self._with_thresholds(
                 ctx,

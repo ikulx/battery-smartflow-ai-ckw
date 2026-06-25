@@ -11,9 +11,13 @@
           "pack_capacity_kwh": "Kapazität pro Akku-Pack (kWh)",
           "battery_ac_power_entity": "Batterie Leistungssensor (W)",
           "additional_battery_charge_entity": "Zusatzakku Ladeleistung (optional)",
+          "additional_battery_discharge_entity": "Zusatzakku Entladeleistung (optional)",
+          "offgrid_power_entity": "Off-Grid-Leistung / Inselsteckdose (optional)",
+          "offgrid_mode_entity": "Off-Grid-Modus (optional)",
           "capacity_entity": "Kapazitätssensor (optional)",
           "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "pv_entity": "PV-Leistung Sensor",
+		  "feed_in_tariff": "Einspeisevergütung",
           "pv_forecast_today_entity": "PV-Prognose heute (optional)",
           "pv_forecast_tomorrow_entity": "PV-Prognose morgen (optional)",
           "price_now_entity": "Aktueller Strompreis",
@@ -35,9 +39,13 @@
           "pack_capacity_kwh": "Nutzbare Kapazität eines einzelnen Akku-Packs in kWh. Wird mit der Anzahl der installierten Packs multipliziert, um die Gesamtkapazität zu berechnen.",
           "battery_ac_power_entity": "Sensor für die AC-Leistung der Batterie. Der Wert muss bei Entladung positiv sein. Empfohlen: sensor.solarflow_2400_ac_bat_in_out",
           "additional_battery_charge_entity": "Optionaler Sensor eines zweiten Akkusystems. Wenn dieser Sensor eine positive Ladeleistung meldet, wird die Entladung von Battery SmartFlow AI blockiert.",
+          "additional_battery_discharge_entity": "Optionaler Sensor eines zweiten Akkusystems. Wenn dieser Sensor eine positive Entladeleistung meldet, wird das Laden von Battery SmartFlow AI blockiert, damit kein Akku-zu-Akku-Laden entsteht.",
+          "offgrid_power_entity": "Optionaler Sensor für die Leistung der Zendure-Off-Grid-/Inselsteckdose. Positive Werte werden als aktive Last an der Inselsteckdose interpretiert.",
+          "offgrid_mode_entity": "Optionaler Select-Sensor für den Off-Grid-Modus der Zendure-Off-Grid-/Inselsteckdose. Der Modus wird nur gelesen und niemals von Battery SmartFlow AI gesetzt.",
           "capacity_entity": "Optionaler Sensor mit der automatisch berechneten verfügbaren Batteriekapazität in kWh (z. B. aus der Zendure-Integration). Falls gesetzt, überschreibt er die manuelle Berechnung.",
           "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird künftig für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt. Wird zur Erkennung von Überschuss verwendet.",
+		  "feed_in_tariff": "Vergütung pro eingespeister kWh in ganzer Währung. Wird als wirtschaftlicher Vergleichswert genutzt: Optionale Netzladungen dürfen vorhandene PV-Ladung nur verdrängen, wenn Netzstrom günstiger ist als diese Einspeisevergütung. Wenn keine Vergütung eingetragen ist, bleibt der Wert 0,0.",
           "pv_forecast_today_entity": "Optionaler Sensor mit der PV-Tagesprognose für heute, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
           "pv_forecast_tomorrow_entity": "Optionaler Sensor mit der PV-Tagesprognose für morgen, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
           "price_now_entity": "Sensor mit dem aktuellen Strompreis (z. B. Tibber). Wird für wirtschaftliche Entscheidungen genutzt.",
@@ -91,9 +99,13 @@
           "pack_capacity_kwh": "Kapazität pro Akku-Pack (kWh)",
           "battery_ac_power_entity": "Batterie Leistungssensor (W)",
           "additional_battery_charge_entity": "Zusatzakku Ladeleistung (optional)",
+          "additional_battery_discharge_entity": "Zusatzakku Entladeleistung (optional)",
+          "offgrid_power_entity": "Off-Grid-Leistung / Inselsteckdose (optional)",
+          "offgrid_mode_entity": "Off-Grid-Modus (optional)",
           "capacity_entity": "Kapazitätssensor (optional)",
           "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "pv_entity": "PV-Leistung Sensor",
+		  "feed_in_tariff": "Einspeisevergütung",
           "pv_forecast_today_entity": "PV-Prognose heute (optional)",
           "pv_forecast_tomorrow_entity": "PV-Prognose morgen (optional)",
           "price_now_entity": "Aktueller Strompreis",
@@ -115,9 +127,13 @@
           "pack_capacity_kwh": "Nutzbare Kapazität eines einzelnen Akku-Packs in kWh. Wird mit der Anzahl der installierten Packs multipliziert, um die Gesamtkapazität zu berechnen.",
           "battery_ac_power_entity": "Sensor für die AC-Leistung der Batterie. Der Wert muss bei Entladung positiv sein. Empfohlen: sensor.solarflow_2400_ac_bat_in_out",
           "additional_battery_charge_entity": "Optionaler Sensor eines zweiten Akkusystems. Wenn dieser Sensor eine positive Ladeleistung meldet, wird die Entladung von Battery SmartFlow AI blockiert.",
+          "additional_battery_discharge_entity": "Optionaler Sensor eines zweiten Akkusystems. Wenn dieser Sensor eine positive Entladeleistung meldet, wird das Laden von Battery SmartFlow AI blockiert, damit kein Akku-zu-Akku-Laden entsteht.",
+          "offgrid_power_entity": "Optionaler Sensor für die Leistung der Zendure-Off-Grid-/Inselsteckdose. Positive Werte werden als aktive Last an der Inselsteckdose interpretiert.",
+          "offgrid_mode_entity": "Optionaler Select-Sensor für den Off-Grid-Modus der Zendure-Off-Grid-/Inselsteckdose. Der Modus wird nur gelesen und niemals von Battery SmartFlow AI gesetzt.",
           "capacity_entity": "Optionaler Sensor mit der automatisch berechneten verfügbaren Batteriekapazität in kWh (z. B. aus der Zendure-Integration). Falls gesetzt, überschreibt er die manuelle Berechnung.",
           "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird künftig für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt.",
+		  "feed_in_tariff": "Vergütung pro eingespeister kWh in ganzer Währung. Wird als wirtschaftlicher Vergleichswert genutzt: Optionale Netzladungen dürfen vorhandene PV-Ladung nur verdrängen, wenn Netzstrom günstiger ist als diese Einspeisevergütung. Wenn keine Vergütung eingetragen ist, bleibt der Wert 0,0.",
           "pv_forecast_today_entity": "Optionaler Sensor mit der PV-Tagesprognose für heute, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
           "pv_forecast_tomorrow_entity": "Optionaler Sensor mit der PV-Tagesprognose für morgen, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
           "price_now_entity": "Aktueller Strompreis. Ermöglicht preisabhängige Entladung.",
@@ -205,12 +221,16 @@
       },
       "expert": {
         "title": "Regelprofil bearbeiten – Expertenmodus",
-        "description": "Erweiterte Schutz- und Diagnosefunktionen. Aktiviere zuerst den Expertenmodus. Danach kann optional der Zellspannungs-Schutz aktiviert werden. Bei aktivem Zellspannungs-Schutz werden zusätzliche Sensoren passend zur eingestellten Akku-Anzahl angezeigt.",
+        "description": "Erweiterte Schutz-, Diagnose-, Planungs- und Regelungsfunktionen. Die lernbasierte Ladefenster-Planung wird automatisch verwendet, sobald genügend Lerndaten vorhanden sind. Bei Bedarf kann sie hier deaktiviert werden. Die verbesserte Leistungsregelung kann hier aktiviert oder bei Problemen wieder deaktiviert werden. Für den Zellspannungs-Schutz muss zuerst der Expertenmodus aktiviert werden.",
         "data": {
-          "expert_mode_enabled": "Expertenmodus aktivieren"
+          "expert_mode_enabled": "Expertenmodus aktivieren",
+          "learned_planning_enabled": "Lernbasierte Ladefenster-Planung verwenden",
+          "regulation_v42_enabled": "Verbesserte Leistungsregelung verwenden"
         },
         "data_description": {
-          "expert_mode_enabled": "Aktiviert den erweiterten Expertenbereich für zusätzliche Schutz- und Diagnosefunktionen."
+          "expert_mode_enabled": "Aktiviert den erweiterten Expertenbereich für zusätzliche Schutz- und Diagnosefunktionen.",
+          "learned_planning_enabled": "Wenn aktiviert, nutzt Battery SmartFlow AI die lernbasierte Ladefenster-Planung automatisch, sobald genügend Lerndaten vorhanden sind. Bis dahin bleibt die klassische Planung aktiv. Wenn deaktiviert, wird dauerhaft die klassische Planung verwendet.",
+          "regulation_v42_enabled": "Aktiviert die neue technische Leistungsregelung mit Netz-Historie, stabilerer Modusfreigabe und geglätteter Leistungssteuerung. Kann bei Problemen jederzeit wieder deaktiviert werden."
         }
       },
       "expert_cell_voltage": {
@@ -355,9 +375,111 @@
           "emergency": "Notladung",
           "manual": "Manuelle Ladestrategie",
           "valley_opportunity": "Opportunistische Tal-Ladung",
-          "valley_opportunity_mixed": "Opportunistische Tal-Ladung bei gemischter Prognose"
+          "valley_opportunity_mixed": "Opportunistische Tal-Ladung bei gemischter Prognose",
+          "learned_planning": "Lernbasierte Ladefenster-Planung"
         }
-      },      
+      },
+      "learned_planning_status": {
+        "name": "Ladeplanung: Lernstatus",
+        "state": {
+          "not_started": "Noch nicht gestartet",
+          "collecting": "Daten werden gesammelt",
+          "insufficient_data": "Nicht genügend Lerndaten",
+          "ready": "Bereit",
+          "active": "Aktiv"
+        }
+      },
+      "learned_planning_mode": {
+        "name": "Ladeplanung: Modus",
+        "state": {
+          "disabled": "Deaktiviert",
+          "collecting": "Daten werden gesammelt",
+          "classic_fallback": "Klassische Planung",
+          "ready": "Lernplanung bereit",
+          "wait": "Lernplanung wartet auf Ladefenster",
+          "charge": "Lernplanung aktiv",
+          "classic": "Klassische Planung",
+          "learned_wait": "Lernplanung wartet auf Ladefenster",
+          "learned_active": "Lernplanung aktiv"
+        }
+      },
+      "learned_planning_optimal_charge_start": {
+        "name": "Ladeplanung: Geplanter Ladestart"
+      },
+      "learned_planning_deadline": {
+        "name": "Ladeplanung: Deadline"
+      },
+      "learned_planning_required_charge_energy_kwh": {
+        "name": "Ladeplanung: Nachladeenergie"
+      },
+      "learned_planning_effective_window_minutes": {
+        "name": "Ladeplanung: Fenstergröße"
+      },
+      "learned_planning_blocking_reason": {
+        "name": "Diagnose: Lernplanung Blocking Reason",
+        "state": {
+          "none": "Kein Blocker",
+          "not_started": "Lernplanung noch nicht gestartet",
+          "not_ready": "Lernmodell noch nicht bereit",
+          "not_enough_days": "Nicht genügend Historientage",
+          "not_enough_usable_days": "Nicht genügend verwertbare Lerntage",
+          "night_window_coverage_too_low": "Nachtfenster zu wenig abgedeckt",
+          "morning_window_coverage_too_low": "Morgenfenster zu wenig abgedeckt",
+          "evening_window_coverage_too_low": "Abendfenster zu wenig abgedeckt",
+          "data_quality_too_low": "Datenqualität zu niedrig",
+          "no_price_data": "Keine Preisdaten verfügbar",
+          "no_deadline": "Keine gültige Deadline",
+          "no_charge_needed": "Keine Nachladung erforderlich",
+          "invalid_search_space": "Kein gültiger Suchraum",
+          "deadline_too_close_start_now": "Deadline zu nah, sofort starten",
+          "latest_start_reached": "Spätester Startzeitpunkt erreicht"
+        }
+      },
+      "learned_planning_history_days": {
+        "name": "Diagnose: Lernplanung Historientage"
+      },
+      "learned_planning_usable_days": {
+        "name": "Diagnose: Lernplanung Nutzbare Tage"
+      },
+      "learned_planning_data_coverage": {
+        "name": "Diagnose: Lernplanung Datenabdeckung"
+      },
+      "learned_planning_sample_count": {
+        "name": "Diagnose: Lernplanung Samples"
+      },
+      "learned_planning_expected_consumption_kwh": {
+        "name": "Diagnose: Lernplanung erwarteter Verbrauch"
+      },
+      "learned_planning_available_battery_energy_kwh": {
+        "name": "Diagnose: Lernplanung verfügbare Akkuenergie"
+      },
+      "learned_planning_reserve_margin_kwh": {
+        "name": "Diagnose: Lernplanung Reserve"
+      },
+      "learned_planning_forecast_adjustment_kwh": {
+        "name": "Diagnose: Lernplanung Forecast-Zuschlag"
+      },
+      "learned_planning_effective_charge_power_w": {
+        "name": "Diagnose: Lernplanung effektive Ladeleistung"
+      },
+      "learned_planning_effective_window_slots": {
+        "name": "Diagnose: Lernplanung Fensterslots"
+      },
+      "learned_planning_window_score": {
+        "name": "Diagnose: Lernplanung Fensterscore"
+      },
+      "learned_profile_typical_daily_consumption_kwh": {
+        "name": "Diagnose: Lernplanung typischer Tagesverbrauch"
+      },
+      "learned_profile_average_house_load_w": {
+        "name": "Diagnose: Lernplanung Ø Hauslast gelernt"
+      },
+      "learned_profile_current_slot_consumption_kwh": {
+        "name": "Diagnose: Lernplanung aktueller Slot-Verbrauch"
+      },
+      "learned_profile_current_slot_average_w": {
+        "name": "Diagnose: Lernplanung aktueller Slot Ø Leistung"
+      },
       "forecast_remaining_today_kwh": {
         "name": "PV-Prognose heute"
       },
@@ -384,6 +506,33 @@
       },
       "effective_discharge_threshold": {
         "name": "Effektive Entladeschwelle"
+      },
+      "offgrid_power_w": {
+        "name": "Off-Grid-Leistung"
+      },
+      "offgrid_mode": {
+        "name": "Off-Grid-Modus",
+        "state": {
+          "not_configured": "Nicht konfiguriert",
+          "unknown": "Unbekannt",
+          "off": "Aus",
+          "normal": "Normal",
+          "eco": "Ökonomisch"
+        }
+      },
+      "offgrid_load_active": {
+        "name": "Off-Grid-Last aktiv"
+      },
+      "offgrid_rule_reason": {
+        "name": "Regelgrund Off-Grid",
+        "state": {
+          "none": "Kein Off-Grid-Blocker",
+          "offgrid_load_active_blocks_ac_charge": "Inselsteckdose aktiv – Netzladung blockiert",
+		  "offgrid_load_support": "Inselsteckdose aktiv – Versorgung über Akku/PV"
+        }
+      },
+      "offgrid_source_active": {
+        "name": "Off-Grid-Quelle aktiv"
       },
       "global_lowest_cell_voltage": {
         "name": "Globale niedrigste Zellspannung"
@@ -496,6 +645,7 @@
           "summer_cover_deficit": "Sommer: Hauslast decken",
           "pv_surplus_charge": "PV-Überschuss laden",
           "soc_min_enforced": "Entladung gestoppt (SoC-Minimum erreicht)",
+          "pv_house_load_passthrough": "SF800Pro: PV-Hauslast-Passthrough aktiv",
           "soc_limit_upper": "Laden blockiert (oberes SoC-Limit aktiv)",
           "soc_limit_lower": "Entladen blockiert (unteres SoC-Limit aktiv)",
           "manual_mode": "Manueller Modus aktiv",
@@ -511,16 +661,25 @@
           "planning_latest_start": "Preisladung gestartet (spätester sinnvoller Startzeitpunkt erreicht)",
           "planning_forecast_poor": "Preisladung wegen schwacher PV-Prognose",
           "planning_forecast_mixed": "Preisladung bei gemischter PV-Prognose",
+          "learned_charge_window_not_ready": "Lernbasierte Ladeplanung noch nicht bereit",
+          "learned_charge_window_wait": "Lernbasierte Ladeplanung wartet auf optimales Ladefenster",
+          "learned_charge_window_active": "Lernbasiertes Ladefenster aktiv",
+          "learned_charge_window_latest_start_reached": "Lernplanung: spätester Startzeitpunkt erreicht",
+          "learned_charge_window_no_charge_needed": "Lernplanung: keine Nachladung erforderlich",
           "valley_opportunity_charge": "Preis-Tal genutzt, da real kaum PV verfügbar ist",
           "valley_opportunity_charge_mixed_forecast": "Preis-Tal genutzt bei gemischter Prognose und schwacher realer PV",
           "valley_boost_charge_mixed_forecast": "Preis-Tal erkannt, aber wegen gemischter PV-Prognose abgeschwächt",
           "planning_forecast_reality_override": "Preisladung gestartet: reale PV zu schwach trotz guter Prognose",
           "very_cheap_force_charge": "Sehr-billig-Schwelle erreicht: Maximalladung aktiv",
           "additional_battery_charging_block": "Zusatzakku lädt: Entladung blockiert",
+          "additional_battery_discharging_block": "Zusatzakku entlädt: Laden blockiert",
+          "offgrid_load_active_blocks_ac_charge": "Inselsteckdose aktiv: automatische Netzladung blockiert",
+		  "offgrid_load_support": "Inselsteckdose aktiv: Versorgung über Akku/PV",
           "soc_min_resume_block": "Entladung blockiert (Wiederfreigabe-Schwelle noch nicht erreicht)",
           "cell_voltage_cutoff_block": "Entladung blockiert (Zellspannungs-Schutz aktiv)",
           "cell_voltage_emergency_charge": "Notladung aktiv (Zellspannung kritisch)",
-          "pv_charge_blocked_by_discharge_protection": "PV-Ladung blockiert, da Entladung noch durch SoC-/Zellschutz gesperrt ist"
+          "pv_charge_blocked_by_discharge_protection": "PV-Ladung blockiert, da Entladung noch durch SoC-/Zellschutz gesperrt ist",
+          "learned_charge_window_deadline_too_close_start_now": "Lernplanung: Deadline zu nah, Start jetzt"
         }
       },
       "next_planned_action": {
@@ -541,10 +700,12 @@
           "planned_discharge": "Geplante Entladung",
           "charging_active": "Ladevorgang aktiv",
           "discharging_active": "Entladevorgang aktiv",
+		  "discharge_waiting_for_import": "Entladung freigegeben – wartet auf Netzbezug",
           "manual_charge": "Manuelles Laden",
           "manual_discharge": "Manuelle Entladung",
           "manual_constant_discharge": "Konstante Entladung aktiv",
-          "emergency_charge": "Notladung"
+          "emergency_charge": "Notladung",
+          "pv_house_load_passthrough_active": "SF800Pro: PV-Hauslast-Passthrough aktiv"
         }
       },
       "next_action_time": {

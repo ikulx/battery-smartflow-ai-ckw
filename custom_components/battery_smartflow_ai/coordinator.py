@@ -38,11 +38,15 @@ from .const import (
     CONF_PACK_CAPACITY_KWH,
     CONF_BATTERY_AC_POWER_ENTITY,
     CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY,
+    CONF_ADDITIONAL_BATTERY_DISCHARGE_ENTITY,
     CONF_DEVICE_PROFILE,
     CONF_PROFILE_OVERRIDES,
     CONF_INSTALLED_PV_WP,
     CONF_EXPERT_MODE_ENABLED,
+    CONF_FEED_IN_TARIFF,
     CONF_CELL_VOLTAGE_PROTECTION_ENABLED,
+    CONF_OFFGRID_POWER_ENTITY,
+    CONF_OFFGRID_MODE_ENTITY,
     LOWEST_CELL_VOLTAGE_CONFIG_KEYS,
     GRID_MODE_NONE,
     GRID_MODE_SINGLE,
@@ -65,6 +69,8 @@ from .const import (
     SETTING_CELL_VOLTAGE_RESUME,
     SETTING_PV_CHARGE_START_EXPORT_W,
     SETTING_FORECAST_BASE_LOAD,
+    SETTING_LEARNED_PLANNING_ENABLED,
+    SETTING_REGULATION_V42_ENABLED,
     # defaults
     DEFAULT_SOC_MIN,
     DEFAULT_SOC_MAX,
@@ -81,12 +87,15 @@ from .const import (
     DEFAULT_DEVICE_PROFILE,
     DEFAULT_INSTALLED_PV_WP,
     DEFAULT_EXPERT_MODE_ENABLED,
+    DEFAULT_FEED_IN_TARIFF,
     DEFAULT_CELL_VOLTAGE_PROTECTION_ENABLED,
     DEFAULT_CELL_VOLTAGE_WARNING,
     DEFAULT_CELL_VOLTAGE_CUTOFF,
     DEFAULT_CELL_VOLTAGE_RESUME,
     DEFAULT_PV_CHARGE_START_EXPORT_W,
     DEFAULT_FORECAST_BASE_LOAD,
+    DEFAULT_LEARNED_PLANNING_ENABLED,
+    DEFAULT_REGULATION_V42_ENABLED,
     # modes
     AI_MODE_AUTOMATIC,
     AI_MODE_SUMMER,
@@ -119,9 +128,44 @@ from .decision_engine import (
     PricePoint,
 )
 from .forecast import build_forecast_summary
+from .learned_planning import (
+    LearningSample,
+    LearningChargePowerSample,
+    MIN_LEARNED_CHARGE_POWER_SAMPLE_W,
+    ROLLING_DAYS,
+    build_learned_charge_plan,
+    build_profile_diagnostics,
+    build_slot_model,
+    evaluate_readiness,
+    learned_typical_charge_power_w,
+)
+from .grid_history import GridHistory, build_grid_history_config
+from .strategy_adapter import decision_to_strategy_intent
+from .mode_arbiter import ModeArbiter, build_mode_arbiter_config
+from .regulation_models import RegulationRuntimeState
+from .regulation_power_controller import (
+    RegulationPowerController,
+    build_regulation_power_config,
+)
+from .device_command import DeviceCommandBuilder
 
 _LOGGER = logging.getLogger(__name__)
+
+# V4.2.0 development switch:
+# False = legacy command path is used, V4.2 chain only diagnostic
+# True  = V4.2 regulation command path actively controls mode/input/output
+USE_REGULATION_V42_COMMAND_DEV = False
+
 STORE_VERSION = 1
+PV_SURPLUS_DISPLAY_HOLD_S = 60
+SEASON_COUNTER_MIN = -100
+SEASON_COUNTER_MAX = 100
+
+# V4.2.3-Beta6:
+# Do not evaluate winter signals in the evening/night.
+# Low PV and low export after sunset must not count as "winter".
+SEASON_WINTER_EVALUATION_START_HOUR = 10.0
+SEASON_WINTER_EVALUATION_END_HOUR = 16.0
 
 
 def _to_float(v: Any, default: float | None = None) -> float | None:
@@ -136,6 +180,20 @@ def _to_float(v: Any, default: float | None = None) -> float | None:
         return float(s)
     except Exception:
         return default
+        
+def _clamp_season_counter(value: Any) -> int:
+    """Limit the season hysteresis counter to a sane range.
+
+    The counter is only used as hysteresis for the automatic summer/winter
+    detection. It must not grow indefinitely, otherwise Automatic mode can get
+    stuck in winter or summer for a very long time after months of operation.
+    """
+    try:
+        counter = int(value or 0)
+    except Exception:
+        counter = 0
+
+    return max(SEASON_COUNTER_MIN, min(SEASON_COUNTER_MAX, counter))
 
 
 @dataclass
@@ -151,12 +209,15 @@ class SelectedEntities:
     output_limit: str
     battery_ac_power: str
     additional_battery_charge: str | None
+    additional_battery_discharge: str | None
     soc_limit: str | None
     grid_mode: str
     grid_power: str | None
     grid_import: str | None
     grid_export: str | None
     lowest_cell_voltage_entities: tuple[str | None, ...]
+    offgrid_power: str | None
+    offgrid_mode: str | None
 
 
 class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -187,6 +248,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 or entry.data.get(CONF_BATTERY_AC_POWER_ENTITY, "")
             ),
             additional_battery_charge=entry.data.get(CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY),
+            additional_battery_discharge=entry.data.get(CONF_ADDITIONAL_BATTERY_DISCHARGE_ENTITY),
             price_export=entry.data.get(CONF_PRICE_EXPORT_ENTITY),
             price_now=entry.data.get(CONF_PRICE_NOW_ENTITY),
             ac_mode=str(entry.data[CONF_AC_MODE_ENTITY]),
@@ -197,6 +259,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             grid_power=entry.data.get(CONF_GRID_POWER_ENTITY),
             grid_import=entry.data.get(CONF_GRID_IMPORT_ENTITY),
             grid_export=entry.data.get(CONF_GRID_EXPORT_ENTITY),
+            offgrid_power=entry.data.get(CONF_OFFGRID_POWER_ENTITY),
+            offgrid_mode=entry.data.get(CONF_OFFGRID_MODE_ENTITY),
             lowest_cell_voltage_entities=tuple(
                 entry.options.get(key) for key in LOWEST_CELL_VOLTAGE_CONFIG_KEYS
             ),
@@ -208,6 +272,20 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
         self._engine = DecisionEngine()
+        
+        self._grid_history = GridHistory(
+            build_grid_history_config(self._get_active_profile())
+        )
+        
+        self._mode_arbiter = ModeArbiter(
+            build_mode_arbiter_config(self._get_active_profile())
+        )
+        
+        self._regulation_power_controller = RegulationPowerController(
+            build_regulation_power_config(self._get_active_profile())
+        )
+        
+        self._device_command_builder = DeviceCommandBuilder()
 
         self._store = Store(hass, STORE_VERSION, f"{DOMAIN}.{entry.entry_id}")
         self._ckw_prices: list[PricePoint] = []
@@ -223,7 +301,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "prev_charge_w": 0.0,
 
             # basic state
-            "power_state": "idle",  # idle|charging|discharging
+            "power_state": "idle",  # idle|charging|discharging|discharge_waiting_for_import|passthrough
             "emergency_active": False,
             "discharge_blocked_by_soc_min": False,
             "discharge_resume_soc": None,
@@ -254,13 +332,56 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # PV charge debounce / hysteresis
             "pv_charge_start_counter": 0,
             "pv_charge_stop_counter": 0,
+            "pv_charge_latched": False,
+            
+            # V4.2.3-Beta2:
+            # Display-only hold for weak PV surplus transitions. This reduces visible
+            # idle <-> pv_surplus_charge flicker without changing the real command path.
+            "pv_surplus_display_hold_until": None,
+            "pv_surplus_display_hold_reason": "none",
 
+            # Forecast / reality override
             "forecast_wait_block_counter": 0,
 
-            # PV charge debounce / hysteresis
-            "pv_charge_start_counter": 0,
-            "pv_charge_stop_counter": 0,
-            "pv_charge_latched": False,
+            # V4.1.0 learned charge-window planning
+            "learned_load_slots": {},
+            "learned_load_last_ts": None,
+            "learned_charge_power_samples": [],
+
+            # SF800Pro PV house-load passthrough hysteresis
+            "pv_houseload_passthrough_active": False,
+            "pv_houseload_passthrough_started_ts": None,
+            "pv_houseload_passthrough_export_counter": 0,
+            "pv_houseload_passthrough_target_w": 0.0,
+            "pv_houseload_passthrough_stop_reason": "none",
+
+            # SF800Pro PV charge latch / mode arbiter
+            "sf800_pv_charge_latched": False,
+            "sf800_pv_charge_started_ts": None,
+            "sf800_pv_charge_stop_counter": 0,
+            "sf800_mode_arbiter_state": "none",
+            "sf800_mode_arbiter_reason": "none",
+
+            # SF800Pro passthrough output smoothing
+            "sf800_passthrough_prev_output_w": 0.0,
+            "sf800_passthrough_smoothed_target_w": 0.0,
+            
+            # V4.2.0 regulation execution switch
+            "use_regulation_v42_command": False,
+
+            # V4.2.0 regulation runtime state
+            "regulation_last_resolved_mode": "idle",
+            "regulation_last_requested_mode": "idle",
+            "regulation_last_mode_change_ts": None,
+            "regulation_last_command_ts": None,
+            "regulation_active_state": "none",
+            "regulation_active_state_started_ts": None,
+            "regulation_post_load_drop_hold_until": None,
+            "regulation_post_output_overshoot_hold_until": None,
+            "regulation_pv_charge_latch_started_ts": None,
+            "regulation_discharge_latch_started_ts": None,
+            "regulation_passthrough_latch_started_ts": None,
+            "regulation_skipped_write_reason": "none",
 
             # debug
             "debug": "init",
@@ -277,6 +398,15 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data = await self._store.async_load()
         if isinstance(data, dict):
             self._persist.update(data)
+
+            # V4.2.2:
+            # Normalize old persisted extreme values. Previous versions could let
+            # season_counter grow indefinitely, e.g. -167000, effectively pinning
+            # Automatic mode to winter for a very long time.
+            self._persist["season_counter"] = _clamp_season_counter(
+                self._persist.get("season_counter", 0)
+            )
+
             if "runtime_mode" in data and isinstance(data["runtime_mode"], dict):
                 self.runtime_mode.update(data["runtime_mode"])
 
@@ -313,6 +443,16 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return float(value)
         except Exception:
             return float(DEFAULT_INSTALLED_PV_WP)
+            
+    def _get_feed_in_tariff(self) -> float:
+        try:
+            value = self.entry.options.get(
+                CONF_FEED_IN_TARIFF,
+                self.entry.data.get(CONF_FEED_IN_TARIFF, DEFAULT_FEED_IN_TARIFF),
+            )
+            return max(0.0, float(value or DEFAULT_FEED_IN_TARIFF))
+        except Exception:
+            return float(DEFAULT_FEED_IN_TARIFF)
 
     def _expert_mode_enabled(self) -> bool:
         return bool(
@@ -582,6 +722,26 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return float(p)
         return None
 
+    def _normalize_offgrid_mode(self, raw: Any) -> str:
+        if raw is None:
+            return "not_configured"
+
+        value = str(raw).strip().lower()
+
+        if value in ("off", "aus", "0", "disabled"):
+            return "off"
+
+        if value in ("normal", "on"):
+            return "normal"
+
+        if value in ("eco", "economic", "ökonomisch", "oekonomisch"):
+            return "eco"
+
+        if value in ("unknown", "unavailable", "none", ""):
+            return "unknown"
+
+        return "unknown"
+
     def _get_soc_limit(self) -> int | None:
         if not self.entities.soc_limit:
             return None
@@ -612,6 +772,457 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return pack_capacity * packs
 
+    def _stable_iso_minute(self, value: datetime | None) -> str | None:
+        """Return a stable ISO timestamp rounded to full minutes.
+
+        This avoids Recorder churn from second/microsecond jitter in timestamp
+        sensors. Learned planning works in 15-minute slots, so second-level
+        precision is not useful for Home Assistant states.
+        """
+        if value is None:
+            return None
+
+        try:
+            dt = dt_util.as_local(value)
+            dt = dt.replace(second=0, microsecond=0)
+            return dt.isoformat()
+        except Exception:
+            return None
+
+    def _learning_slot_start(self, ts: datetime) -> datetime:
+        """Return the local 15-minute slot start for a timestamp."""
+        local = dt_util.as_local(ts)
+
+        minute = (local.minute // 15) * 15
+
+        slot_local = local.replace(
+            minute=minute,
+            second=0,
+            microsecond=0,
+        )
+
+        return dt_util.as_utc(slot_local)
+
+    def _update_learned_load_history(
+        self,
+        now: datetime,
+        house_load_w: float,
+    ) -> None:
+        """Accumulate learned house-load energy into 15-minute slots.
+
+        Stored format:
+            learned_load_slots = {
+                "<slot_start_utc_iso>": energy_kwh
+            }
+
+        We store already aggregated 15-minute slot energy, not every 10-second
+        sample, so the Store remains small enough for long-term use.
+        """
+        now_utc = dt_util.as_utc(now)
+
+        slots_raw = self._persist.get("learned_load_slots", {})
+        if not isinstance(slots_raw, dict):
+            slots_raw = {}
+
+        last_raw = self._persist.get("learned_load_last_ts")
+        if not last_raw:
+            self._persist["learned_load_last_ts"] = now_utc.isoformat()
+            self._persist["learned_load_slots"] = slots_raw
+            return
+
+        try:
+            last_dt = dt_util.parse_datetime(str(last_raw))
+            if last_dt is None:
+                raise ValueError("invalid learned_load_last_ts")
+            last_utc = dt_util.as_utc(last_dt)
+        except Exception:
+            self._persist["learned_load_last_ts"] = now_utc.isoformat()
+            self._persist["learned_load_slots"] = slots_raw
+            return
+
+        delta_seconds = (now_utc - last_utc).total_seconds()
+
+        if delta_seconds <= 0:
+            self._persist["learned_load_last_ts"] = now_utc.isoformat()
+            self._persist["learned_load_slots"] = slots_raw
+            return
+
+        max_gap_seconds = max(60.0, float(UPDATE_INTERVAL) * 3.0)
+        usable_seconds = min(delta_seconds, max_gap_seconds)
+
+        load_w = max(0.0, min(float(house_load_w or 0.0), 20000.0))
+        energy_kwh = load_w * (usable_seconds / 3600.0) / 1000.0
+
+        if energy_kwh > 0.0:
+            midpoint = last_utc + timedelta(seconds=usable_seconds / 2.0)
+            slot_start = self._learning_slot_start(midpoint)
+            key = slot_start.isoformat()
+
+            old = 0.0
+            try:
+                old = float(slots_raw.get(key, 0.0) or 0.0)
+            except Exception:
+                old = 0.0
+
+            slots_raw[key] = round(old + energy_kwh, 6)
+
+        cutoff = now_utc - timedelta(days=15)
+        cleaned: dict[str, float] = {}
+
+        for key, value in slots_raw.items():
+            try:
+                slot_dt = dt_util.parse_datetime(str(key))
+                if slot_dt is None:
+                    continue
+
+                slot_utc = dt_util.as_utc(slot_dt)
+                if slot_utc < cutoff:
+                    continue
+
+                val = float(value or 0.0)
+                if val <= 0.0:
+                    continue
+
+                cleaned[slot_utc.isoformat()] = round(val, 6)
+            except Exception:
+                continue
+
+        self._persist["learned_load_slots"] = cleaned
+        self._persist["learned_load_last_ts"] = now_utc.isoformat()
+
+    def _get_learned_load_samples(self) -> list[LearningSample]:
+        """Convert persisted 15-minute slot energy into LearningSample objects."""
+        slots_raw = self._persist.get("learned_load_slots", {})
+        if not isinstance(slots_raw, dict):
+            return []
+
+        samples: list[LearningSample] = []
+
+        for key, value in slots_raw.items():
+            try:
+                start = dt_util.parse_datetime(str(key))
+                if start is None:
+                    continue
+
+                start = dt_util.as_utc(start)
+                energy_kwh = float(value or 0.0)
+
+                if energy_kwh <= 0.0:
+                    continue
+
+                samples.append(
+                    LearningSample(
+                        start=start,
+                        end=start + timedelta(minutes=15),
+                        energy_kwh=energy_kwh,
+                    )
+                )
+            except Exception:
+                continue
+
+        samples.sort(key=lambda s: s.start)
+        return samples
+        
+    def _cleanup_learned_charge_power_samples(self, now: datetime) -> None:
+        """Keep only recent learned charge-power samples."""
+
+        cutoff = dt_util.as_utc(now) - timedelta(days=ROLLING_DAYS)
+
+        cleaned: list[dict[str, object]] = []
+
+        for item in self._persist.get("learned_charge_power_samples", []):
+            if not isinstance(item, dict):
+                continue
+
+            try:
+                ts_raw = item.get("ts")
+                ts = dt_util.parse_datetime(str(ts_raw)) if ts_raw else None
+                if ts is None:
+                    continue
+
+                ts_utc = dt_util.as_utc(ts)
+
+                if ts_utc < cutoff:
+                    continue
+
+                power_w = float(item.get("power_w") or 0.0)
+                if power_w < MIN_LEARNED_CHARGE_POWER_SAMPLE_W:
+                    continue
+
+                cleaned.append(
+                    {
+                        "ts": ts_utc.isoformat(),
+                        "power_w": round(power_w, 1),
+                    }
+                )
+            except Exception:
+                continue
+
+        self._persist["learned_charge_power_samples"] = cleaned
+
+    def _remember_learned_charge_power_sample(
+        self,
+        now: datetime,
+        *,
+        decision: DecisionResult,
+        battery_charge_w: float,
+    ) -> None:
+        """Store a charge-power sample from real charging phases.
+
+        Use the final decision after all blockers/limit checks, so only the
+        actually intended charging state is learned.
+        """
+
+        if decision.ac_mode != "input":
+            return
+
+        if float(decision.charge_w or 0.0) <= 0.0:
+            return
+
+        measured_charge_w = max(0.0, float(battery_charge_w or 0.0))
+        commanded_charge_w = max(0.0, float(decision.charge_w or 0.0))
+
+        # Prefer real measured AC charge power. If the battery power sensor does
+        # not provide a negative charging value, fall back to the command.
+        charge_power_w = measured_charge_w if measured_charge_w > 0.0 else commanded_charge_w
+
+        if charge_power_w < MIN_LEARNED_CHARGE_POWER_SAMPLE_W:
+            return
+
+        self._persist.setdefault("learned_charge_power_samples", []).append(
+            {
+                "ts": dt_util.as_utc(now).isoformat(),
+                "power_w": round(charge_power_w, 1),
+            }
+        )
+
+        self._cleanup_learned_charge_power_samples(now)
+
+    def _get_learned_charge_power_samples(self) -> list[LearningChargePowerSample]:
+        """Convert persisted charge-power samples into LearningChargePowerSample objects."""
+
+        raw = self._persist.get("learned_charge_power_samples", [])
+        if not isinstance(raw, list):
+            return []
+
+        samples: list[LearningChargePowerSample] = []
+
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+
+            try:
+                ts_raw = item.get("ts")
+                ts = dt_util.parse_datetime(str(ts_raw)) if ts_raw else None
+                if ts is None:
+                    continue
+
+                power_w = float(item.get("power_w") or 0.0)
+                if power_w < MIN_LEARNED_CHARGE_POWER_SAMPLE_W:
+                    continue
+
+                samples.append(
+                    LearningChargePowerSample(
+                        ts=dt_util.as_utc(ts),
+                        power_w=power_w,
+                    )
+                )
+            except Exception:
+                continue
+
+        samples.sort(key=lambda s: s.ts)
+        return samples
+        
+    def _get_regulation_runtime_state(self) -> RegulationRuntimeState:
+        """Build transient regulation runtime state from persisted values.
+
+        V4.2.0 transition:
+        This is diagnostic-only for now. Later this state will become the
+        authoritative runtime state for ModeArbiter/PowerController/Command.
+        """
+
+        def _parse_dt(value):
+            if not value:
+                return None
+            try:
+                return dt_util.parse_datetime(str(value))
+            except Exception:
+                return None
+
+        return RegulationRuntimeState(
+            last_resolved_mode=str(
+                self._persist.get("regulation_last_resolved_mode", "idle")
+                or "idle"
+            ),
+            last_requested_mode=str(
+                self._persist.get("regulation_last_requested_mode", "idle")
+                or "idle"
+            ),
+            last_ac_mode=self._persist.get("last_set_mode"),
+            last_input_limit_w=float(
+                self._persist.get("last_set_input_w", 0.0) or 0.0
+            ),
+            last_output_limit_w=float(
+                self._persist.get("last_set_output_w", 0.0) or 0.0
+            ),
+            last_mode_change_ts=_parse_dt(
+                self._persist.get("regulation_last_mode_change_ts")
+            ),
+            last_command_ts=_parse_dt(
+                self._persist.get("regulation_last_command_ts")
+            ),
+            active_regulation_state=str(
+                self._persist.get("regulation_active_state", "none")
+                or "none"
+            ),
+            active_state_started_ts=_parse_dt(
+                self._persist.get("regulation_active_state_started_ts")
+            ),
+            post_load_drop_hold_until=_parse_dt(
+                self._persist.get("regulation_post_load_drop_hold_until")
+            ),
+            post_output_overshoot_hold_until=_parse_dt(
+                self._persist.get("regulation_post_output_overshoot_hold_until")
+            ),
+            pv_charge_latch_started_ts=_parse_dt(
+                self._persist.get("regulation_pv_charge_latch_started_ts")
+            ),
+            discharge_latch_started_ts=_parse_dt(
+                self._persist.get("regulation_discharge_latch_started_ts")
+            ),
+            passthrough_latch_started_ts=_parse_dt(
+                self._persist.get("regulation_passthrough_latch_started_ts")
+            ),
+            skipped_write_reason=str(
+                self._persist.get("regulation_skipped_write_reason", "none")
+                or "none"
+            ),
+        )
+        
+    def _update_regulation_runtime_state(
+        self,
+        *,
+        now: datetime,
+        requested_mode: str,
+        resolved_mode: str,
+        active_state: str,
+        command_skipped: bool,
+        command_skip_reason: str,
+        current_ac_mode: str | None,
+        command_ac_mode: str,
+        profile: dict[str, Any],
+        grid: Any,
+    ) -> None:
+        """Persist V4.2.0 regulation runtime diagnostics.
+
+        During the transition this state is mostly diagnostic. Once the V4.2
+        command path is enabled, the same state is used for cooldowns, holds and
+        cleaner command decisions.
+        """
+
+        now_utc = dt_util.as_utc(now)
+        
+        post_load_drop_hold_s = float(profile.get("POST_LOAD_DROP_HOLD_S", 60.0) or 60.0)
+        post_output_overshoot_hold_s = float(
+            profile.get("POST_OUTPUT_OVERSHOOT_HOLD_S", 60.0) or 60.0
+        )
+        export_guard_w = float(profile.get("EXPORT_GUARD_W", 80.0) or 80.0)
+        last_output_w = float(self._persist.get("last_set_output_w", 0.0) or 0.0)
+
+        previous_resolved_mode = str(
+            self._persist.get("regulation_last_resolved_mode", "idle") or "idle"
+        )
+
+        previous_ac_mode = str(self._persist.get("last_set_mode") or current_ac_mode or "")
+
+        real_mode_changed = (
+            command_ac_mode in ("input", "output")
+            and previous_ac_mode in ("input", "output")
+            and command_ac_mode != previous_ac_mode
+        )
+
+        resolved_mode_changed = (
+            resolved_mode in ("input", "output")
+            and previous_resolved_mode in ("input", "output")
+            and resolved_mode != previous_resolved_mode
+        )
+
+        if real_mode_changed or resolved_mode_changed:
+            self._persist["regulation_last_mode_change_ts"] = now_utc.isoformat()
+
+        previous_active_state = str(
+            self._persist.get("regulation_active_state", "none") or "none"
+        )
+
+        if active_state != previous_active_state:
+            self._persist["regulation_active_state_started_ts"] = now_utc.isoformat()
+
+        self._persist["regulation_last_requested_mode"] = str(requested_mode)
+        self._persist["regulation_last_resolved_mode"] = str(resolved_mode)
+        self._persist["regulation_active_state"] = str(active_state)
+        self._persist["regulation_last_command_ts"] = now_utc.isoformat()
+        self._persist["regulation_skipped_write_reason"] = (
+            str(command_skip_reason) if command_skipped else "none"
+        )
+
+        if active_state == "pv_charge_active":
+            if not self._persist.get("regulation_pv_charge_latch_started_ts"):
+                self._persist["regulation_pv_charge_latch_started_ts"] = (
+                    now_utc.isoformat()
+                )
+        else:
+            self._persist["regulation_pv_charge_latch_started_ts"] = None
+
+        if active_state == "discharge_active":
+            if not self._persist.get("regulation_discharge_latch_started_ts"):
+                self._persist["regulation_discharge_latch_started_ts"] = (
+                    now_utc.isoformat()
+                )
+        else:
+            self._persist["regulation_discharge_latch_started_ts"] = None
+
+        if active_state == "passthrough_active":
+            if not self._persist.get("regulation_passthrough_latch_started_ts"):
+                self._persist["regulation_passthrough_latch_started_ts"] = (
+                    now_utc.isoformat()
+                )
+        else:
+            self._persist["regulation_passthrough_latch_started_ts"] = None
+            
+        # Post-output-overshoot hold:
+        # If OUTPUT is really active and causes/keeps export beyond guard, block an
+        # immediate INPUT handover. Do not extend this hold when output is already 0 W,
+        # otherwise PV surplus charging can be blocked forever while stable export exists.
+        grid_now_w = float(getattr(grid, "grid_now_w", 0.0) or 0.0)
+
+        output_really_active = (
+            last_output_w > 0.0
+            and (
+                previous_active_state == "discharge_active"
+                or active_state == "discharge_active"
+            )
+        )
+
+        if grid_now_w <= -abs(export_guard_w) and output_really_active:
+            self._persist["regulation_post_output_overshoot_hold_until"] = (
+                now_utc + timedelta(seconds=post_output_overshoot_hold_s)
+            ).isoformat()
+
+        # Cleanup expired post holds.
+        for key in (
+            "regulation_post_load_drop_hold_until",
+            "regulation_post_output_overshoot_hold_until",
+        ):
+            raw = self._persist.get(key)
+            if not raw:
+                continue
+            try:
+                dt = dt_util.parse_datetime(str(raw))
+                if dt is None or dt_util.as_utc(dt) <= now_utc:
+                    self._persist[key] = None
+            except Exception:
+                self._persist[key] = None
+
     def _update_pv_charge_hysteresis(
         self,
         grid_import_w: float,
@@ -625,20 +1236,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         start_threshold = float(pv_charge_start_export_w or 0.0)
 
-        # Start darf erst bei echtem Export erfolgen.
         start_required_cycles = 2
-
-        # Stop bewusst träger, damit Wolken/Regelrauschen nicht sofort abbrechen.
         stop_required_cycles = 8
 
-        # Halteschwelle: laufende PV-Ladung bleibt auch bei kleinerem Export aktiv.
         hold_export_threshold = max(20.0, start_threshold * 0.5)
-
-        # Kleiner Import ist bei laufender Regelung erlaubt, weil der Delta-Regler
-        # die Ladeleistung sanft zurücknehmen soll.
         small_import_tolerance_w = 100.0
-
-        # Echte Schwäche: deutlicher Import und praktisch kein Export.
         hard_import_threshold_w = 140.0
         weak_export_threshold = max(10.0, start_threshold * 0.15)
 
@@ -646,7 +1248,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         import_w = max(0.0, float(grid_import_w or 0.0))
 
         has_start_surplus = export_w >= start_threshold
-
         has_hold_surplus = export_w >= hold_export_threshold
         import_is_small = import_w <= small_import_tolerance_w
 
@@ -663,7 +1264,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elif has_hold_surplus or import_is_small:
                 stop_counter = 0
             else:
-                # Grauzone: nicht sofort stoppen, aber langsam zählen.
                 stop_counter += 1
 
             if stop_counter >= stop_required_cycles:
@@ -688,14 +1288,501 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._persist["pv_charge_latched"] = latched
 
         return start_counter, stop_counter, latched
-    
+
+    def _sf800_compute_passthrough_output(
+        self,
+        profile: dict[str, Any],
+        raw_target_w: float,
+        max_output_w: float,
+        latch_active: bool,
+        force_zero: bool = False,
+    ) -> float:
+        """Smooth and rate-limit SF800Pro passthrough output."""
+        if force_zero:
+            self._persist["sf800_passthrough_prev_output_w"] = 0.0
+            self._persist["sf800_passthrough_smoothed_target_w"] = 0.0
+            return 0.0
+
+        raw_target = max(
+            0.0,
+            min(float(raw_target_w or 0.0), float(max_output_w or 0.0)),
+        )
+
+        prev_output = float(
+            self._persist.get("sf800_passthrough_prev_output_w", 0.0) or 0.0
+        )
+        prev_smoothed = float(
+            self._persist.get("sf800_passthrough_smoothed_target_w", raw_target)
+            or raw_target
+        )
+
+        min_output = float(
+            profile.get("PV_HOUSELOAD_PASSTHROUGH_MIN_OUTPUT_W", 80.0) or 80.0
+        )
+        max_step_up = float(
+            profile.get("PV_HOUSELOAD_PASSTHROUGH_MAX_STEP_UP_W", 100.0) or 100.0
+        )
+        max_step_down = float(
+            profile.get("PV_HOUSELOAD_PASSTHROUGH_MAX_STEP_DOWN_W", 150.0) or 150.0
+        )
+        alpha = float(
+            profile.get("PV_HOUSELOAD_PASSTHROUGH_SMOOTHING_ALPHA", 0.30) or 0.30
+        )
+
+        alpha = max(0.05, min(alpha, 1.0))
+
+        smoothed_target = (prev_smoothed * (1.0 - alpha)) + (raw_target * alpha)
+
+        if smoothed_target > prev_output:
+            next_output = prev_output + min(smoothed_target - prev_output, max_step_up)
+        else:
+            next_output = prev_output - min(prev_output - smoothed_target, max_step_down)
+
+        next_output = max(0.0, min(next_output, float(max_output_w or 0.0)))
+
+        if latch_active and raw_target > 0.0:
+            next_output = max(next_output, min_output)
+
+        if not latch_active and next_output < min_output:
+            next_output = 0.0
+
+        self._persist["sf800_passthrough_prev_output_w"] = float(next_output)
+        self._persist["sf800_passthrough_smoothed_target_w"] = float(smoothed_target)
+
+        return float(next_output)
+
+    def _update_pv_houseload_passthrough(
+        self,
+        now,
+        profile: dict[str, Any],
+        soc: float,
+        soc_min: float,
+        pv_w: float,
+        house_load_w: float,
+        grid_import_w: float,
+        grid_export_w: float,
+        max_output_w: float,
+        pv_charge_start_export_w: float,
+        discharge_blocked_by_soc_min: bool,
+        cell_voltage_discharge_blocked: bool,
+        cell_voltage_emergency_active: bool,
+        additional_battery_charge_w: float,
+    ) -> tuple[bool, float, str]:
+        enabled = bool(profile.get("PV_HOUSELOAD_PASSTHROUGH", False))
+
+        active = bool(self._persist.get("pv_houseload_passthrough_active", False))
+        started_ts_raw = self._persist.get("pv_houseload_passthrough_started_ts")
+        export_counter = int(
+            self._persist.get("pv_houseload_passthrough_export_counter", 0) or 0
+        )
+
+        hold_seconds = float(
+            profile.get("PV_HOUSELOAD_PASSTHROUGH_HOLD_SECONDS", 300.0) or 300.0
+        )
+        min_pv_w = float(
+            profile.get("PV_HOUSELOAD_PASSTHROUGH_MIN_PV_W", 120.0) or 120.0
+        )
+        min_house_load_w = float(
+            profile.get("PV_HOUSELOAD_PASSTHROUGH_MIN_HOUSE_LOAD_W", 120.0) or 120.0
+        )
+        export_stop_cycles = int(
+            profile.get("PV_HOUSELOAD_PASSTHROUGH_EXPORT_STOP_CYCLES", 18) or 18
+        )
+
+        stop_reason = "none"
+        target_w = 0.0
+
+        protection_active = bool(
+            discharge_blocked_by_soc_min
+            or cell_voltage_discharge_blocked
+            or cell_voltage_emergency_active
+        )
+
+        if not enabled:
+            active = False
+            target_w = 0.0
+            stop_reason = "disabled"
+
+        elif protection_active:
+            active = False
+            target_w = 0.0
+            stop_reason = "protection_active"
+
+        elif float(additional_battery_charge_w or 0.0) > 0.0:
+            active = False
+            target_w = 0.0
+            stop_reason = "additional_battery_charging"
+
+        elif float(soc) <= float(soc_min):
+            active = False
+            target_w = 0.0
+            stop_reason = "soc_min"
+
+        else:
+            pv_val = max(0.0, float(pv_w or 0.0))
+            house_val = max(0.0, float(house_load_w or 0.0))
+            export_val = max(0.0, float(grid_export_w or 0.0))
+            import_val = max(0.0, float(grid_import_w or 0.0))
+            pv_charge_latched = bool(self._persist.get("sf800_pv_charge_latched", False))
+
+            raw_target_w = min(
+                pv_val,
+                house_val,
+                float(max_output_w or 0.0),
+            )
+
+            target_w = raw_target_w
+
+            enough_pv = pv_val >= min_pv_w
+            enough_house_load = house_val >= min_house_load_w
+            useful_target = raw_target_w >= 60.0
+
+            stable_export_for_pv_charge = (
+                export_val >= float(pv_charge_start_export_w or 0.0)
+            )
+
+            if stable_export_for_pv_charge:
+                export_counter += 1
+            else:
+                export_counter = 0
+
+            hold_active = False
+            if active and started_ts_raw:
+                try:
+                    started = dt_util.parse_datetime(str(started_ts_raw))
+                    if started is not None:
+                        elapsed = (
+                            dt_util.as_utc(now) - dt_util.as_utc(started)
+                        ).total_seconds()
+                        hold_active = elapsed < hold_seconds
+                except Exception:
+                    hold_active = False
+
+            if active:
+                if not enough_pv:
+                    if hold_active:
+                        stop_reason = "hold_pv_low"
+                    else:
+                        active = False
+                        target_w = 0.0
+                        stop_reason = "pv_low"
+
+                elif not enough_house_load:
+                    if hold_active:
+                        stop_reason = "hold_house_load_low"
+                    else:
+                        active = False
+                        target_w = 0.0
+                        stop_reason = "house_load_low"
+
+                elif export_counter >= export_stop_cycles and not hold_active:
+                    active = False
+                    target_w = 0.0
+                    stop_reason = "stable_export_handover_to_pv_charge"
+
+                elif not useful_target:
+                    if hold_active:
+                        stop_reason = "hold_target_low"
+                    else:
+                        active = False
+                        target_w = 0.0
+                        stop_reason = "target_low"
+
+                else:
+                    stop_reason = "active"
+
+            else:
+                export_counter = 0
+
+                if (
+                    not pv_charge_latched
+                    and enough_pv
+                    and enough_house_load
+                    and useful_target
+                    and export_val < float(pv_charge_start_export_w or 0.0)
+                    and import_val <= max(250.0, house_val * 0.50)
+                ):
+                    active = True
+                    self._persist["pv_houseload_passthrough_started_ts"] = (
+                        dt_util.as_utc(now).isoformat()
+                    )
+                    stop_reason = "started"
+                else:
+                    target_w = 0.0
+                    stop_reason = "conditions_not_met"
+
+        if not active:
+            self._persist["pv_houseload_passthrough_started_ts"] = None
+            export_counter = 0
+
+        if active:
+            target_w = self._sf800_compute_passthrough_output(
+                profile=profile,
+                raw_target_w=float(target_w or 0.0),
+                max_output_w=float(max_output_w or 0.0),
+                latch_active=True,
+                force_zero=False,
+            )
+        else:
+            target_w = self._sf800_compute_passthrough_output(
+                profile=profile,
+                raw_target_w=0.0,
+                max_output_w=float(max_output_w or 0.0),
+                latch_active=False,
+                force_zero=True,
+            )
+
+        self._persist["pv_houseload_passthrough_active"] = bool(active)
+        self._persist["pv_houseload_passthrough_export_counter"] = int(export_counter)
+        self._persist["pv_houseload_passthrough_target_w"] = float(target_w or 0.0)
+        self._persist["pv_houseload_passthrough_stop_reason"] = str(stop_reason)
+
+        return bool(active), float(target_w or 0.0), str(stop_reason)
+
+    def _is_sf800_pv_houseload_passthrough_enabled(self, profile: dict[str, Any]) -> bool:
+        return bool(profile.get("PV_HOUSELOAD_PASSTHROUGH", False))
+
+    def _sf800_hold_active(
+        self,
+        now,
+        started_ts_raw: str | None,
+        hold_seconds: float,
+    ) -> bool:
+        if not started_ts_raw:
+            return False
+
+        try:
+            started = dt_util.parse_datetime(str(started_ts_raw))
+            if started is None:
+                return False
+
+            elapsed = (
+                dt_util.as_utc(now) - dt_util.as_utc(started)
+            ).total_seconds()
+
+            return elapsed < float(hold_seconds)
+        except Exception:
+            return False
+
+    def _sf800_update_pv_charge_latch(
+        self,
+        now,
+        profile: dict[str, Any],
+        decision: DecisionResult,
+        grid_import_w: float,
+        grid_export_w: float,
+        pv_charge_start_export_w: float,
+        protection_active: bool,
+    ) -> tuple[bool, str]:
+        enabled = self._is_sf800_pv_houseload_passthrough_enabled(profile)
+        if not enabled:
+            self._persist["sf800_pv_charge_latched"] = False
+            self._persist["sf800_pv_charge_started_ts"] = None
+            self._persist["sf800_pv_charge_stop_counter"] = 0
+            return False, "disabled"
+
+        latched = bool(self._persist.get("sf800_pv_charge_latched", False))
+        started_ts = self._persist.get("sf800_pv_charge_started_ts")
+        stop_counter = int(self._persist.get("sf800_pv_charge_stop_counter", 0) or 0)
+
+        hold_seconds = float(profile.get("PV_CHARGE_LATCH_HOLD_SECONDS", 300.0) or 300.0)
+        stop_cycles = int(profile.get("PV_CHARGE_LATCH_STOP_CYCLES", 18) or 18)
+
+        export_w = max(0.0, float(grid_export_w or 0.0))
+        import_w = max(0.0, float(grid_import_w or 0.0))
+        start_threshold = float(pv_charge_start_export_w or 0.0)
+
+        hold_active = self._sf800_hold_active(now, started_ts, hold_seconds)
+
+        decision_is_pv_charge = (
+            decision.ac_mode == "input"
+            and float(decision.charge_w or 0.0) > 0.0
+            and decision.reason == "pv_surplus_charge"
+        )
+
+        if protection_active:
+            latched = False
+            started_ts = None
+            stop_counter = 0
+            reason = "protection_active"
+
+        elif decision_is_pv_charge:
+            if not latched:
+                started_ts = dt_util.as_utc(now).isoformat()
+            latched = True
+            stop_counter = 0
+            reason = "pv_charge_decision"
+
+        elif latched:
+            weak_pv_charge_conditions = (
+                export_w < max(10.0, start_threshold * 0.15)
+                and import_w > 140.0
+            )
+
+            if hold_active:
+                reason = "hold_active"
+            elif weak_pv_charge_conditions:
+                stop_counter += 1
+                reason = "weakness_counting"
+                if stop_counter >= stop_cycles:
+                    latched = False
+                    started_ts = None
+                    stop_counter = 0
+                    reason = "weakness_stop"
+            else:
+                stop_counter = 0
+                reason = "latched"
+
+        else:
+            reason = "not_latched"
+
+        self._persist["sf800_pv_charge_latched"] = bool(latched)
+        self._persist["sf800_pv_charge_started_ts"] = started_ts
+        self._persist["sf800_pv_charge_stop_counter"] = int(stop_counter)
+
+        return bool(latched), str(reason)
+
+    def _sf800_apply_mode_arbiter(
+        self,
+        now,
+        profile: dict[str, Any],
+        decision: DecisionResult,
+        pv_w: float,
+        house_load_w: float,
+        grid_import_w: float,
+        grid_export_w: float,
+        max_discharge_w: float,
+        pv_charge_start_export_w: float,
+        discharge_blocked_by_soc_min: bool,
+        cell_voltage_discharge_blocked: bool,
+        cell_voltage_emergency_active: bool,
+        additional_battery_charge_w: float,
+    ) -> DecisionResult:
+        enabled = self._is_sf800_pv_houseload_passthrough_enabled(profile)
+        if not enabled:
+            self._persist["sf800_mode_arbiter_state"] = "disabled"
+            self._persist["sf800_mode_arbiter_reason"] = "disabled"
+            return decision
+
+        protection_active = bool(
+            discharge_blocked_by_soc_min
+            or cell_voltage_discharge_blocked
+            or cell_voltage_emergency_active
+            or float(additional_battery_charge_w or 0.0) > 0.0
+        )
+
+        pv_charge_latched, pv_charge_latch_reason = self._sf800_update_pv_charge_latch(
+            now=now,
+            profile=profile,
+            decision=decision,
+            grid_import_w=float(grid_import_w or 0.0),
+            grid_export_w=float(grid_export_w or 0.0),
+            pv_charge_start_export_w=float(pv_charge_start_export_w),
+            protection_active=protection_active,
+        )
+
+        passthrough_active = bool(
+            self._persist.get("pv_houseload_passthrough_active", False)
+        )
+        passthrough_target_w = float(
+            self._persist.get("pv_houseload_passthrough_target_w", 0.0) or 0.0
+        )
+
+        decision_is_true_priority_charge = (
+            decision.ac_mode == "input"
+            and float(decision.charge_w or 0.0) > 0.0
+            and decision.reason
+            in {
+                "very_cheap_force_charge",
+                "emergency_latched_charge",
+                "cell_voltage_emergency_charge",
+                "manual_charge",
+            }
+        )
+        
+        decision_is_manual_priority_discharge = (
+            decision.ac_mode == "output"
+            and float(decision.discharge_w or 0.0) > 0.0
+            and decision.reason
+            in {
+                "manual_discharge",
+                "manual_constant_discharge",
+            }
+        )
+
+        if protection_active:
+            self._persist["sf800_mode_arbiter_state"] = "protection"
+            self._persist["sf800_mode_arbiter_reason"] = "protection_active"
+            return decision
+
+        if decision_is_true_priority_charge:
+            self._persist["sf800_mode_arbiter_state"] = "priority_charge"
+            self._persist["sf800_mode_arbiter_reason"] = decision.reason
+            return decision
+
+        if decision_is_manual_priority_discharge:
+            self._persist["sf800_mode_arbiter_state"] = "manual_priority_discharge"
+            self._persist["sf800_mode_arbiter_reason"] = decision.reason
+
+            # Clear SF800Pro latches that could otherwise override manual discharge.
+            self._persist["pv_houseload_passthrough_active"] = False
+            self._persist["pv_houseload_passthrough_started_ts"] = None
+            self._persist["pv_houseload_passthrough_export_counter"] = 0
+            self._persist["pv_houseload_passthrough_target_w"] = 0.0
+            self._persist["pv_houseload_passthrough_stop_reason"] = "manual_priority_discharge"
+
+            self._persist["sf800_pv_charge_latched"] = False
+            self._persist["sf800_pv_charge_started_ts"] = None
+            self._persist["sf800_pv_charge_stop_counter"] = 0
+
+            return decision
+
+        if pv_charge_latched:
+            if decision.reason == "pv_house_load_passthrough":
+                self._persist["sf800_mode_arbiter_state"] = "pv_charge_latched"
+                self._persist["sf800_mode_arbiter_reason"] = (
+                    f"blocked_passthrough_{pv_charge_latch_reason}"
+                )
+                return DecisionResult(
+                    action="charge",
+                    ac_mode="input",
+                    charge_w=max(80.0, float(decision.charge_w or 0.0)),
+                    discharge_w=0.0,
+                    reason="pv_surplus_charge",
+                    target_soc=decision.target_soc,
+                )
+
+            if decision.ac_mode == "input":
+                self._persist["sf800_mode_arbiter_state"] = "pv_charge_latched"
+                self._persist["sf800_mode_arbiter_reason"] = pv_charge_latch_reason
+                return decision
+
+        if passthrough_active and passthrough_target_w > 0.0:
+            self._persist["sf800_mode_arbiter_state"] = "passthrough_latched"
+            self._persist["sf800_mode_arbiter_reason"] = "hold_output"
+
+            return DecisionResult(
+                action="passthrough",
+                ac_mode="output",
+                charge_w=0.0,
+                discharge_w=min(
+                    float(passthrough_target_w),
+                    float(max_discharge_w),
+                ),
+                reason="pv_house_load_passthrough",
+                target_soc=decision.target_soc,
+            )
+
+        self._persist["sf800_mode_arbiter_state"] = "normal"
+        self._persist["sf800_mode_arbiter_reason"] = "normal_decision"
+        return decision
+
     def _update_discharge_resume_hysteresis(
         self,
         soc: float,
         soc_min: float,
         resume_margin: float,
     ) -> bool:
-        """Maintain hysteresis for discharge re-enable around soc_min."""
         blocked = bool(self._persist.get("discharge_blocked_by_soc_min", False))
         effective_resume_soc = float(soc_min) + max(0.0, float(resume_margin))
 
@@ -713,7 +1800,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self,
         global_lowest_cell_voltage: float | None,
     ) -> bool:
-        """Maintain hysteresis for discharge re-enable based on cell voltage."""
         blocked = bool(self._persist.get("cell_voltage_discharge_blocked", False))
 
         if not self._cell_voltage_protection_enabled():
@@ -755,16 +1841,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         price_now: float | None,
         decision_reason: str | None = None,
     ) -> tuple[bool, float, str]:
-        """Classify the source of a positive battery charge delta.
-
-        Returns:
-            (is_grid_charge, applied_price, charge_source)
-
-        Notes:
-        - PV / surplus charging must be counted as a real charge event with 0 €/kWh.
-        - The logic intentionally biases towards PV/free charging unless there is
-          strong evidence that the battery is really being charged from grid.
-        """
         if delta_kwh <= 0:
             return False, 0.0, "no_charge_delta"
 
@@ -869,7 +1945,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not dt:
                 return None
             if dt.tzinfo is None:
-                return dt_util.replace(dt, tzinfo=tz)
+                return dt.replace(tzinfo=tz)
             return dt.astimezone(tz)
 
         now = normalize(now)
@@ -959,13 +2035,16 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         out.sort(key=lambda x: x.start)
         return out
 
-    def _season_detection(self, pv_w: float, export_w: float) -> str:
-        """
-        Season detection based on installed PV power.
-        Slow anti-flip counter with relative thresholds.
-        """
+    def _season_detection(
+        self,
+        pv_w: float,
+        export_w: float,
+        now: datetime | None = None,
+    ) -> str:
         season = self._persist.get("season_mode", "winter")
-        counter = int(self._persist.get("season_counter", 0))
+        counter = _clamp_season_counter(
+            self._persist.get("season_counter", 0)
+        )
 
         installed_pv_wp = self._get_installed_pv_wp()
 
@@ -990,16 +2069,35 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             pv_w < winter_pv_threshold
             and export_w < winter_export_threshold
         )
+        
+        try:
+            local_now = dt_util.as_local(now or dt_util.utcnow())
+            season_eval_hour = local_now.hour + (local_now.minute / 60.0)
+        except Exception:
+            season_eval_hour = 12.0
+
+        winter_evaluation_active = (
+            SEASON_WINTER_EVALUATION_START_HOUR
+            <= season_eval_hour
+            < SEASON_WINTER_EVALUATION_END_HOUR
+        )
 
         if summer_signal:
             counter += 1
-        elif winter_signal:
+
+        elif winter_signal and winter_evaluation_active:
             counter -= 1
-        else:
+
+        elif winter_evaluation_active:
+            # Only decay towards neutral during the daytime evaluation window.
+            # Outside this window we keep the last season tendency stable, so
+            # evening/night darkness does not undo a valid summer detection.
             if counter > 0:
                 counter -= 1
             elif counter < 0:
                 counter += 1
+
+        counter = _clamp_season_counter(counter)
 
         thresh = 30
         if counter > thresh:
@@ -1017,6 +2115,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "winter_pv_threshold": winter_pv_threshold,
             "winter_export_threshold": winter_export_threshold,
             "counter": counter,
+            "winter_evaluation_active": bool(winter_evaluation_active),
+            "season_eval_hour": round(float(season_eval_hour), 2),
+            "winter_evaluation_start_hour": float(
+                SEASON_WINTER_EVALUATION_START_HOUR
+            ),
+            "winter_evaluation_end_hour": float(
+                SEASON_WINTER_EVALUATION_END_HOUR
+            ),
         }
 
         return season
@@ -1024,6 +2130,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _map_ai_status(self, ai_mode: str, action: str, reason: str) -> str:
         if ai_mode == AI_MODE_MANUAL:
             return AI_STATUS_MANUAL
+        if action == "passthrough" or reason == "pv_house_load_passthrough":
+            return AI_STATUS_STANDBY
         if action == "emergency":
             return AI_STATUS_EMERGENCY_CHARGE
         if action == "charge":
@@ -1041,6 +2149,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return AI_STATUS_STANDBY
 
     def _map_reco(self, action: str) -> str:
+        if action == "passthrough":
+            return RECO_STANDBY
         if action == "charge":
             return RECO_CHARGE
         if action == "discharge":
@@ -1085,9 +2195,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if reason == "valley_opportunity_charge_mixed_forecast":
             return "valley_opportunity_mixed"
-            
+
         return "none"
-    
+
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             if self._persist.get("last_ts") is None:
@@ -1132,6 +2242,58 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._persist["prev_soc"] = soc
 
             profile = self._get_active_profile()
+            
+            feed_in_tariff = self._get_feed_in_tariff()
+
+            offgrid_raw = _to_float(
+                self._state(self.entities.offgrid_power),
+                None,
+            )
+
+            offgrid_mode_raw = self._state(self.entities.offgrid_mode)
+            offgrid_mode = self._normalize_offgrid_mode(offgrid_mode_raw)
+
+            supports_offgrid_socket = bool(
+                profile.get("SUPPORTS_OFFGRID_SOCKET", False)
+            ) or bool(self.entities.offgrid_power)
+
+            supports_offgrid_input = bool(
+                profile.get("SUPPORTS_OFFGRID_INPUT", False)
+            )
+
+            offgrid_load_active_w = float(
+                profile.get("OFFGRID_LOAD_ACTIVE_W", 50.0) or 50.0
+            )
+
+            offgrid_available = bool(
+                supports_offgrid_socket
+                and self.entities.offgrid_power
+                and offgrid_raw is not None
+            )
+
+            offgrid_power_raw_w = float(offgrid_raw or 0.0)
+
+            # Confirmed for SF2400Pro/ZHA:
+            # positive Off-Grid power means active load at the island socket.
+            offgrid_power_w = max(0.0, offgrid_power_raw_w)
+
+            offgrid_mode_allows_active = offgrid_mode not in ("off",)
+
+            offgrid_load_active = bool(
+                offgrid_available
+                and offgrid_mode_allows_active
+                and offgrid_power_w > offgrid_load_active_w
+            )
+
+            # Diagnostic only for now. Direction for Off-Grid input/source still
+            # needs separate verification.
+            offgrid_source_active = bool(
+                supports_offgrid_input
+                and offgrid_available
+                and offgrid_power_raw_w < -offgrid_load_active_w
+            )
+
+            offgrid_active = bool(offgrid_load_active or offgrid_source_active)
 
             soc_min = self._get_setting(
                 SETTING_SOC_MIN,
@@ -1172,6 +2334,25 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 SETTING_FORECAST_BASE_LOAD,
                 DEFAULT_FORECAST_BASE_LOAD,
             )
+            learned_planning_enabled = bool(
+                self.entry.options.get(
+                    SETTING_LEARNED_PLANNING_ENABLED,
+                    DEFAULT_LEARNED_PLANNING_ENABLED,
+                )
+            )
+
+            regulation_v42_option_enabled = bool(
+                self.entry.options.get(
+                    SETTING_REGULATION_V42_ENABLED,
+                    DEFAULT_REGULATION_V42_ENABLED,
+                )
+            )
+
+            use_regulation_v42_command = bool(
+                USE_REGULATION_V42_COMMAND_DEV
+                or regulation_v42_option_enabled
+                or self._persist.get("use_regulation_v42_command", False)
+            )
 
             ai_mode = str(self.runtime_mode.get("ai_mode", AI_MODE_AUTOMATIC))
             manual_action = str(self.runtime_mode.get("manual_action", MANUAL_STANDBY))
@@ -1180,6 +2361,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if grid_import is None or grid_export is None:
                 grid_import = 0.0
                 grid_export = 0.0
+                
+            grid_history_state = self._grid_history.update(
+                grid_import_w=float(grid_import or 0.0),
+                grid_export_w=float(grid_export or 0.0),
+            )
 
             if self._ckw_enabled():
                 last = self._ckw_last_fetch
@@ -1202,6 +2388,22 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 0.0,
             )
             additional_battery_charge_w = float(additional_battery_charge_w or 0.0)
+
+            additional_battery_discharge_w = _to_float(
+                self._state(self.entities.additional_battery_discharge),
+                0.0,
+            )
+            additional_battery_discharge_w = float(additional_battery_discharge_w or 0.0)
+            additional_battery_discharge_active = additional_battery_discharge_w > 50.0
+
+            if additional_battery_discharge_active:
+                self._persist["pv_charge_latched"] = False
+                self._persist["pv_charge_start_counter"] = 0
+                self._persist["pv_charge_stop_counter"] = 0
+
+                self._persist["sf800_pv_charge_latched"] = False
+                self._persist["sf800_pv_charge_started_ts"] = None
+                self._persist["sf800_pv_charge_stop_counter"] = 0
 
             daily_avg_price = None
             if price_points:
@@ -1263,17 +2465,59 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 + float(pv_w)
                 + float(battery_discharge_w)
                 - float(grid_export)
+                - float(battery_charge_w)
+            )
+
+            # V4.1.0 learned charge-window planning:
+            # Data collection and diagnostics only. No decision impact yet.
+            self._update_learned_load_history(
+                now=now,
+                house_load_w=float(house_load),
+            )
+
+            learned_samples = self._get_learned_load_samples()
+
+            learned_slot_model = build_slot_model(
+                samples=learned_samples,
+                now=now,
+            )
+            learned_profile_diagnostics = build_profile_diagnostics(
+                model=learned_slot_model,
+                now=now,
+            )
+
+            learned_readiness = evaluate_readiness(learned_slot_model)
+
+            learned_charge_power_samples = self._get_learned_charge_power_samples()
+            learned_charge_power = learned_typical_charge_power_w(
+                samples=learned_charge_power_samples,
+                now=now,
+            )
+
+            learned_charge_plan = build_learned_charge_plan(
+                model=learned_slot_model,
+                readiness=learned_readiness,
+                now=now,
+                price_points=price_points,
+                forecast=forecast_summary,
+                total_battery_capacity_kwh=float(battery_capacity_kwh),
+                current_soc=float(soc),
+                soc_min=float(soc_min),
+                soc_max=float(soc_max),
+                profile_charge_limit_w=float(max_charge),
+                current_effective_charge_cap_w=float(max_charge),
+                learned_typical_charge_power_w=learned_charge_power,
+                force_active=False,
             )
 
             season = self._season_detection(
                 pv_w=pv_w,
                 export_w=float(grid_export),
+                now=now,
             )
 
             global_lowest_cell_voltage = self._get_global_lowest_cell_voltage()
-            cell_voltage_status = self._get_cell_voltage_status(
-                global_lowest_cell_voltage
-            )
+            cell_voltage_status = self._get_cell_voltage_status(global_lowest_cell_voltage)
             cell_voltage_soc_plausibility = self._get_cell_voltage_soc_plausibility(
                 soc=float(soc),
                 soc_min=float(soc_min),
@@ -1293,6 +2537,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 soc_min=float(soc_min),
                 resume_margin=float(resume_margin),
             )
+
             if float(soc) <= float(soc_min):
                 self._persist["trade_avg_charge_price"] = 0.0
                 self._persist["trade_charged_kwh"] = 0.0
@@ -1311,6 +2556,55 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
                 )
             )
+
+            manual_mode_active = ai_mode == AI_MODE_MANUAL
+
+            if manual_mode_active or use_regulation_v42_command:
+                sf800_stop_reason = (
+                    "manual_mode"
+                    if manual_mode_active
+                    else "improved_regulation_active"
+                )
+
+                self._persist["pv_houseload_passthrough_active"] = False
+                self._persist["pv_houseload_passthrough_started_ts"] = None
+                self._persist["pv_houseload_passthrough_export_counter"] = 0
+                self._persist["pv_houseload_passthrough_target_w"] = 0.0
+                self._persist["pv_houseload_passthrough_stop_reason"] = sf800_stop_reason
+
+                self._persist["sf800_pv_charge_latched"] = False
+                self._persist["sf800_pv_charge_started_ts"] = None
+                self._persist["sf800_pv_charge_stop_counter"] = 0
+
+                self._persist["sf800_mode_arbiter_state"] = (
+                    "disabled"
+                    if manual_mode_active
+                    else "improved_regulation_active"
+                )
+                self._persist["sf800_mode_arbiter_reason"] = sf800_stop_reason
+
+                pv_houseload_passthrough_active = False
+                pv_houseload_passthrough_target_w = 0.0
+                pv_houseload_passthrough_stop_reason = sf800_stop_reason
+            else:
+                pv_houseload_passthrough_active, pv_houseload_passthrough_target_w, pv_houseload_passthrough_stop_reason = (
+                    self._update_pv_houseload_passthrough(
+                        now=now,
+                        profile=profile,
+                        soc=float(soc),
+                        soc_min=float(soc_min),
+                        pv_w=float(pv_w),
+                        house_load_w=float(house_load),
+                        grid_import_w=float(grid_import or 0.0),
+                        grid_export_w=float(grid_export or 0.0),
+                        max_output_w=float(max_discharge),
+                        pv_charge_start_export_w=float(pv_charge_start_export_w),
+                        discharge_blocked_by_soc_min=bool(discharge_blocked_by_soc_min),
+                        cell_voltage_discharge_blocked=bool(cell_voltage_discharge_blocked),
+                        cell_voltage_emergency_active=bool(cell_voltage_emergency_active),
+                        additional_battery_charge_w=float(additional_battery_charge_w or 0.0),
+                    )
+                )
 
             ctx = DecisionContext(
                 now=now,
@@ -1331,6 +2625,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 very_expensive_threshold=float(very_expensive),
                 profit_margin_pct=float(profit_margin_pct),
                 price_points=price_points,
+                feed_in_tariff=float(feed_in_tariff),
                 ai_mode=ai_mode,
                 manual_action=manual_action,
                 season=season,
@@ -1342,6 +2637,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 valley_factor=valley_factor,
                 very_cheap_price=very_cheap_price,
                 additional_battery_charge_w=additional_battery_charge_w,
+                additional_battery_discharge_w=additional_battery_discharge_w,
                 pv_charge_start_export_w=float(pv_charge_start_export_w),
                 cell_voltage_emergency_active=cell_voltage_emergency_active,
                 forecast=forecast_summary,
@@ -1351,9 +2647,24 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 forecast_wait_block_counter=int(self._persist.get("forecast_wait_block_counter", 0)),
                 discharge_blocked_by_soc_min=bool(discharge_blocked_by_soc_min),
                 cell_voltage_discharge_blocked=bool(cell_voltage_discharge_blocked),
+                pv_houseload_passthrough_active=bool(pv_houseload_passthrough_active),
+                pv_houseload_passthrough_target_w=float(pv_houseload_passthrough_target_w),
+                pv_houseload_passthrough_stop_reason=str(pv_houseload_passthrough_stop_reason),
+                learned_charge_plan=learned_charge_plan,
+                learned_planning_enabled=bool(learned_planning_enabled),
+                offgrid_power_w=float(offgrid_power_w),
+                offgrid_mode=str(offgrid_mode),
+                offgrid_available=bool(offgrid_available),
+                offgrid_active=bool(offgrid_active),
+                offgrid_load_active=bool(offgrid_load_active),
+                offgrid_source_active=bool(offgrid_source_active),
             )
 
-            base_required_kwh = battery_capacity_kwh * max(0.0, float(soc_max) - float(soc)) / 100.0
+            base_required_kwh = (
+                battery_capacity_kwh
+                * max(0.0, float(soc_max) - float(soc))
+                / 100.0
+            )
 
             if (
                 self._engine._forecast_supports_waiting(ctx, base_required_kwh)
@@ -1369,8 +2680,28 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ctx.forecast_wait_block_counter = int(
                 self._persist.get("forecast_wait_block_counter", 0)
             )
-            
+
             decision = self._engine.evaluate(ctx)
+
+            if not use_regulation_v42_command:
+                decision = self._sf800_apply_mode_arbiter(
+                    now=now,
+                    profile=profile,
+                    decision=decision,
+                    pv_w=float(pv_w),
+                    house_load_w=float(house_load),
+                    grid_import_w=float(grid_import or 0.0),
+                    grid_export_w=float(grid_export or 0.0),
+                    max_discharge_w=float(max_discharge),
+                    pv_charge_start_export_w=float(pv_charge_start_export_w),
+                    discharge_blocked_by_soc_min=bool(discharge_blocked_by_soc_min),
+                    cell_voltage_discharge_blocked=bool(cell_voltage_discharge_blocked),
+                    cell_voltage_emergency_active=bool(cell_voltage_emergency_active),
+                    additional_battery_charge_w=float(additional_battery_charge_w or 0.0),
+                )
+            else:
+                self._persist["sf800_mode_arbiter_state"] = "improved_regulation_active"
+                self._persist["sf800_mode_arbiter_reason"] = "legacy_sf800_arbiter_bypassed"
 
             strict_low_soc_protection = bool(profile.get("LOW_SOC_PROTECTION_STRICT", False))
             low_soc_pv_charge_requires_export = bool(
@@ -1388,9 +2719,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 and float(decision.charge_w or 0.0) > 0.0
                 and decision.reason == "pv_surplus_charge"
             ):
-                # SF800Pro-Schutz:
-                # In der Low-SoC-/Zellschutz-Sperrzone darf PV-Ladung nur bei echtem,
-                # stabilem Export stattfinden. Kein Akku-Vorrang bei kleiner PV-Anlaufleistung.
                 if (
                     float(grid_export or 0.0) < float(pv_charge_start_export_w)
                     or float(grid_import or 0.0) > 30.0
@@ -1400,13 +2728,133 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     decision.action = "idle"
                     decision.ac_mode = "output"
                     decision.reason = "pv_charge_blocked_by_discharge_protection"
+                    
+            # Legacy safety only:
+            # In the V4.2 command path, PV charge must remain a pv_charge intent so the
+            # ModeArbiter and PowerController can reduce INPUT smoothly instead of forcing
+            # idle/input 0 W and creating a charge sawtooth.
+            if (
+                not use_regulation_v42_command
+                and decision.ac_mode == "input"
+                and float(decision.charge_w or 0.0) > 0.0
+                and decision.reason == "pv_surplus_charge"
+            ):
+                export_w = max(0.0, float(grid_export or 0.0))
+                import_w = max(0.0, float(grid_import or 0.0))
+
+                weak_export_threshold_w = max(10.0, float(pv_charge_start_export_w) * 0.25)
+                real_import_threshold_w = max(
+                    40.0,
+                    float(profile.get("TARGET_IMPORT_W", 10.0) or 10.0)
+                    + float(profile.get("CHARGE_DEADBAND_W", profile.get("DEADBAND_W", 30.0)) or 30.0),
+                )
+
+                if export_w < weak_export_threshold_w and import_w > real_import_threshold_w:
+                    decision.charge_w = 0.0
+                    decision.discharge_w = 0.0
+                    decision.action = "idle"
+                    decision.ac_mode = "output"
+                    decision.reason = "pv_charge_blocked_no_stable_export"
+
+                    self._persist["pv_charge_latched"] = False
+                    self._persist["pv_charge_start_counter"] = 0
+                    self._persist["pv_charge_stop_counter"] = 0
+
+                    # Keep local diagnostic variables in sync for this same update cycle.
+                    pv_charge_latched = False
+                    pv_charge_start_counter = 0
+                    pv_charge_stop_counter = 0
+                    
+            soc_limit = self._get_soc_limit()
+
+            # Beta10/Beta11 Off-Grid correction:
+            # When the island socket has an active load, automatic/economic
+            # grid charging must not continue. Otherwise Zendure can use AC for
+            # the Off-Grid load and even charge the battery at the same time.
+            #
+            # Only true protection/manual charge reasons may override Off-Grid
+            # load support. Learned planning, price planning, valley charging
+            # and very-cheap charging are deliberately NOT priority here.
+            offgrid_priority_charge_reasons = {
+                "emergency_latched_charge",
+                "cell_voltage_emergency_charge",
+                "manual_charge",
+            }
+
+            offgrid_priority_charge_active = bool(
+                decision.ac_mode == "input"
+                and float(decision.charge_w or 0.0) > 0.0
+                and str(decision.reason or "") in offgrid_priority_charge_reasons
+            )
+
+            offgrid_support_allowed = bool(
+                bool(profile.get("OFFGRID_LOAD_BLOCKS_AC_CHARGE", False))
+                and bool(offgrid_load_active)
+                and not offgrid_priority_charge_active
+                and ai_mode != AI_MODE_MANUAL
+                and not bool(discharge_blocked_by_soc_min)
+                and not bool(cell_voltage_discharge_blocked)
+                and not bool(cell_voltage_emergency_active)
+                and soc_limit != 2
+                and float(soc) > float(soc_min)
+            )
+
+            if offgrid_support_allowed:
+                offgrid_max_internal_supply_w = float(
+                    profile.get("OFFGRID_MAX_INTERNAL_SUPPLY_W", max_discharge)
+                    or max_discharge
+                )
+
+                offgrid_target_w = min(
+                    float(offgrid_power_w or 0.0),
+                    float(max_discharge),
+                    float(offgrid_max_internal_supply_w),
+                )
+
+                offgrid_min_output_w = max(
+                    float(profile.get("KEEPALIVE_MIN_OUTPUT_W", 60.0) or 60.0),
+                    float(profile.get("OFFGRID_LOAD_ACTIVE_W", 50.0) or 50.0),
+                )
+
+                if offgrid_target_w >= float(
+                    profile.get("OFFGRID_LOAD_ACTIVE_W", 50.0) or 50.0
+                ):
+                    decision.charge_w = 0.0
+                    decision.discharge_w = max(
+                        float(offgrid_target_w),
+                        float(offgrid_min_output_w),
+                    )
+
+                    # Use a real discharge action so the strategy adapter and
+                    # V4.2 regulation chain clearly request OUTPUT. The reason
+                    # still marks this as technical Off-Grid support, not as
+                    # economic/price discharge.
+                    decision.action = "discharge"
+                    decision.ac_mode = "output"
+                    decision.reason = "offgrid_load_support"
+
+            elif (
+                not use_regulation_v42_command
+                and bool(profile.get("OFFGRID_LOAD_BLOCKS_AC_CHARGE", False))
+                and bool(offgrid_load_active)
+                and decision.ac_mode == "input"
+                and float(decision.charge_w or 0.0) > 0.0
+                and str(decision.reason or "") not in offgrid_priority_charge_reasons
+            ):
+                decision.charge_w = 0.0
+                decision.discharge_w = 0.0
+                decision.action = "idle"
+                decision.ac_mode = "output"
+                decision.reason = "offgrid_load_active_blocks_ac_charge"
 
             charge_price_applied = None
             charge_source = "no_charge_delta"
             is_grid_charge = False
 
             if delta_kwh > 0:
-                is_below_soc_min_cycle = bool(self._persist.get("trade_cycle_below_soc_min", False))
+                is_below_soc_min_cycle = bool(
+                    self._persist.get("trade_cycle_below_soc_min", False)
+                )
 
                 is_grid_charge, applied_price, charge_source = self._classify_charge_source(
                     delta_kwh=float(delta_kwh),
@@ -1445,6 +2893,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 and price_now is not None
                 and decision.ac_mode == "output"
                 and float(decision.discharge_w or 0.0) > 0.0
+                and decision.reason
+                not in {
+                    "pv_house_load_passthrough",
+                    "offgrid_load_support",
+                }
             ):
                 sold_kwh = abs(float(delta_kwh))
                 avg_price = self._persist.get("trade_avg_charge_price")
@@ -1470,15 +2923,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         self._persist["trade_avg_charge_price"] = 0.0
 
             adaptive_peak_active = decision.reason == "adaptive_peak_discharge"
-
-            self._persist["prev_discharge_w"] = float(decision.discharge_w or 0.0)
-
-            if decision.ac_mode == "input" and float(decision.charge_w or 0.0) > 0.0:
-                self._persist["prev_charge_w"] = float(decision.charge_w)
-            else:
-                self._persist["prev_charge_w"] = 0.0
-
-            soc_limit = self._get_soc_limit()
+            
             if soc_limit == 1 and decision.ac_mode == "input" and float(decision.charge_w or 0.0) > 0:
                 decision.charge_w = 0.0
                 decision.action = "idle"
@@ -1492,6 +2937,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 decision.ac_mode == "output"
                 and float(decision.discharge_w or 0.0) > 0.0
                 and discharge_blocked_by_soc_min
+                and decision.reason != "pv_house_load_passthrough"
             ):
                 decision.discharge_w = 0.0
                 decision.action = "idle"
@@ -1501,55 +2947,376 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 decision.ac_mode == "output"
                 and float(decision.discharge_w or 0.0) > 0.0
                 and cell_voltage_discharge_blocked
+                and decision.reason != "pv_house_load_passthrough"
             ):
                 decision.discharge_w = 0.0
                 decision.action = "idle"
                 decision.reason = "cell_voltage_cutoff_block"
+            
+            regulation_runtime = self._get_regulation_runtime_state()
 
-            ac_mode = (
+            # V4.2 PV charge latch continuation:
+            # In the improved regulation path, do not let a short idle cycle from
+            # the strategic DecisionEngine immediately stop an already active PV
+            # charge. This can happen in the morning transition when charging
+            # consumes the visible export for one or more cycles.
+            #
+            # The technical regulation should continue PV charging and let the
+            # PowerController reduce input smoothly until stable grid import
+            # confirms that PV charge should really exit.
+            pv_charge_exit_import_cycles = int(
+                profile.get("PV_CHARGE_EXIT_IMPORT_CYCLES", 3) or 3
+            )
+
+            original_decision_reason = str(decision.reason or "")
+
+            if (
+                use_regulation_v42_command
+                and ai_mode != AI_MODE_MANUAL
+                and str(regulation_runtime.active_regulation_state)
+                == "pv_charge_active"
+                and bool(pv_charge_latched)
+                and decision.action == "idle"
+                and original_decision_reason in (
+                    "idle",
+                    "state_idle",
+                    "standby",
+                )
+                and int(grid_history_state.stable_import_cycles or 0)
+                < pv_charge_exit_import_cycles
+                and soc_limit != 1
+                and not additional_battery_discharge_active
+                and not bool(cell_voltage_emergency_active)
+                and float(soc) < float(soc_max)
+            ):
+                decision = DecisionResult(
+                    action="charge",
+                    ac_mode="input",
+                    charge_w=max(
+                        0.0,
+                        float(self._persist.get("last_set_input_w", 0.0) or 0.0),
+                    ),
+                    discharge_w=0.0,
+                    reason="pv_surplus_charge",
+                    target_soc=decision.target_soc,
+                )
+
+                self._persist["regulation_pv_charge_latch_continue_reason"] = (
+                    original_decision_reason
+                )
+            else:
+                self._persist["regulation_pv_charge_latch_continue_reason"] = "none"
+                
+            # Store final effective previous power only after all protection and limit
+            # blockers have modified the decision. Otherwise a blocked discharge can leave
+            # a stale prev_discharge_w > 0 and suppress PV charging in the next cycle.
+            if decision.reason == "pv_house_load_passthrough":
+                self._persist["prev_discharge_w"] = 0.0
+            else:
+                self._persist["prev_discharge_w"] = float(decision.discharge_w or 0.0)
+
+            if decision.ac_mode == "input" and float(decision.charge_w or 0.0) > 0.0:
+                self._persist["prev_charge_w"] = float(decision.charge_w)
+            else:
+                self._persist["prev_charge_w"] = 0.0
+
+            self._remember_learned_charge_power_sample(
+                now,
+                decision=decision,
+                battery_charge_w=float(battery_charge_w),
+            )
+            
+            strategy_intent = decision_to_strategy_intent(decision)
+
+            # Hard discharge permission for the V4.2 regulation chain.
+            # The DecisionEngine decision is already sanitized above, but the
+            # ModeArbiter may still have an active discharge/passthrough latch
+            # from a previous cycle. This explicit flag prevents such technical
+            # holds from producing a short output pulse at SoC minimum or during
+            # cell-voltage discharge protection.
+            discharge_allowed_for_regulation = not bool(
+                discharge_blocked_by_soc_min
+                or cell_voltage_discharge_blocked
+                or soc_limit == 2
+            )
+
+            mode_arbiter_result = self._mode_arbiter.evaluate(
+                now=now,
+                intent=strategy_intent,
+                grid=grid_history_state,
+                runtime=regulation_runtime,
+                current_ac_mode=self._state(self.entities.ac_mode),
+                additional_battery_discharge_w=float(additional_battery_discharge_w or 0.0),
+                discharge_allowed=bool(discharge_allowed_for_regulation),
+                offgrid_power_w=float(offgrid_power_w),
+                offgrid_mode=str(offgrid_mode),
+                offgrid_load_active=bool(offgrid_load_active),
+                offgrid_source_active=bool(offgrid_source_active),
+            )
+            
+            regulation_power_result = self._regulation_power_controller.calculate(
+                intent=strategy_intent,
+                arbiter=mode_arbiter_result,
+                grid=grid_history_state,
+                previous_input_w=float(self._persist.get("last_set_input_w", 0.0) or 0.0),
+                previous_output_w=float(self._persist.get("last_set_output_w", 0.0) or 0.0),
+            )
+            
+            regulation_device_command = self._device_command_builder.build(
+                intent=strategy_intent,
+                arbiter=mode_arbiter_result,
+                power=regulation_power_result,
+                current_ac_mode=self._state(self.entities.ac_mode),
+                last_input_limit_w=float(self._persist.get("last_set_input_w", 0.0) or 0.0),
+                last_output_limit_w=float(self._persist.get("last_set_output_w", 0.0) or 0.0),
+            )
+
+            legacy_ac_mode = (
                 ZENDURE_MODE_INPUT
                 if decision.ac_mode == "input"
                 else ZENDURE_MODE_OUTPUT
             )
-            in_w = float(decision.charge_w) if ac_mode == ZENDURE_MODE_INPUT else 0.0
-            out_w = float(decision.discharge_w) if ac_mode == ZENDURE_MODE_OUTPUT else 0.0
+            legacy_in_w = (
+                float(decision.charge_w)
+                if legacy_ac_mode == ZENDURE_MODE_INPUT
+                else 0.0
+            )
+            legacy_out_w = (
+                float(decision.discharge_w)
+                if legacy_ac_mode == ZENDURE_MODE_OUTPUT
+                else 0.0
+            )
+            
+            # Safety fallback: never use V4.2 command path if command generation failed
+            # or produced an unexpected mode.
+            if use_regulation_v42_command and regulation_device_command.ac_mode not in (
+                "input",
+                "output",
+            ):
+                use_regulation_v42_command = False
 
-            if ac_mode == ZENDURE_MODE_INPUT:
-                if self._persist.get("last_set_output_w", 0) != 0:
-                    await self._set_output_limit(0)
+            if use_regulation_v42_command:
+                ac_mode = (
+                    ZENDURE_MODE_INPUT
+                    if regulation_device_command.ac_mode == "input"
+                    else ZENDURE_MODE_OUTPUT
+                )
+                in_w = (
+                    float(regulation_device_command.input_limit_w)
+                    if ac_mode == ZENDURE_MODE_INPUT
+                    else 0.0
+                )
+                out_w = (
+                    float(regulation_device_command.output_limit_w)
+                    if ac_mode == ZENDURE_MODE_OUTPUT
+                    else 0.0
+                )
+            else:
+                ac_mode = legacy_ac_mode
+                in_w = legacy_in_w
+                out_w = legacy_out_w
+                
+            self._update_regulation_runtime_state(
+                now=now,
+                requested_mode=str(mode_arbiter_result.requested_mode),
+                resolved_mode=str(mode_arbiter_result.resolved_mode),
+                active_state=str(mode_arbiter_result.active_regulation_state),
+                command_skipped=bool(regulation_device_command.skipped) if use_regulation_v42_command else False,
+                command_skip_reason=(
+                    str(regulation_device_command.skip_reason)
+                    if use_regulation_v42_command
+                    else "legacy_active"
+                ),
+                current_ac_mode=self._state(self.entities.ac_mode),
+                command_ac_mode=str(ac_mode),
+                profile=profile,
+                grid=grid_history_state,
+            )
 
-            await self._set_ac_mode(ac_mode)
-            await self._set_input_limit(in_w)
-            await self._set_output_limit(out_w)
+            is_passthrough = decision.reason in {
+                "pv_house_load_passthrough",
+                "offgrid_load_support",
+            }
 
-            self._persist["last_set_output_w"] = out_w
+            if use_regulation_v42_command:
+                if regulation_device_command.should_write_mode:
+                    await self._set_ac_mode(ac_mode)
+
+                if regulation_device_command.should_write_input:
+                    await self._set_input_limit(in_w)
+
+                if regulation_device_command.should_write_output:
+                    await self._set_output_limit(out_w)
+
+            else:
+                if ac_mode == ZENDURE_MODE_INPUT:
+                    if self._persist.get("last_set_output_w", 0) != 0:
+                        await self._set_output_limit(0)
+
+                await self._set_ac_mode(ac_mode)
+                await self._set_input_limit(in_w)
+                await self._set_output_limit(out_w)
 
             is_charging = ac_mode == ZENDURE_MODE_INPUT and in_w > 0.0
-            is_discharging = ac_mode == ZENDURE_MODE_OUTPUT and out_w > 0.0
 
-            if is_charging:
+            discharge_command_active = (
+                ac_mode == ZENDURE_MODE_OUTPUT
+                and out_w > 0.0
+                and not is_passthrough
+            )
+
+            real_discharge_threshold_w = 30.0
+
+            real_discharge_active = (
+                float(battery_discharge_w or 0.0) > real_discharge_threshold_w
+            )
+
+            no_relevant_grid_import = float(grid_import or 0.0) <= max(
+                60.0,
+                float(profile.get("TARGET_IMPORT_W", 10.0) or 10.0)
+                + float(
+                    profile.get(
+                        "DISCHARGE_DEADBAND_W",
+                        profile.get("DEADBAND_W", 30.0),
+                    )
+                    or 30.0
+                ),
+            )
+
+            pv_covers_load = (
+                float(grid_export or 0.0) > 0.0
+                or float(pv_w or 0.0) >= max(
+                    120.0,
+                    float(house_load or 0.0) * 0.80,
+                )
+            )
+
+            discharge_waiting_for_import = (
+                discharge_command_active
+                and decision.action == "discharge"
+                and not real_discharge_active
+                and no_relevant_grid_import
+                and pv_covers_load
+            )
+
+            is_discharging = (
+                discharge_command_active
+                and real_discharge_active
+            )
+
+            if is_passthrough and out_w > 0.0:
+                self._persist["power_state"] = "passthrough"
+            elif is_charging:
                 self._persist["power_state"] = "charging"
+            elif discharge_waiting_for_import:
+                self._persist["power_state"] = "discharge_waiting_for_import"
             elif is_discharging:
                 self._persist["power_state"] = "discharging"
             else:
                 self._persist["power_state"] = "idle"
 
-            if is_charging or is_discharging:
-                self._persist["next_action_time"] = now.isoformat()
+            if (
+                is_charging
+                or is_discharging
+                or discharge_waiting_for_import
+                or (is_passthrough and out_w > 0.0)
+            ):
+                if not self._persist.get("next_action_time"):
+                    self._persist["next_action_time"] = self._stable_iso_minute(now)
             else:
                 self._persist["next_action_time"] = None
+                
+            # V4.2.3-Beta2:
+            # Display-only stabilization for weak PV surplus phases.
+            #
+            # The command decision must remain unchanged. This only stabilizes the
+            # externally visible status/diagnostic values when PV surplus charging has just
+            # been active and the DecisionEngine briefly returns idle in a marginal PV phase.
+            display_decision = decision
+
+            now_utc = dt_util.as_utc(now)
+
+            if str(decision.reason or "") == "pv_surplus_charge":
+                self._persist["pv_surplus_display_hold_until"] = (
+                    now_utc + timedelta(seconds=PV_SURPLUS_DISPLAY_HOLD_S)
+                ).isoformat()
+                self._persist["pv_surplus_display_hold_reason"] = "pv_surplus_active"
+
+            elif (
+                decision.action == "idle"
+                and str(decision.reason or "") in ("idle", "state_idle", "standby")
+                and ai_mode != AI_MODE_MANUAL
+            ):
+                hold_raw = self._persist.get("pv_surplus_display_hold_until")
+                hold_active = False
+
+                if hold_raw:
+                    try:
+                        hold_dt = dt_util.parse_datetime(str(hold_raw))
+                        hold_active = bool(
+                            hold_dt is not None and dt_util.as_utc(hold_dt) > now_utc
+                        )
+                    except Exception:
+                        hold_active = False
+
+                pv_w_now = max(0.0, float(pv_w or 0.0))
+                house_load_now = max(0.0, float(house_load or 0.0))
+                grid_import_now = max(0.0, float(grid_import or 0.0))
+                grid_export_now = max(0.0, float(grid_export or 0.0))
+
+                start_export_threshold = max(0.0, float(pv_charge_start_export_w or 0.0))
+
+                pv_still_plausible = (
+                    grid_export_now >= max(10.0, start_export_threshold * 0.15)
+                    or (
+                        pv_w_now >= max(180.0, house_load_now * 0.80)
+                        and grid_import_now <= max(120.0, start_export_threshold)
+                    )
+                )
+
+                no_hard_blocker = (
+                    float(soc) < float(soc_max)
+                    and not bool(additional_battery_discharge_active)
+                    and not bool(cell_voltage_emergency_active)
+                    and not bool(discharge_blocked_by_soc_min)
+                    and not bool(cell_voltage_discharge_blocked)
+                )
+
+                if hold_active and pv_still_plausible and no_hard_blocker:
+                    display_decision = DecisionResult(
+                        action="charge",
+                        ac_mode=decision.ac_mode,
+                        charge_w=0.0,
+                        discharge_w=0.0,
+                        reason="pv_surplus_charge",
+                        target_soc=decision.target_soc,
+                        current_peak_threshold=decision.current_peak_threshold,
+                        current_valley_threshold=decision.current_valley_threshold,
+                        economic_discharge_threshold=decision.economic_discharge_threshold,
+                        effective_discharge_threshold=decision.effective_discharge_threshold,
+                    )
+                    self._persist["pv_surplus_display_hold_reason"] = "display_hold"
+                else:
+                    self._persist["pv_surplus_display_hold_reason"] = "none"
+
+            else:
+                # Any real non-idle/non-PV decision, e.g. price discharge or planned charge,
+                # must not be hidden by the PV display hold.
+                self._persist["pv_surplus_display_hold_until"] = None
+                self._persist["pv_surplus_display_hold_reason"] = "none"
 
             ai_status = self._map_ai_status(
                 ai_mode=ai_mode,
-                action=decision.action,
-                reason=decision.reason,
+                action=display_decision.action,
+                reason=display_decision.reason,
             )
-            recommendation = self._map_reco(decision.action)
+
+            recommendation = self._map_reco(display_decision.action)
 
             charge_strategy = self._map_charge_strategy(
                 ai_mode=ai_mode,
-                action=decision.action,
-                reason=decision.reason,
+                action=display_decision.action,
+                reason=display_decision.reason,
             )
 
             transparency_ctx = DecisionContext(
@@ -1571,6 +3338,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 very_expensive_threshold=float(very_expensive),
                 profit_margin_pct=float(profit_margin_pct),
                 price_points=price_points,
+                feed_in_tariff=float(feed_in_tariff),
                 ai_mode=ai_mode,
                 manual_action=manual_action,
                 season=season,
@@ -1582,6 +3350,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 valley_factor=valley_factor,
                 very_cheap_price=very_cheap_price,
                 additional_battery_charge_w=additional_battery_charge_w,
+                additional_battery_discharge_w=additional_battery_discharge_w,
                 pv_charge_start_export_w=float(pv_charge_start_export_w),
                 cell_voltage_emergency_active=cell_voltage_emergency_active,
                 forecast=forecast_summary,
@@ -1591,17 +3360,28 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 forecast_wait_block_counter=int(self._persist.get("forecast_wait_block_counter", 0)),
                 discharge_blocked_by_soc_min=bool(discharge_blocked_by_soc_min),
                 cell_voltage_discharge_blocked=bool(cell_voltage_discharge_blocked),
+                pv_houseload_passthrough_active=bool(pv_houseload_passthrough_active),
+                pv_houseload_passthrough_target_w=float(pv_houseload_passthrough_target_w),
+                pv_houseload_passthrough_stop_reason=str(pv_houseload_passthrough_stop_reason),
+                learned_charge_plan=learned_charge_plan,
+                learned_planning_enabled=bool(learned_planning_enabled),
+                offgrid_power_w=float(offgrid_power_w),
+                offgrid_mode=str(offgrid_mode),
+                offgrid_available=bool(offgrid_available),
+                offgrid_active=bool(offgrid_active),
+                offgrid_load_active=bool(offgrid_load_active),
+                offgrid_source_active=bool(offgrid_source_active),
             )
 
             transparency_result = self._engine._with_thresholds(
                 transparency_ctx,
                 DecisionResult(
-                    action=decision.action,
-                    ac_mode=decision.ac_mode,
-                    charge_w=float(decision.charge_w or 0.0),
-                    discharge_w=float(decision.discharge_w or 0.0),
-                    reason=decision.reason,
-                    target_soc=decision.target_soc,
+                    action=display_decision.action,
+                    ac_mode=display_decision.ac_mode,
+                    charge_w=float(display_decision.charge_w or 0.0),
+                    discharge_w=float(display_decision.discharge_w or 0.0),
+                    reason=display_decision.reason,
+                    target_soc=display_decision.target_soc,
                 ),
             )
 
@@ -1621,7 +3401,37 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "deficit": float(grid_import),
                 "surplus": float(grid_export),
                 "house_load": int(round(house_load, 0)),
+                
+                # V4.2.0 regulation / grid history diagnostics
+                "regulation_grid_now_w": float(grid_history_state.grid_now_w),
+                "regulation_grid_avg_short_w": float(grid_history_state.grid_avg_short_w),
+                "regulation_grid_avg_medium_w": float(grid_history_state.grid_avg_medium_w),
+                "regulation_grid_delta_w": float(grid_history_state.grid_delta_w),
+                "regulation_stable_import_cycles": int(
+                    grid_history_state.stable_import_cycles
+                ),
+                "regulation_stable_export_cycles": int(
+                    grid_history_state.stable_export_cycles
+                ),
+                "regulation_near_target_cycles": int(
+                    grid_history_state.near_target_cycles
+                ),
+                "regulation_fast_load_rise_detected": bool(
+                    grid_history_state.fast_load_rise_detected
+                ),
+                "regulation_fast_load_drop_detected": bool(
+                    grid_history_state.fast_load_drop_detected
+                ),
+                "regulation_post_load_drop_hold_active": bool(
+                    grid_history_state.post_load_drop_hold_active
+                ),
+                "regulation_post_output_overshoot_hold_active": bool(
+                    grid_history_state.post_output_overshoot_hold_active
+                ),
+                
                 "price_now": price_now,
+                "feed_in_tariff": float(feed_in_tariff),
+                "pv_opportunity_price": float(feed_in_tariff),
                 "avg_charge_price": self._persist.get("trade_avg_charge_price"),
                 "economic_discharge_threshold": economic_discharge_threshold,
                 "effective_discharge_threshold": effective_discharge_threshold,
@@ -1653,22 +3463,360 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "set_mode": ac_mode,
                 "set_input_w": int(round(in_w, 0)),
                 "set_output_w": int(round(out_w, 0)),
+
+                # V4.2.0 regulation execution switch / comparison
+                "regulation_v42_command_enabled": bool(use_regulation_v42_command),
+                "regulation_v42_command_dev_switch": bool(USE_REGULATION_V42_COMMAND_DEV),
+                "regulation_v42_option_enabled": bool(regulation_v42_option_enabled),
+                "regulation_v42_command_persist_switch": bool(
+                    self._persist.get("use_regulation_v42_command", False)
+                ),
+                "regulation_legacy_set_mode": legacy_ac_mode,
+                "regulation_legacy_set_input_w": int(round(legacy_in_w, 0)),
+                "regulation_legacy_set_output_w": int(round(legacy_out_w, 0)),
+                "regulation_command_diff_mode": (
+                    str(regulation_device_command.ac_mode) != str(legacy_ac_mode)
+                ),
+                "regulation_command_diff_input_w": round(
+                    float(regulation_device_command.input_limit_w) - float(legacy_in_w),
+                    2,
+                ),
+                "regulation_command_diff_output_w": round(
+                    float(regulation_device_command.output_limit_w) - float(legacy_out_w),
+                    2,
+                ),
+                "regulation_command_matches_legacy": (
+                    str(regulation_device_command.ac_mode) == str(legacy_ac_mode)
+                    and abs(
+                        float(regulation_device_command.input_limit_w) - float(legacy_in_w)
+                    ) < 1.0
+                    and abs(
+                        float(regulation_device_command.output_limit_w) - float(legacy_out_w)
+                    ) < 1.0
+                ),
+                
                 "ai_mode": ai_mode,
                 "manual_action": manual_action,
                 "decision_reason": decision.reason,
                 "charge_strategy": charge_strategy,
+                
+                # V4.2.0 regulation / strategy intent diagnostics
+                "regulation_strategy_intent": strategy_intent.intent,
+                "regulation_requested_mode": strategy_intent.requested_mode,
+                "regulation_requested_power_w": (
+                    float(strategy_intent.requested_power_w)
+                    if strategy_intent.requested_power_w is not None
+                    else None
+                ),
+                "regulation_strategy_reason": strategy_intent.reason,
+                "regulation_strategy_priority": int(strategy_intent.priority),
+                "regulation_strategy_allow_mode_switch": bool(
+                    strategy_intent.allow_mode_switch
+                ),
+                "regulation_strategy_force": bool(strategy_intent.force),
+                "regulation_discharge_allowed": bool(
+                    discharge_allowed_for_regulation
+                ),
+                
+                "regulation_resolved_mode": mode_arbiter_result.resolved_mode,
+                "regulation_mode_allowed": bool(mode_arbiter_result.allowed),
+                "regulation_mode_arbiter_reason": mode_arbiter_result.reason,
+                "regulation_active_state": mode_arbiter_result.active_regulation_state,
+                "regulation_active_hold_remaining_s": float(
+                    mode_arbiter_result.active_hold_remaining_s
+                ),
+                "regulation_cooldown_remaining_s": float(
+                    mode_arbiter_result.cooldown_remaining_s
+                ),
+                
+                # V4.2.0 regulation / power controller diagnostics
+                "regulation_control_grid_w": round(
+                    float(
+                        regulation_power_result.metadata.get(
+                            "control_grid_w",
+                            float(grid_history_state.grid_now_w) * 0.6
+                            + float(grid_history_state.grid_avg_short_w) * 0.4,
+                        )
+                        if isinstance(regulation_power_result.metadata, dict)
+                        else float(grid_history_state.grid_now_w) * 0.6
+                        + float(grid_history_state.grid_avg_short_w) * 0.4
+                    ),
+                    2,
+                ),
+                "regulation_raw_target_w": float(regulation_power_result.raw_target_w),
+                "regulation_limited_target_w": float(
+                    regulation_power_result.limited_target_w
+                ),
+                "regulation_applied_step_w": float(
+                    regulation_power_result.applied_step_w
+                ),
+                "regulation_final_power_w": float(
+                    regulation_power_result.final_power_w
+                ),
+                "regulation_power_reason": regulation_power_result.reason,
+                "regulation_profile_limited": bool(
+                    regulation_power_result.profile_limited
+                ),
+                "regulation_step_limited": bool(
+                    regulation_power_result.step_limited
+                ),
+                
+                # V4.2.0 regulation / device command diagnostics
+                "regulation_command_ac_mode": regulation_device_command.ac_mode,
+                "regulation_command_input_limit_w": float(
+                    regulation_device_command.input_limit_w
+                ),
+                "regulation_command_output_limit_w": float(
+                    regulation_device_command.output_limit_w
+                ),
+                "regulation_command_reason": regulation_device_command.reason,
+                "regulation_command_should_write_mode": bool(
+                    regulation_device_command.should_write_mode
+                ),
+                "regulation_command_should_write_input": bool(
+                    regulation_device_command.should_write_input
+                ),
+                "regulation_command_should_write_output": bool(
+                    regulation_device_command.should_write_output
+                ),
+                "regulation_command_skipped": bool(regulation_device_command.skipped),
+                "regulation_command_skip_reason": regulation_device_command.skip_reason,
+                
+                # V4.2.0 regulation / runtime diagnostics
+                "regulation_runtime_last_requested_mode": str(
+                    self._persist.get("regulation_last_requested_mode", "idle")
+                ),
+                "regulation_runtime_last_resolved_mode": str(
+                    self._persist.get("regulation_last_resolved_mode", "idle")
+                ),
+                "regulation_runtime_last_mode_change_ts": self._persist.get(
+                    "regulation_last_mode_change_ts"
+                ),
+                "regulation_runtime_last_command_ts": self._persist.get(
+                    "regulation_last_command_ts"
+                ),
+                "regulation_runtime_active_state": str(
+                    self._persist.get("regulation_active_state", "none")
+                ),
+                "regulation_runtime_active_state_started_ts": self._persist.get(
+                    "regulation_active_state_started_ts"
+                ),
+                "regulation_runtime_pv_charge_latch_started_ts": self._persist.get(
+                    "regulation_pv_charge_latch_started_ts"
+                ),
+                "regulation_runtime_discharge_latch_started_ts": self._persist.get(
+                    "regulation_discharge_latch_started_ts"
+                ),
+                "regulation_runtime_passthrough_latch_started_ts": self._persist.get(
+                    "regulation_passthrough_latch_started_ts"
+                ),
+                "regulation_runtime_skipped_write_reason": str(
+                    self._persist.get("regulation_skipped_write_reason", "none")
+                ),
+                
+                "regulation_runtime_post_load_drop_hold_until": self._persist.get(
+                    "regulation_post_load_drop_hold_until"
+                ),
+                "regulation_runtime_post_output_overshoot_hold_until": self._persist.get(
+                    "regulation_post_output_overshoot_hold_until"
+                ),
+                
                 "adaptive_peak_active": adaptive_peak_active,
                 "device_profile": self.device_profile_key,
                 "profile_max_input_w": profile_max_in,
                 "profile_max_output_w": profile_max_out,
+                
+                # V4.2.0 regulation / active profile values
+                "regulation_profile_target_import_w": float(
+                    profile.get("TARGET_IMPORT_W", 0.0) or 0.0
+                ),
+                "regulation_profile_export_guard_w": float(
+                    profile.get("EXPORT_GUARD_W", 0.0) or 0.0
+                ),
+                "regulation_profile_grid_history_short_samples": int(
+                    profile.get("GRID_HISTORY_SHORT_SAMPLES", 0) or 0
+                ),
+                "regulation_profile_grid_history_medium_samples": int(
+                    profile.get("GRID_HISTORY_MEDIUM_SAMPLES", 0) or 0
+                ),
+                "regulation_profile_grid_history_max_samples": int(
+                    profile.get("GRID_HISTORY_MAX_SAMPLES", 0) or 0
+                ),
+                "regulation_profile_fast_load_change_w": float(
+                    profile.get("FAST_LOAD_CHANGE_W", 0.0) or 0.0
+                ),
+                "regulation_profile_supports_fast_mode_switch": bool(
+                    profile.get("SUPPORTS_FAST_MODE_SWITCH", True)
+                ),
+                "regulation_profile_mode_switch_cooldown_s": float(
+                    profile.get("MODE_SWITCH_COOLDOWN_S", 0.0) or 0.0
+                ),
+                "regulation_profile_input_after_output_block_s": float(
+                    profile.get("INPUT_AFTER_OUTPUT_BLOCK_S", 0.0) or 0.0
+                ),
+                "regulation_profile_output_after_input_block_s": float(
+                    profile.get("OUTPUT_AFTER_INPUT_BLOCK_S", 0.0) or 0.0
+                ),
+                "regulation_profile_stable_export_cycles_for_pv_charge": int(
+                    profile.get("STABLE_EXPORT_CYCLES_FOR_PV_CHARGE", 0) or 0
+                ),
+                "regulation_profile_stable_import_cycles_for_discharge": int(
+                    profile.get("STABLE_IMPORT_CYCLES_FOR_DISCHARGE", 0) or 0
+                ),
+                "regulation_profile_pv_charge_latch_min_hold_s": float(
+                    profile.get("PV_CHARGE_LATCH_MIN_HOLD_S", 0.0) or 0.0
+                ),
+                "regulation_profile_pv_charge_exit_import_cycles": int(
+                    profile.get("PV_CHARGE_EXIT_IMPORT_CYCLES", 0) or 0
+                ),
+                "regulation_profile_discharge_latch_min_hold_s": float(
+                    profile.get("DISCHARGE_LATCH_MIN_HOLD_S", 0.0) or 0.0
+                ),
+                "regulation_profile_discharge_exit_export_cycles": int(
+                    profile.get("DISCHARGE_EXIT_EXPORT_CYCLES", 0) or 0
+                ),
+                "regulation_profile_passthrough_latch_min_hold_s": float(
+                    profile.get("PASSTHROUGH_LATCH_MIN_HOLD_S", 0.0) or 0.0
+                ),
+                "regulation_profile_passthrough_exit_cycles": int(
+                    profile.get("PASSTHROUGH_EXIT_CYCLES", 0) or 0
+                ),
+                "regulation_profile_post_load_drop_hold_s": float(
+                    profile.get("POST_LOAD_DROP_HOLD_S", 0.0) or 0.0
+                ),
+                "regulation_profile_post_output_overshoot_hold_s": float(
+                    profile.get("POST_OUTPUT_OVERSHOOT_HOLD_S", 0.0) or 0.0
+                ),
+                "regulation_profile_external_battery_discharge_block_w": float(
+                    profile.get("EXTERNAL_BATTERY_DISCHARGE_BLOCK_W", 0.0) or 0.0
+                ),
+                "regulation_profile_supports_passthrough": bool(
+                    profile.get("SUPPORTS_PASSTHROUGH", False)
+                ),
+                "regulation_profile_output_zero_is_neutral": bool(
+                    profile.get("OUTPUT_ZERO_IS_NEUTRAL", True)
+                ),
+                "regulation_profile_input_keepalive_safe": bool(
+                    profile.get("INPUT_KEEPALIVE_SAFE", True)
+                ),
+                "regulation_profile_requires_stable_export_for_input": bool(
+                    profile.get("REQUIRES_STABLE_EXPORT_FOR_INPUT", False)
+                ),
+                "regulation_profile_discharge_target_import_w": float(
+                    profile.get(
+                        "DISCHARGE_TARGET_IMPORT_W",
+                        profile.get("TARGET_IMPORT_W", 10.0),
+                    )
+                    or 0.0
+                ),
+                "regulation_v42_option_enabled": bool(
+                    self.entry.options.get(
+                        SETTING_REGULATION_V42_ENABLED,
+                        DEFAULT_REGULATION_V42_ENABLED,
+                    )
+                ),
+
+                # SF800Pro passthrough / arbiter debug
+                "pv_houseload_passthrough_enabled": bool(
+                    profile.get("PV_HOUSELOAD_PASSTHROUGH", False)
+                ),
+                "pv_houseload_passthrough_active": bool(
+                    pv_houseload_passthrough_active
+                ),
+                "pv_houseload_passthrough_applied": (
+                    decision.reason == "pv_house_load_passthrough"
+                ),
+                "pv_houseload_passthrough_target_w": float(
+                    pv_houseload_passthrough_target_w
+                ),
+                "pv_houseload_passthrough_stop_reason": str(
+                    pv_houseload_passthrough_stop_reason
+                ),
+                "pv_houseload_passthrough_export_counter": int(
+                    self._persist.get("pv_houseload_passthrough_export_counter", 0)
+                ),
+                "pv_houseload_passthrough_hold_seconds": float(
+                    profile.get("PV_HOUSELOAD_PASSTHROUGH_HOLD_SECONDS", 0.0)
+                ),
+                "sf800_pv_charge_latched": bool(
+                    self._persist.get("sf800_pv_charge_latched", False)
+                ),
+                "sf800_pv_charge_stop_counter": int(
+                    self._persist.get("sf800_pv_charge_stop_counter", 0)
+                ),
+                "sf800_mode_arbiter_state": str(
+                    self._persist.get("sf800_mode_arbiter_state", "none")
+                ),
+                "sf800_mode_arbiter_reason": str(
+                    self._persist.get("sf800_mode_arbiter_reason", "none")
+                ),
+                "sf800_passthrough_prev_output_w": float(
+                    self._persist.get("sf800_passthrough_prev_output_w", 0.0) or 0.0
+                ),
+                "sf800_passthrough_smoothed_target_w": float(
+                    self._persist.get("sf800_passthrough_smoothed_target_w", 0.0) or 0.0
+                ),
+                "sf800_passthrough_min_output_w": float(
+                    profile.get("PV_HOUSELOAD_PASSTHROUGH_MIN_OUTPUT_W", 0.0) or 0.0
+                ),
+                "sf800_passthrough_max_step_up_w": float(
+                    profile.get("PV_HOUSELOAD_PASSTHROUGH_MAX_STEP_UP_W", 0.0) or 0.0
+                ),
+                "sf800_passthrough_max_step_down_w": float(
+                    profile.get("PV_HOUSELOAD_PASSTHROUGH_MAX_STEP_DOWN_W", 0.0) or 0.0
+                ),
+                "sf800_passthrough_smoothing_alpha": float(
+                    profile.get("PV_HOUSELOAD_PASSTHROUGH_SMOOTHING_ALPHA", 0.0) or 0.0
+                ),
+
                 "soc_limit": soc_limit,
                 "additional_battery_charge_w": additional_battery_charge_w,
+                "additional_battery_discharge_w": additional_battery_discharge_w,
+                "additional_battery_discharge_active": bool(additional_battery_discharge_active),
+                "additional_battery_discharge_block_threshold_w": 50.0,
+
+                # V4.2.x Off-Grid / Inselsteckdose
+                "offgrid_power_w": float(offgrid_power_w),
+                "offgrid_power_raw_w": float(offgrid_power_raw_w),
+                "offgrid_mode": str(offgrid_mode),
+                "offgrid_mode_raw": offgrid_mode_raw,
+                "offgrid_available": bool(offgrid_available),
+                "offgrid_active": bool(offgrid_active),
+                "offgrid_load_active": bool(offgrid_load_active),
+                "offgrid_source_active": bool(offgrid_source_active),
+                "offgrid_load_active_w": float(offgrid_load_active_w),
+                "offgrid_rule_reason": (
+                    "offgrid_load_support"
+                    if decision.reason == "offgrid_load_support"
+                    else "offgrid_load_active_blocks_ac_charge"
+                    if bool(offgrid_load_active)
+                    and bool(profile.get("OFFGRID_LOAD_BLOCKS_AC_CHARGE", False))
+                    else "none"
+                ),
+                "offgrid_max_internal_supply_w": float(
+                    profile.get("OFFGRID_MAX_INTERNAL_SUPPLY_W", 0.0) or 0.0
+                ),
+                "offgrid_load_blocks_ac_charge": bool(
+                    profile.get("OFFGRID_LOAD_BLOCKS_AC_CHARGE", False)
+                ),
+                "offgrid_input_affects_energy_balance": bool(
+                    profile.get("OFFGRID_INPUT_AFFECTS_ENERGY_BALANCE", False)
+                ),
+                "offgrid_support_active": bool(
+                    decision.reason == "offgrid_load_support"
+                ),
+                "offgrid_support_target_w": (
+                    float(decision.discharge_w or 0.0)
+                    if decision.reason == "offgrid_load_support"
+                    else 0.0
+                ),
+
                 "pv_charge_start_export_w": float(pv_charge_start_export_w),
                 "pv_charge_latched": bool(pv_charge_latched),
                 "pv_charge_start_counter": int(self._persist.get("pv_charge_start_counter", 0)),
                 "pv_charge_stop_counter": int(self._persist.get("pv_charge_stop_counter", 0)),
                 "pv_charge_hold_export_threshold_w": max(20.0, float(pv_charge_start_export_w) * 0.5),
-                "pv_charge_stop_import_tolerance_w": 80.0,
+                "pv_charge_stop_import_tolerance_w": 100.0,
                 "installed_pv_wp": self._get_installed_pv_wp(),
                 "soc_limit_status": (
                     "not_configured"
@@ -1686,6 +3834,18 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "effective_kp_down": profile.get("KP_DOWN"),
                 "effective_max_step_up": profile.get("MAX_STEP_UP"),
                 "effective_max_step_down": profile.get("MAX_STEP_DOWN"),
+                
+                "effective_discharge_deadband_w": profile.get("DISCHARGE_DEADBAND_W"),
+                "effective_discharge_kp_up": profile.get("DISCHARGE_KP_UP"),
+                "effective_discharge_kp_down": profile.get("DISCHARGE_KP_DOWN"),
+                "effective_discharge_max_step_up": profile.get("DISCHARGE_MAX_STEP_UP"),
+                "effective_discharge_max_step_down": profile.get("DISCHARGE_MAX_STEP_DOWN"),
+                "effective_charge_deadband_w": profile.get("CHARGE_DEADBAND_W"),
+                "effective_charge_kp_up": profile.get("CHARGE_KP_UP"),
+                "effective_charge_kp_down": profile.get("CHARGE_KP_DOWN"),
+                "effective_charge_max_step_up": profile.get("CHARGE_MAX_STEP_UP"),
+                "effective_charge_max_step_down": profile.get("CHARGE_MAX_STEP_DOWN"),
+                
                 "effective_keepalive_min_deficit_w": profile.get("KEEPALIVE_MIN_DEFICIT_W"),
                 "effective_keepalive_min_output_w": profile.get("KEEPALIVE_MIN_OUTPUT_W"),
                 "effective_soc_discharge_resume_margin": profile.get("SOC_DISCHARGE_RESUME_MARGIN"),
@@ -1716,7 +3876,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "cell_voltage_resume_threshold"
                 ),
                 "cell_voltage_emergency_active": cell_voltage_emergency_active,
-                # V4.0.0 forecast transparency
                 "forecast_status": forecast_summary.status,
                 "pv_outlook": forecast_summary.pv_outlook,
                 "forecast_remaining_today_kwh": float(forecast_summary.remaining_today_kwh),
@@ -1726,8 +3885,82 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "forecast_peak_today_w": float(forecast_summary.peak_today_w),
                 "forecast_peak_tomorrow_w": float(forecast_summary.peak_tomorrow_w),
                 "forecast_source_name": forecast_summary.source_name,
-                "forecast_wait_block_counter": int(self._persist.get("forecast_wait_block_counter", 0)),
+                "forecast_wait_block_counter": int(
+                    self._persist.get("forecast_wait_block_counter", 0)
+                ),
                 "forecast_base_load_w": float(forecast_base_load_w),
+
+                # V4.1.0 learned charge-window planning diagnostics
+                "learned_planning_status": learned_charge_plan.status,
+                "learned_planning_mode": learned_charge_plan.mode,
+                "learned_planning_blocking_reason": learned_charge_plan.blocking_reason,
+                "learned_planning_decision_reason": learned_charge_plan.decision_reason,
+                "learned_planning_history_days": int(learned_readiness.history_days),
+                "learned_planning_usable_days": int(learned_readiness.usable_days),
+                "learned_planning_night_window_days": int(learned_readiness.night_window_days),
+                "learned_planning_morning_window_days": int(learned_readiness.morning_window_days),
+                "learned_planning_evening_window_days": int(learned_readiness.evening_window_days),
+                "learned_planning_data_coverage": round(float(learned_readiness.data_coverage), 3),
+                "learned_planning_sample_count": len(learned_samples),
+                "learned_planning_charge_power_sample_count": len(
+                    learned_charge_power_samples
+                ),
+                "learned_planning_learned_charge_power_w": (
+                    round(float(learned_charge_power), 1)
+                    if learned_charge_power is not None
+                    else None
+                ),
+                "learned_planning_expected_consumption_kwh": float(
+                    learned_charge_plan.expected_consumption_kwh
+                ),
+                "learned_planning_available_battery_energy_kwh": float(
+                    learned_charge_plan.available_battery_energy_kwh
+                ),
+                "learned_planning_reserve_margin_kwh": float(
+                    learned_charge_plan.reserve_margin_kwh
+                ),
+                "learned_planning_forecast_adjustment_kwh": float(
+                    learned_charge_plan.forecast_adjustment_kwh
+                ),
+                "learned_planning_required_charge_energy_kwh": float(
+                    learned_charge_plan.required_charge_energy_kwh
+                ),
+                "learned_planning_effective_charge_power_w": float(
+                    learned_charge_plan.effective_charge_power_w
+                ),
+                "learned_planning_effective_window_slots": int(
+                    learned_charge_plan.effective_window_slots
+                ),
+                "learned_planning_effective_window_minutes": int(
+                    learned_charge_plan.effective_window_minutes
+                ),
+                "learned_planning_deadline": self._stable_iso_minute(
+                    learned_charge_plan.planning_deadline
+                ),
+                "learned_planning_deadline_reason": learned_charge_plan.deadline_reason,
+                "learned_planning_optimal_charge_start": self._stable_iso_minute(
+                    learned_charge_plan.optimal_charge_start
+                ),
+                "learned_planning_optimal_charge_end": self._stable_iso_minute(
+                    learned_charge_plan.optimal_charge_end
+                ),
+                "learned_planning_window_score": learned_charge_plan.window_score,
+                "learned_planning_enabled": bool(learned_planning_enabled),
+                "learned_profile_typical_daily_consumption_kwh": float(
+                    learned_profile_diagnostics.typical_daily_consumption_kwh
+                ),
+                "learned_profile_average_house_load_w": float(
+                    learned_profile_diagnostics.average_house_load_w
+                ),
+                "learned_profile_current_slot_consumption_kwh": float(
+                    learned_profile_diagnostics.current_slot_consumption_kwh
+                ),
+                "learned_profile_current_slot_average_w": float(
+                    learned_profile_diagnostics.current_slot_average_w
+                ),
+                "learned_profile_current_slot_index": int(
+                    learned_profile_diagnostics.current_slot_index
+                ),
             }
 
             def _iso_or_none(val):
@@ -1746,6 +3979,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if self._persist.get("power_state") == "charging"
                 else "discharging_active"
                 if self._persist.get("power_state") == "discharging"
+                else "discharge_waiting_for_import"
+                if self._persist.get("power_state") == "discharge_waiting_for_import"
+                else "pv_house_load_passthrough_active"
+                if self._persist.get("power_state") == "passthrough"
                 else "none"
             )
 
