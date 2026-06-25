@@ -2,12 +2,12 @@
 
 ---
 
-![GitHub Release](https://img.shields.io/github/v/release/PalmManiac/battery-smartflow-ai?style=for-the-badge)
+![GitHub Release](https://img.shields.io/github/v/release/ikulx/battery-smartflow-ai-ckw?style=for-the-badge)
 ![Maintained](https://img.shields.io/badge/Maintained-Yes-green?style=for-the-badge)
-![GitHub Repo Size](https://img.shields.io/github/repo-size/PalmManiac/battery-smartflow-ai?style=for-the-badge)
-[![Active installs](https://badge.t-haber.de/badge/battery_smartflow_ai?kill_cache=1)](https://github.com/PalmManiac/battery-smartflow-ai/)
-![GitHub Stars](https://img.shields.io/github/stars/PalmManiac/battery-smartflow-ai?style=for-the-badge)
-![License](https://img.shields.io/github/license/PalmManiac/battery-smartflow-ai?style=for-the-badge)
+![GitHub Repo Size](https://img.shields.io/github/repo-size/ikulx/battery-smartflow-ai-ckw?style=for-the-badge)
+[![Active installs](https://badge.t-haber.de/badge/battery_smartflow_ai_ckw?kill_cache=1)](https://github.com/ikulx/battery-smartflow-ai-ckw/)
+![GitHub Stars](https://img.shields.io/github/stars/ikulx/battery-smartflow-ai-ckw?style=for-the-badge)
+![License](https://img.shields.io/github/license/ikulx/battery-smartflow-ai-ckw?style=for-the-badge)
 ![HACS](https://img.shields.io/badge/HACS-Default-blue?style=for-the-badge)
 
 ## Unterstützung
@@ -164,7 +164,7 @@ Supported forecast sources depend on the sensors you provide, for example:
 
 # 🛠 Installation (HACS)
 
-[![HACS Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=PalmManiac&repository=battery-smartflow-ai&category=integration)
+[![HACS Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ikulx&repository=battery-smartflow-ai-ckw&category=integration)
 
 1. Open HACS
 2. Search for `Battery SmartFlow AI`
@@ -655,7 +655,7 @@ Unterstützt werden passende Home-Assistant-Sensoren, z. B.:
 
 # 🛠 Installation (HACS)
 
-[![HACS Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=PalmManiac&repository=battery-smartflow-ai&category=integration)
+[![HACS Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ikulx&repository=battery-smartflow-ai-ckw&category=integration)
 
 1. HACS öffnen
 2. nach `Battery SmartFlow AI` suchen

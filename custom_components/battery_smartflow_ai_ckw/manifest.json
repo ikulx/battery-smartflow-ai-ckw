@@ -1,0 +1,11 @@
+{
+  "domain": "battery_smartflow_ai_ckw",
+  "name": "Battery SmartFlow AI CKW",
+  "codeowners": ["@ikulx"],
+  "config_flow": true,
+  "documentation": "https://github.com/ikulx/battery-smartflow-ai-ckw",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/ikulx/battery-smartflow-ai-ckw/issues",
+  "requirements": [],
+  "version": "4.2.3"
+}
