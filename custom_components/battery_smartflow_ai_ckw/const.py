@@ -5,7 +5,7 @@ from homeassistant.const import Platform
 # ==================================================
 # Integration meta
 # ==================================================
-DOMAIN = "battery_smartflow_ai"
+DOMAIN = "battery_smartflow_ai_ckw"
 
 INTEGRATION_NAME = "Battery SmartFlow AI"
 INTEGRATION_MANUFACTURER = "PalmManiac"
