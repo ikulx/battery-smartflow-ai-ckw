@@ -145,20 +145,12 @@ def build_mode_arbiter_config(profile: dict[str, Any]) -> ModeArbiterConfig:
         pv_charge_latch_min_hold_s=_profile_float(
             profile,
             "PV_CHARGE_LATCH_MIN_HOLD_S",
-            _profile_float(
-                profile,
-                "PV_CHARGE_LATCH_HOLD_SECONDS",
-                DEFAULT_PV_CHARGE_LATCH_MIN_HOLD_S,
-            ),
+            DEFAULT_PV_CHARGE_LATCH_MIN_HOLD_S,
         ),
         pv_charge_exit_import_cycles=_profile_int(
             profile,
             "PV_CHARGE_EXIT_IMPORT_CYCLES",
-            _profile_int(
-                profile,
-                "PV_CHARGE_LATCH_STOP_CYCLES",
-                DEFAULT_PV_CHARGE_EXIT_IMPORT_CYCLES,
-            ),
+            DEFAULT_PV_CHARGE_EXIT_IMPORT_CYCLES,
         ),
         discharge_latch_min_hold_s=_profile_float(
             profile,
@@ -330,13 +322,16 @@ class ModeArbiter:
                 self.config.offgrid_max_internal_supply_w
             ),
             "offgrid_load_active_w": float(self.config.offgrid_load_active_w),
-            "offgrid_load_blocks_ac_charge": bool(
-                self.config.offgrid_load_blocks_ac_charge
-            ),
+            "offgrid_load_blocks_ac_charge": False,
+            "offgrid_strategy_policy": "independent_observation",
             "offgrid_input_affects_energy_balance": bool(
                 self.config.offgrid_input_affects_energy_balance
             ),
         }
+
+        # V4.3.0-dev8:
+        # Off-Grid load is diagnostic context only. It is not a reason to block
+        # INPUT, force OUTPUT or interfere with an active AC charge binding.
 
         # Hard discharge protection must override active output holds.
         # This is intentionally checked before force intents and before
@@ -401,55 +396,6 @@ class ModeArbiter:
                     **metadata,
                     "additional_battery_discharge_w": float(
                         additional_battery_discharge_w or 0.0
-                    ),
-                },
-            )
-
-        # Off-Grid correction:
-        # Active island socket load must block automatic/economic INPUT charging.
-        # Only true protection or manual charging may override Off-Grid load.
-        #
-        # Learned planning, price planning, valley charging and very-cheap
-        # charging are deliberately not priorities here, because they can cause
-        # Zendure to pull AC power for the Off-Grid load and charge the battery
-        # at the same time.
-        priority_charge_reasons = {
-            "emergency_latched_charge",
-            "cell_voltage_emergency_charge",
-            "manual_charge",
-        }
-
-        priority_charge_intents = {
-            "emergency_charge",
-            "manual_charge",
-        }
-
-        if (
-            bool(self.config.offgrid_load_blocks_ac_charge)
-            and bool(offgrid_load_active)
-            and requested_mode == "input"
-            and str(intent.intent or "") not in priority_charge_intents
-            and str(intent.reason or "") not in priority_charge_reasons
-        ):
-            return ModeArbiterResult(
-                requested_mode=requested_mode,
-                resolved_mode="hold",
-                allowed=False,
-                reason="offgrid_load_active_blocks_ac_charge",
-                active_regulation_state=runtime.active_regulation_state,
-                active_hold_remaining_s=0.0,
-                cooldown_remaining_s=0.0,
-                metadata={
-                    **metadata,
-                    "offgrid_power_w": float(offgrid_power_w or 0.0),
-                    "offgrid_mode": str(offgrid_mode or "not_configured"),
-                    "offgrid_load_active": bool(offgrid_load_active),
-                    "offgrid_source_active": bool(offgrid_source_active),
-                    "offgrid_load_active_w": float(
-                        self.config.offgrid_load_active_w
-                    ),
-                    "offgrid_max_internal_supply_w": float(
-                        self.config.offgrid_max_internal_supply_w
                     ),
                 },
             )
@@ -573,11 +519,70 @@ class ModeArbiter:
     ) -> ModeArbiterResult | None:
         """Evaluate short post-event holds.
 
-        These holds prevent immediate INPUT switching after a large load drop or
-        after output overshoot. Instead, the PowerController can ramp output down.
+        V4.3.0-dev5.7:
+        Automatic fast PV handover may clear obsolete OUTPUT-related holds once
+        OUTPUT has actually reached 0 W and real PV export is still present.
+
+        Autarky/stable handover keeps the existing conservative hold behavior.
+        Hardware profiles that explicitly require stable export remain authoritative.
         """
 
         requested_mode = intent.requested_mode
+
+        pv_handover_policy = str(
+            getattr(
+                intent,
+                "pv_handover_policy",
+                "default",
+            )
+            or "default"
+        )
+
+        load_coverage_priority = bool(
+            getattr(
+                intent,
+                "load_coverage_priority",
+                False,
+            )
+        )
+
+        last_output_w = max(
+            0.0,
+            float(runtime.last_output_limit_w or 0.0),
+        )
+
+        current_export_active = (
+            float(grid.grid_now_w or 0.0) < 0.0
+        )
+
+        stable_export_cycles = int(
+            grid.stable_export_cycles or 0
+        )
+
+        required_export_cycles = max(
+            1,
+            int(
+                self.config.stable_export_cycles_for_pv_charge
+            ),
+        )
+
+        # Device capability remains authoritative:
+        # A device that explicitly requires stable export may not use only the
+        # strategic fast policy as permission to switch into INPUT.
+        hardware_export_requirement_met = bool(
+            not self.config.requires_stable_export_for_input
+            or stable_export_cycles >= required_export_cycles
+        )
+
+        fast_pv_handover_ready = bool(
+            requested_mode == "input"
+            and intent.intent == "pv_charge"
+            and pv_handover_policy == "fast"
+            and not load_coverage_priority
+            and last_output_w <= 0.0
+            and current_export_active
+            and hardware_export_requirement_met
+        )
 
         post_load_drop_remaining_s = self._remaining_until_s(
             now_utc,
@@ -589,22 +594,31 @@ class ModeArbiter:
             and post_load_drop_remaining_s > 0.0
             and intent.intent == "pv_charge"
         ):
-            return ModeArbiterResult(
-                requested_mode=requested_mode,
-                resolved_mode="ramp_down_output",
-                allowed=True,
-                reason="post_load_drop_ramp_down_output",
-                active_regulation_state="discharge_active",
-                active_hold_remaining_s=post_load_drop_remaining_s,
-                cooldown_remaining_s=0.0,
-                metadata={
-                    **metadata,
-                    "post_load_drop_remaining_s": round(
-                        post_load_drop_remaining_s,
-                        1,
-                    ),
-                },
-            )
+            # Automatic fast handover:
+            # Once OUTPUT is really zero, an old load-drop timer no longer has
+            # anything to ramp down. Let normal INPUT evaluation continue.
+            if fast_pv_handover_ready:
+                pass
+            else:
+                return ModeArbiterResult(
+                    requested_mode=requested_mode,
+                    resolved_mode="ramp_down_output",
+                    allowed=True,
+                    reason="post_load_drop_ramp_down_output",
+                    active_regulation_state="discharge_active",
+                    active_hold_remaining_s=post_load_drop_remaining_s,
+                    cooldown_remaining_s=0.0,
+                    metadata={
+                        **metadata,
+                        "post_load_drop_remaining_s": round(
+                            post_load_drop_remaining_s,
+                            1,
+                        ),
+                        "pv_handover_policy": pv_handover_policy,
+                        "last_output_limit_w": last_output_w,
+                        "current_export_active": current_export_active,
+                    },
+                )
 
         post_output_overshoot_remaining_s = self._remaining_until_s(
             now_utc,
@@ -616,18 +630,15 @@ class ModeArbiter:
             and post_output_overshoot_remaining_s > 0.0
             and intent.intent == "pv_charge"
         ):
-            last_output_w = float(runtime.last_output_limit_w or 0.0)
-            stable_export_cycles = int(grid.stable_export_cycles or 0)
-            required_export_cycles = int(
-                self.config.stable_export_cycles_for_pv_charge
-            )
+            # Automatic:
+            # Real export + OUTPUT already at zero is enough unless the hardware
+            # profile explicitly requires additional stable-export confirmation.
+            if fast_pv_handover_ready:
+                pass
 
-            # If OUTPUT is already fully ramped down and PV surplus is stable,
-            # do not keep blocking PV charge just because an old post-output
-            # overshoot hold is still stored.
-            current_export_active = float(grid.grid_now_w or 0.0) < 0.0
-
-            if (
+            # Stable/default compatibility path:
+            # Keep the existing conservative early-clear condition.
+            elif (
                 last_output_w <= 0.0
                 and stable_export_cycles >= required_export_cycles
                 and current_export_active
@@ -636,7 +647,10 @@ class ModeArbiter:
                     requested_mode=requested_mode,
                     resolved_mode="input",
                     allowed=True,
-                    reason="post_output_overshoot_cleared_for_stable_pv_charge",
+                    reason=(
+                        "post_output_overshoot_"
+                        "cleared_for_stable_pv_charge"
+                    ),
                     active_regulation_state="pv_charge_active",
                     active_hold_remaining_s=0.0,
                     cooldown_remaining_s=0.0,
@@ -646,6 +660,7 @@ class ModeArbiter:
                             post_output_overshoot_remaining_s,
                             1,
                         ),
+                        "pv_handover_policy": pv_handover_policy,
                         "last_output_limit_w": last_output_w,
                         "stable_export_cycles": stable_export_cycles,
                         "required_export_cycles": required_export_cycles,
@@ -653,25 +668,28 @@ class ModeArbiter:
                     },
                 )
 
-            return ModeArbiterResult(
-                requested_mode=requested_mode,
-                resolved_mode="ramp_down_output",
-                allowed=True,
-                reason="post_output_overshoot_ramp_down_output",
-                active_regulation_state="discharge_active",
-                active_hold_remaining_s=post_output_overshoot_remaining_s,
-                cooldown_remaining_s=0.0,
-                metadata={
-                    **metadata,
-                    "post_output_overshoot_remaining_s": round(
-                        post_output_overshoot_remaining_s,
-                        1,
-                    ),
-                    "last_output_limit_w": last_output_w,
-                    "stable_export_cycles": stable_export_cycles,
-                    "required_export_cycles": required_export_cycles,
-                },
-            )
+            else:
+                return ModeArbiterResult(
+                    requested_mode=requested_mode,
+                    resolved_mode="ramp_down_output",
+                    allowed=True,
+                    reason="post_output_overshoot_ramp_down_output",
+                    active_regulation_state="discharge_active",
+                    active_hold_remaining_s=post_output_overshoot_remaining_s,
+                    cooldown_remaining_s=0.0,
+                    metadata={
+                        **metadata,
+                        "post_output_overshoot_remaining_s": round(
+                            post_output_overshoot_remaining_s,
+                            1,
+                        ),
+                        "pv_handover_policy": pv_handover_policy,
+                        "last_output_limit_w": last_output_w,
+                        "stable_export_cycles": stable_export_cycles,
+                        "required_export_cycles": required_export_cycles,
+                        "current_export_active": current_export_active,
+                    },
+                )
 
         if (
             requested_mode == "input"
@@ -679,15 +697,28 @@ class ModeArbiter:
             and bool(grid.fast_load_drop_detected)
             and runtime.active_regulation_state == "discharge_active"
         ):
+            # A fast-load-drop flag can survive for a short time after OUTPUT has
+            # already reached zero. Do not restart another artificial ramp-down in
+            # Automatic fast mode.
+            if fast_pv_handover_ready:
+                return None
+
             return ModeArbiterResult(
                 requested_mode=requested_mode,
                 resolved_mode="ramp_down_output",
                 allowed=True,
                 reason="fast_load_drop_ramp_down_output",
                 active_regulation_state="discharge_active",
-                active_hold_remaining_s=float(self.config.post_load_drop_hold_s),
+                active_hold_remaining_s=float(
+                    self.config.post_load_drop_hold_s
+                ),
                 cooldown_remaining_s=0.0,
-                metadata=metadata,
+                metadata={
+                    **metadata,
+                    "pv_handover_policy": pv_handover_policy,
+                    "last_output_limit_w": last_output_w,
+                    "current_export_active": current_export_active,
+                },
             )
 
         return None
@@ -750,6 +781,64 @@ class ModeArbiter:
             )
 
             if remaining_s > 0.0 and requested_mode != "output":
+                pv_handover_policy = str(
+                    getattr(
+                        intent,
+                        "pv_handover_policy",
+                        "default",
+                    )
+                    or "default"
+                )
+
+                load_coverage_priority = bool(
+                    getattr(
+                        intent,
+                        "load_coverage_priority",
+                        False,
+                    )
+                )
+
+                last_output_w = max(
+                    0.0,
+                    float(runtime.last_output_limit_w or 0.0),
+                )
+
+                current_export_active = (
+                    float(grid.grid_now_w or 0.0) < 0.0
+                )
+
+                stable_export_cycles = int(
+                    grid.stable_export_cycles or 0
+                )
+
+                required_export_cycles = max(
+                    1,
+                    int(
+                        self.config.stable_export_cycles_for_pv_charge
+                    ),
+                )
+
+                hardware_export_requirement_met = bool(
+                    not self.config.requires_stable_export_for_input
+                    or stable_export_cycles >= required_export_cycles
+                )
+
+                fast_pv_handover_ready = bool(
+                    requested_mode == "input"
+                    and intent.intent == "pv_charge"
+                    and pv_handover_policy == "fast"
+                    and not load_coverage_priority
+                    and last_output_w <= 0.0
+                    and current_export_active
+                    and hardware_export_requirement_met
+                )
+
+                # Automatic fast PV handover:
+                # A historical discharge latch must not keep OUTPUT alive after the
+                # actual output command has already reached zero.
+                if fast_pv_handover_ready:
+                    return None
+
                 return ModeArbiterResult(
                     requested_mode=requested_mode,
                     resolved_mode="ramp_down_output",
@@ -760,7 +849,13 @@ class ModeArbiter:
                     cooldown_remaining_s=0.0,
                     metadata={
                         **metadata,
-                        "discharge_hold_remaining_s": round(remaining_s, 1),
+                        "discharge_hold_remaining_s": round(
+                            remaining_s,
+                            1,
+                        ),
+                        "pv_handover_policy": pv_handover_policy,
+                        "last_output_limit_w": last_output_w,
+                        "current_export_active": current_export_active,
                     },
                 )
 
@@ -871,10 +966,60 @@ class ModeArbiter:
                     },
                 )
 
-            # Starting a new PV charge also needs current export.
-            # Stable export cycles alone can be stale during fast-changing
-            # cloud situations.
-            if float(grid.grid_now_w or 0.0) >= 0.0:
+            # V4.3.0-dev5.7:
+            # PV handover policy is defined by the strategic layer.
+            #
+            # fast:
+            #   Automatic mode has already confirmed real PV surplus through
+            #   its strategic hysteresis. Do not repeat the same stable-export
+            #   confirmation in the technical layer.
+            #
+            # stable:
+            #   Autarky mode keeps an additional technical export confirmation
+            #   so changing clouds do not cause rapid INPUT/OUTPUT switching.
+            #
+            # default:
+            #   Conservative compatibility behavior.
+            pv_handover_policy = str(
+                getattr(
+                    intent,
+                    "pv_handover_policy",
+                    "default",
+                )
+                or "default"
+            )
+
+            load_coverage_priority = bool(
+                getattr(
+                    intent,
+                    "load_coverage_priority",
+                    False,
+                )
+            )
+
+            current_export_active = (
+                float(grid.grid_now_w or 0.0) < 0.0
+            )
+
+            stable_export_cycles = int(
+                grid.stable_export_cycles or 0
+            )
+
+            required_export_cycles = max(
+                1,
+                int(
+                    self.config.stable_export_cycles_for_pv_charge
+                ),
+            )
+
+            last_output_w = max(
+                0.0,
+                float(runtime.last_output_limit_w or 0.0),
+            )
+
+            # A new PV charge must still be based on a real current export.
+            # Historical export counters alone are not sufficient.
+            if not current_export_active:
                 return ModeArbiterResult(
                     requested_mode="input",
                     resolved_mode="hold",
@@ -885,15 +1030,46 @@ class ModeArbiter:
                     cooldown_remaining_s=0.0,
                     metadata={
                         **metadata,
+                        "pv_handover_policy": pv_handover_policy,
+                        "load_coverage_priority": load_coverage_priority,
                         "grid_now_w": float(grid.grid_now_w or 0.0),
+                        "last_output_limit_w": last_output_w,
+                        "stable_export_cycles": stable_export_cycles,
+                        "required_export_cycles": required_export_cycles,
                     },
                 )
 
-            # Starting PV charge needs stable export.
+            # Fast Automatic handover:
+            # The strategic PV latch already confirmed the surplus. Once real
+            # export is still present, do not wait for another historical
+            # stable-export confirmation.
             if (
-                grid.stable_export_cycles
-                < self.config.stable_export_cycles_for_pv_charge
+                pv_handover_policy == "fast"
+                and not load_coverage_priority
             ):
+                return ModeArbiterResult(
+                    requested_mode="input",
+                    resolved_mode="input",
+                    allowed=True,
+                    reason="pv_charge_fast_handover",
+                    active_regulation_state="pv_charge_active",
+                    active_hold_remaining_s=0.0,
+                    cooldown_remaining_s=0.0,
+                    metadata={
+                        **metadata,
+                        "pv_handover_policy": pv_handover_policy,
+                        "load_coverage_priority": load_coverage_priority,
+                        "grid_now_w": float(grid.grid_now_w or 0.0),
+                        "last_output_limit_w": last_output_w,
+                        "stable_export_cycles": stable_export_cycles,
+                        "required_export_cycles": required_export_cycles,
+                    },
+                )
+
+            # Stable/default handover:
+            # Keep an additional technical export confirmation. This is used by
+            # Autarky mode and remains the conservative compatibility path.
+            if stable_export_cycles < required_export_cycles:
                 return ModeArbiterResult(
                     requested_mode="input",
                     resolved_mode="hold",
@@ -902,18 +1078,34 @@ class ModeArbiter:
                     active_regulation_state=runtime.active_regulation_state,
                     active_hold_remaining_s=0.0,
                     cooldown_remaining_s=0.0,
-                    metadata=metadata,
+                    metadata={
+                        **metadata,
+                        "pv_handover_policy": pv_handover_policy,
+                        "load_coverage_priority": load_coverage_priority,
+                        "grid_now_w": float(grid.grid_now_w or 0.0),
+                        "last_output_limit_w": last_output_w,
+                        "stable_export_cycles": stable_export_cycles,
+                        "required_export_cycles": required_export_cycles,
+                    },
                 )
 
             return ModeArbiterResult(
                 requested_mode="input",
                 resolved_mode="input",
                 allowed=True,
-                reason="pv_charge_stable_export",
+                reason="pv_charge_stable_handover",
                 active_regulation_state="pv_charge_active",
                 active_hold_remaining_s=0.0,
                 cooldown_remaining_s=0.0,
-                metadata=metadata,
+                metadata={
+                    **metadata,
+                    "pv_handover_policy": pv_handover_policy,
+                    "load_coverage_priority": load_coverage_priority,
+                    "grid_now_w": float(grid.grid_now_w or 0.0),
+                    "last_output_limit_w": last_output_w,
+                    "stable_export_cycles": stable_export_cycles,
+                    "required_export_cycles": required_export_cycles,
+                },
             )
 
         # Some devices should not enter INPUT without stable export unless it is
