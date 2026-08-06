@@ -57,6 +57,22 @@ PROFILE_OVERRIDE_FIELDS = {
         "unit": "%",
         "icon": "mdi:battery-sync",
     },
+    "PV_HOUSELOAD_PASSTHROUGH_MIN_PV_W": {
+        "label": "PV-Durchfluss Mindest-PV",
+        "min": 20.0,
+        "max": 300.0,
+        "step": 5.0,
+        "unit": "W",
+        "icon": "mdi:solar-power-variant-outline",
+    },
+    "PV_HOUSELOAD_PASSTHROUGH_MIN_HOUSE_LOAD_W": {
+        "label": "PV-Durchfluss Mindest-Hauslast",
+        "min": 20.0,
+        "max": 300.0,
+        "step": 5.0,
+        "unit": "W",
+        "icon": "mdi:home-lightning-bolt-outline",
+    },
     "CHARGE_DEADBAND_W": {
         "label": "Laden Deadband",
         "min": 0.0,
@@ -198,6 +214,7 @@ V42_LATCH_HOLD_DEFAULTS = {
 
 V42_DEFAULT_CAPABILITIES = {
     "SUPPORTS_PASSTHROUGH": False,
+    "MPPT_CLIPS_WITHOUT_OUTPUT": False,
     "OUTPUT_ZERO_IS_NEUTRAL": True,
     "INPUT_KEEPALIVE_SAFE": True,
     "REQUIRES_STABLE_EXPORT_FOR_INPUT": False,
@@ -207,6 +224,7 @@ V42_DEFAULT_CAPABILITIES = {
 
 V42_SF800PRO_CAPABILITIES = {
     "SUPPORTS_PASSTHROUGH": True,
+    "MPPT_CLIPS_WITHOUT_OUTPUT": True,
     "OUTPUT_ZERO_IS_NEUTRAL": True,
     "INPUT_KEEPALIVE_SAFE": False,
     "REQUIRES_STABLE_EXPORT_FOR_INPUT": True,
@@ -240,9 +258,6 @@ PASSTHROUGH_DISABLED_DEFAULTS = {
     "PV_HOUSELOAD_PASSTHROUGH_MAX_STEP_DOWN_W": 0.0,
     "PV_HOUSELOAD_PASSTHROUGH_SMOOTHING_ALPHA": 0.0,
 
-    # Legacy PV charge latch keys, kept as transition fallback.
-    "PV_CHARGE_LATCH_HOLD_SECONDS": 0.0,
-    "PV_CHARGE_LATCH_STOP_CYCLES": 0,
 }
 
 
@@ -262,11 +277,7 @@ SF800PRO_PASSTHROUGH_DEFAULTS = {
     "PV_HOUSELOAD_PASSTHROUGH_MAX_STEP_DOWN_W": 150.0,
     "PV_HOUSELOAD_PASSTHROUGH_SMOOTHING_ALPHA": 0.30,
 
-    # Legacy PV charge latch keys.
-    "PV_CHARGE_LATCH_HOLD_SECONDS": 300.0,
-    "PV_CHARGE_LATCH_STOP_CYCLES": 18,
-
-    # V4.2.0 generalized equivalents.
+    # Unified regulation latch values.
     "PV_CHARGE_LATCH_MIN_HOLD_S": 300.0,
     "PV_CHARGE_EXIT_IMPORT_CYCLES": 18,
     "PASSTHROUGH_LATCH_MIN_HOLD_S": 300.0,
@@ -466,7 +477,7 @@ SF2400AC_PROFILE = {
     "SUPPORTS_OFFGRID_INPUT": True,
     "OFFGRID_MAX_INTERNAL_SUPPLY_W": 2400.0,
     "OFFGRID_LOAD_ACTIVE_W": 50.0,
-    "OFFGRID_LOAD_BLOCKS_AC_CHARGE": True,
+    "OFFGRID_LOAD_BLOCKS_AC_CHARGE": False,
     "OFFGRID_INPUT_AFFECTS_ENERGY_BALANCE": False,
 }
 
@@ -521,7 +532,7 @@ SF2400ACPLUS_PROFILE = {
     "SUPPORTS_OFFGRID_INPUT": True,
     "OFFGRID_MAX_INTERNAL_SUPPLY_W": 2400.0,
     "OFFGRID_LOAD_ACTIVE_W": 50.0,
-    "OFFGRID_LOAD_BLOCKS_AC_CHARGE": True,
+    "OFFGRID_LOAD_BLOCKS_AC_CHARGE": False,
     "OFFGRID_INPUT_AFFECTS_ENERGY_BALANCE": False,
 }
 
@@ -576,8 +587,40 @@ SF2400PRO_PROFILE = {
     "SUPPORTS_OFFGRID_INPUT": True,
     "OFFGRID_MAX_INTERNAL_SUPPLY_W": 2400.0,
     "OFFGRID_LOAD_ACTIVE_W": 50.0,
-    "OFFGRID_LOAD_BLOCKS_AC_CHARGE": True,
+    "OFFGRID_LOAD_BLOCKS_AC_CHARGE": False,
     "OFFGRID_INPUT_AFFECTS_ENERGY_BALANCE": False,
+}
+
+
+# SolarFlow Mix family (limits confirmed by a device owner in discussion #200).
+# These models are pure AC-coupled battery storage systems without a direct PV
+# input. They therefore inherit the neutral SF2400AC behavior rather than the
+# special SF800Pro/Pro2 or SF2400Pro reactions. Only confirmed hardware limits
+# are overridden here.
+SF3000MIXACPLUS_PROFILE = {
+    **SF2400AC_PROFILE,
+    "label": "Zendure SolarFlow 3000 Mix AC+",
+    "MAX_INPUT_W": 3000.0,
+    "MAX_OUTPUT_W": 3000.0,
+    "OFFGRID_MAX_INTERNAL_SUPPLY_W": 3680.0,
+}
+
+
+SF4000MIXACPLUS_PROFILE = {
+    **SF2400AC_PROFILE,
+    "label": "Zendure SolarFlow 4000 Mix AC+",
+    "MAX_INPUT_W": 4000.0,
+    "MAX_OUTPUT_W": 4000.0,
+    "OFFGRID_MAX_INTERNAL_SUPPLY_W": 3680.0,
+}
+
+
+SF4000MIXPRO_PROFILE = {
+    **SF2400AC_PROFILE,
+    "label": "Zendure SolarFlow 4000 Mix Pro",
+    "MAX_INPUT_W": 4000.0,
+    "MAX_OUTPUT_W": 4000.0,
+    "OFFGRID_MAX_INTERNAL_SUPPLY_W": 3680.0,
 }
 
 
@@ -752,6 +795,9 @@ DEVICE_PROFILES = {
     "SF2400AC": SF2400AC_PROFILE,
     "SF2400AC+": SF2400ACPLUS_PROFILE,
     "SF2400Pro": SF2400PRO_PROFILE,
+    "SF3000MixAC+": SF3000MIXACPLUS_PROFILE,
+    "SF4000MixAC+": SF4000MIXACPLUS_PROFILE,
+    "SF4000MixPro": SF4000MIXPRO_PROFILE,
     "SF1600AC": SF1600AC_PROFILE,
     "Hyper 2000": HYPER2000_PROFILE,
     "HUB 2000": HUB2000_PROFILE,

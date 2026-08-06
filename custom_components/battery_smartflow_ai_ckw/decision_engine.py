@@ -10,9 +10,41 @@ from .forecast import ForecastSummary
 from .power_controller import PowerController, PowerContext
 
 
-AiMode = Literal["automatic", "summer", "winter", "manual"]
+AiMode = Literal["automatic", "summer", "manual"]
 ZendureMode = Literal["input", "output"]
 ActionType = Literal["idle", "charge", "discharge", "emergency", "passthrough"]
+
+# V4.3.0-dev5.8.2:
+# Strategic learned/classic planning is no longer started for the final
+# few percentage points below the configured maximum SoC.
+PLANNING_NEAR_MAX_SOC_MARGIN_PCT = 3.0
+
+
+def compute_pv_attributable_export_w(
+    grid_export_w: float,
+    battery_discharge_w: float = 0.0,
+    previous_discharge_w: float = 0.0,
+    additional_battery_discharge_w: float = 0.0,
+) -> float:
+    """Return grid export that cannot be explained by battery discharge."""
+
+    export_w = max(0.0, float(grid_export_w or 0.0))
+    main_battery_export_w = max(
+        0.0,
+        float(battery_discharge_w or 0.0),
+        float(previous_discharge_w or 0.0),
+    )
+    additional_battery_export_w = max(
+        0.0,
+        float(additional_battery_discharge_w or 0.0),
+    )
+
+    return max(
+        0.0,
+        export_w
+        - main_battery_export_w
+        - additional_battery_export_w,
+    )
 
 
 @dataclass
@@ -57,6 +89,7 @@ class DecisionContext:
     prev_charge_w: float
 
     battery_capacity_kwh: float
+    battery_discharge_w: float = 0.0
 
     additional_battery_charge_w: float = 0.0
     additional_battery_discharge_w: float = 0.0
@@ -106,6 +139,35 @@ class DecisionContext:
     offgrid_active: bool = False
     offgrid_load_active: bool = False
     offgrid_source_active: bool = False
+    
+    # V4.3.0-dev5.2 unified AutomaticStrategy context
+    automatic_strategy_active: bool = False
+    automatic_weighting: str = "inactive"
+    automatic_pv_weight: float = 0.0
+    automatic_price_weight: float = 0.0
+    automatic_reserve_weight: float = 0.0
+    automatic_forecast_weight: float = 0.0
+    automatic_discharge_allowed: bool = False
+    automatic_discharge_reason: str = "not_evaluated"
+    
+    # V4.3.0-dev5.3 strategic peak-reserve context
+    automatic_peak_reserve_allowed: bool = False
+    automatic_peak_reserve_reason: str = "not_evaluated"
+
+    # V4.3.0-dev5.4 optional valley-charge context
+    automatic_valley_charge_allowed: bool = False
+    automatic_valley_charge_reason: str = "not_evaluated"
+
+    # V4.3.0-dev5.5 strategic charge-planning context
+    automatic_planning_allowed: bool = False
+    automatic_planning_reason: str = "not_evaluated"
+
+    # V4.3.0-dev9 data-quality context.
+    grid_sensor_configured: bool = True
+    grid_sensor_valid: bool = True
+    pv_sensor_valid: bool = True
+    soc_limits_valid: bool = True
+    power_limits_valid: bool = True
 
 
 @dataclass
@@ -154,11 +216,10 @@ class EmergencyRule(BaseRule):
 
 class AdditionalBatteryBlockRule(BaseRule):
     def evaluate(self, engine, ctx):
-        if float(ctx.additional_battery_charge_w or 0.0) > 0.0:
-            return engine._idle_result(
-                ctx,
-                reason="additional_battery_charging_block",
-            )
+        # V4.3.0-dev7:
+        # Directional additional-battery blockers are applied after all
+        # candidates have been collected. Returning terminal idle here would
+        # suppress valid same-direction charging or discharging strategies.
         return None
 
 
@@ -175,9 +236,14 @@ class PeakRule(BaseRule):
         if engine._pv_surplus_blocks_discharge(ctx):
             return None
 
-        if ctx.soc > ctx.soc_min and ctx.ai_mode in ("automatic", "winter"):
+        if (
+            ctx.soc > ctx.soc_min
+            and ctx.ai_mode == "automatic"
+            and engine._automatic_discharge_context_allows(ctx)
+        ):
             if (
                 engine._detect_adaptive_peak(ctx)
+                and engine._is_market_discharge_window(ctx)
                 and engine._is_effective_discharge_price_reached(ctx)
             ):
                 discharge_w = engine._delta_discharge(ctx)
@@ -224,12 +290,14 @@ class ArbitrageRule(BaseRule):
     def evaluate(self, engine, ctx):
         if engine._pv_surplus_blocks_discharge(ctx):
             return None
-
+            
         if (
             ctx.price_now is not None
             and ctx.avg_charge_price is not None
             and ctx.soc > ctx.soc_min
-            and ctx.ai_mode in ("automatic", "winter")
+            and ctx.ai_mode == "automatic"
+            and engine._automatic_discharge_context_allows(ctx)
+            and engine._is_market_discharge_window(ctx)
             and engine._is_effective_discharge_price_reached(ctx)
         ):
             discharge_w = engine._delta_discharge(ctx)
@@ -259,30 +327,12 @@ class LearnedPlanningRule(BaseRule):
         - completely inactive unless learned_planning_enabled is True
         - only uses plans with status ready/active
         - only handles learned wait/charge decisions
-        - classic planning remains fallback
+        - classic planning remains fallback until a usable learned plan exists
         """
-        if not bool(getattr(ctx, "learned_planning_enabled", False)):
+        if not engine._learned_planning_has_usable_charge_need(ctx):
             return None
 
         plan = getattr(ctx, "learned_charge_plan", None)
-        if plan is None:
-            return None
-
-        if ctx.ai_mode not in ("automatic", "winter"):
-            return None
-
-        if ctx.soc >= ctx.soc_max:
-            return None
-
-        if ctx.price_now is None or not ctx.price_points:
-            return None
-
-        if ctx.battery_capacity_kwh <= 0 or ctx.max_charge_w <= 0:
-            return None
-
-        if float(ctx.additional_battery_charge_w or 0.0) > 0.0:
-            return None
-
         status = str(getattr(plan, "status", "") or "")
         mode = str(getattr(plan, "mode", "") or "")
         decision_reason = str(getattr(plan, "decision_reason", "") or "")
@@ -295,15 +345,40 @@ class LearnedPlanningRule(BaseRule):
         )
         if required_kwh <= 0.0:
             return None
+            
+        # V4.3.0-dev5.8:
+        # The learned planner calculates the actual battery energy that is
+        # missing until its planning deadline. Convert that energy need into
+        # the SoC target of the charge binding instead of always charging to
+        # the configured maximum SoC.
+        #
+        # required_charge_energy_kwh is already limited by the planner to the
+        # physically chargeable energy up to soc_max.
+        required_soc_pct = (
+            float(required_kwh)
+            / float(ctx.battery_capacity_kwh)
+        ) * 100.0
+
+        learned_target_soc = min(
+            float(ctx.soc_max),
+            max(
+                float(ctx.soc),
+                float(ctx.soc) + required_soc_pct,
+            ),
+        )
 
         if decision_reason == "learned_charge_window_no_charge_needed":
             return None
 
         if mode == "wait" or decision_reason == "learned_charge_window_wait":
-            # Learned waiting must not suppress classic immediate charging rules.
-            # If the learned planner only wants to wait, continue with the normal
-            # planning / valley / forecast rules below.
-            return None
+            # A waiting learned plan is a real HOLD candidate. The central
+            # candidate selector rejects only competing grid-charge candidates;
+            # PV charging, passthrough and economic discharge may still win with
+            # their higher active priority.
+            return engine._idle_result(
+                ctx,
+                reason="learned_charge_window_wait",
+            )
 
         if mode == "charge" or decision_reason in (
             "learned_charge_window_active",
@@ -311,7 +386,7 @@ class LearnedPlanningRule(BaseRule):
             "learned_charge_window_deadline_too_close_start_now",
         ):
             planned_power_w = float(
-                getattr(plan, "effective_charge_power_w", 0.0) or 0.0
+                getattr(plan, "requested_charge_power_w", 0.0) or 0.0
             )
 
             if planned_power_w <= 0.0:
@@ -345,7 +420,7 @@ class LearnedPlanningRule(BaseRule):
                     charge_w=charge_w,
                     discharge_w=0.0,
                     reason=reason,
-                    target_soc=ctx.soc_max,
+                    target_soc=learned_target_soc,
                 ),
             )
 
@@ -354,14 +429,18 @@ class LearnedPlanningRule(BaseRule):
 
 class PlanningRule(BaseRule):
     def evaluate(self, engine, ctx):
+        if not engine._automatic_planning_context_allows(ctx):
+            return None
+
         if engine._pv_morning_transition_active(ctx):
             return None
+
         return engine._evaluate_adaptive_planning(ctx)
 
 
 class VeryCheapRule(BaseRule):
     def evaluate(self, engine, ctx):
-        if ctx.ai_mode not in ("automatic", "winter"):
+        if ctx.ai_mode != "automatic":
             return None
 
         if ctx.price_now is None or ctx.very_cheap_price is None:
@@ -403,7 +482,10 @@ class ValleyBoostRule(BaseRule):
         if engine._pv_morning_transition_active(ctx):
             return None
 
-        if ctx.ai_mode not in ("winter", "automatic") or ctx.season != "winter":
+        # V4.3.0-dev5.4:
+        # Optional valley charging in Automatic is no longer enabled through
+        # the detected winter season.
+        if not engine._automatic_valley_charge_context_allows(ctx):
             return None
 
         if ctx.price_now is None:
@@ -468,7 +550,10 @@ class ValleyOpportunityRule(BaseRule):
         if engine._pv_morning_transition_active(ctx):
             return None
 
-        if ctx.ai_mode not in ("automatic", "winter") or ctx.season != "winter":
+        # V4.3.0-dev5.4:
+        # Valley opportunity is controlled by the unified AutomaticStrategy
+        # context instead of the legacy winter season.
+        if not engine._automatic_valley_charge_context_allows(ctx):
             return None
 
         if ctx.price_now is None:
@@ -535,12 +620,13 @@ class ValleyOpportunityRule(BaseRule):
 
 class PvHouseLoadPassthroughRule(BaseRule):
     def evaluate(self, engine, ctx):
+        if not bool(ctx.pv_sensor_valid):
+            return None
+
         if not engine._pv_houseload_passthrough_enabled(ctx):
             return None
 
-        if ctx.ai_mode == "summer" or (
-            ctx.ai_mode == "automatic" and ctx.season == "summer"
-        ):
+        if ctx.ai_mode == "summer":
             return None
 
         if not bool(ctx.pv_houseload_passthrough_active):
@@ -560,21 +646,89 @@ class PvHouseLoadPassthroughRule(BaseRule):
                 reason="pv_house_load_passthrough",
             ),
         )
+        
+        
+class ReserveChargeRule(BaseRule):
+    """Season-neutral strategic reserve charge for Automatic mode."""
 
-
-class PvRule(BaseRule):
     def evaluate(self, engine, ctx):
-        planning = engine._evaluate_adaptive_planning(ctx)
-        if planning is not None:
+        if not engine._reserve_charge_enabled(ctx):
             return None
 
         if ctx.soc >= ctx.soc_max:
             return None
 
+        if ctx.price_now is None or not ctx.price_points:
+            return None
+            
+        # V4.2.8:
+        # Peak-reserve charging must not be limited to the formal valley
+        # threshold only. On generally expensive days, the cheapest useful slot
+        # before a later peak can still be above the calculated valley threshold.
+        #
+        # It must, however, never start during the high-price/peak window itself.
+        if not engine._reserve_charge_window(ctx):
+            return None
+
+        target_soc = engine._reserve_target_soc(ctx)
+        if target_soc is None:
+            return None
+
+        if float(ctx.soc) >= float(target_soc):
+            return None
+
+        expected_peak_price = engine._reserve_expected_peak_price(ctx)
+        if expected_peak_price is None:
+            return None
+
+        # Grid charging must still be economically meaningful compared to the
+        # upcoming high-price window. Feed-in tariff must not block this case.
+        min_profit_factor = 1.0 + (float(ctx.profit_margin_pct or 0.0) / 100.0)
+        if float(ctx.price_now) * min_profit_factor > float(expected_peak_price):
+            return None
+            
+        # A rejected optional peak-reserve charge must fall through to the next
+        # DecisionEngine rule. The Coordinator cannot safely turn this decision into
+        # terminal idle, because that would suppress PV surplus charging, learned
+        # planning and other valid lower-priority decisions.
+        effective_discharge_threshold = (
+            engine._compute_effective_discharge_threshold(ctx)
+        )
+
         if (
-            engine._pv_houseload_passthrough_enabled(ctx)
-            and bool(ctx.pv_houseload_passthrough_active)
+            effective_discharge_threshold is not None
+            and float(ctx.price_now)
+            >= float(effective_discharge_threshold)
         ):
+            return None
+
+        block = engine._charge_blocked_by_additional_battery_discharge(ctx)
+        if block is not None:
+            return block
+
+        return engine._with_thresholds(
+            ctx,
+            DecisionResult(
+                action="charge",
+                ac_mode="input",
+                charge_w=float(ctx.max_charge_w),
+                discharge_w=0.0,
+                reason="summer_peak_reserve_charge",
+                target_soc=float(target_soc),
+            ),
+        )
+
+
+class PvRule(BaseRule):
+    def evaluate(self, engine, ctx):
+        if not bool(ctx.pv_sensor_valid):
+            return None
+
+        planning = engine._evaluate_adaptive_planning(ctx)
+        if planning is not None:
+            return None
+
+        if ctx.soc >= ctx.soc_max:
             return None
 
         export_w = float(ctx.grid_export_w or 0.0)
@@ -583,7 +737,23 @@ class PvRule(BaseRule):
         prev_discharge_w = float(ctx.prev_discharge_w or 0.0)
         start_export_threshold = float(ctx.pv_charge_start_export_w or 0.0)
 
-        has_direct_surplus = export_w >= start_export_threshold
+        pv_attributable_export_w = engine._pv_attributable_export_w(ctx)
+        has_direct_surplus = (
+            pv_attributable_export_w >= start_export_threshold
+        )
+        battery_discharge_source_active = bool(
+            max(
+                0.0,
+                float(ctx.battery_discharge_w or 0.0),
+                float(ctx.prev_discharge_w or 0.0),
+                float(ctx.additional_battery_discharge_w or 0.0),
+            )
+            > 25.0
+        )
+        source_verified_hold_surplus = bool(
+            pv_attributable_export_w
+            >= max(20.0, start_export_threshold * 0.50)
+        )
 
         protection_active = (
             engine._low_soc_protection_strict(ctx)
@@ -596,15 +766,6 @@ class PvRule(BaseRule):
         discharge_active = prev_discharge_w > 0.0
         if discharge_active and not engine._pv_surplus_blocks_discharge(ctx):
             return None
-
-        prices = [p.price for p in ctx.price_points] if ctx.price_points else []
-        valley_active = (
-            ctx.ai_mode in ("automatic", "winter")
-            and ctx.season == "winter"
-            and ctx.price_now is not None
-            and len(prices) > 0
-            and ctx.price_now <= engine._compute_valley_threshold(prices, ctx.valley_factor)
-        )
 
         start_counter = int(ctx.pv_charge_start_counter or 0)
         stop_counter = int(ctx.pv_charge_stop_counter or 0)
@@ -623,6 +784,13 @@ class PvRule(BaseRule):
         )
 
         required_start_cycles = 6 if sf800_passthrough_enabled else 2
+
+        # V4.2.7:
+        # Do not let a short early-morning PV/export pulse immediately interrupt
+        # an active house-load discharge. During active discharge, require a
+        # longer stable export confirmation before switching to INPUT/PV charge.
+        if discharge_active and not charge_already_active:
+            required_start_cycles = max(required_start_cycles, 6)
 
         # The user-configured "PV-Ladestart ab Einspeisung" must be a real
         # hard start threshold for new PV charging.
@@ -647,6 +815,10 @@ class PvRule(BaseRule):
         keepalive_charge = (
             charge_already_active
             and not stop_due_to_weakness
+            and (
+                not battery_discharge_source_active
+                or source_verified_hold_surplus
+            )
         )
 
         if not start_allowed and not keepalive_charge:
@@ -710,12 +882,13 @@ class PvRule(BaseRule):
         return None
 
 
-class SummerRule(BaseRule):
+class AutarkyLoadCoverageRule(BaseRule):
     def evaluate(self, engine, ctx):
-        if (
-            ctx.ai_mode == "summer"
-            or (ctx.ai_mode == "automatic" and ctx.season == "summer")
-        ):
+        # V4.3.0-dev5.2:
+        # The internal "summer" key is the explicit user-selected Autarkie mode.
+        # Automatic no longer enters this unconditional house-load coverage
+        # branch based on legacy season detection.
+        if ctx.ai_mode == "summer":
             if (
                 ctx.soc > ctx.soc_min
                 and not (
@@ -730,8 +903,49 @@ class SummerRule(BaseRule):
                 # active PV surplus charging.
                 if engine._pv_surplus_blocks_discharge(ctx):
                     return None
-
+                    
                 discharge_w = engine._delta_discharge(ctx)
+
+                # V4.2.7:
+                # Keep active summer house-load coverage alive across short
+                # sensor/load dips. A single cycle with calculated 0 W must not
+                # immediately collapse to idle and create an INPUT/OUTPUT/idle
+                # sawtooth.
+                if discharge_w <= 0.0:
+                    prev_discharge_w = max(
+                        0.0,
+                        float(ctx.prev_discharge_w or 0.0),
+                    )
+                    export_w = max(0.0, float(ctx.grid_export_w or 0.0))
+                    import_w = max(0.0, float(ctx.grid_import_w or 0.0))
+
+                    export_guard_w = max(
+                        40.0,
+                        float(ctx.profile.get("EXPORT_GUARD_W", 80.0) or 80.0),
+                    )
+
+                    hold_import_tolerance_w = max(
+                        80.0,
+                        float(ctx.profile.get("TARGET_IMPORT_W", 10.0) or 10.0)
+                        + float(
+                            ctx.profile.get(
+                                "DISCHARGE_DEADBAND_W",
+                                ctx.profile.get("DEADBAND_W", 30.0),
+                            )
+                            or 30.0
+                        ),
+                    )
+
+                    if (
+                        prev_discharge_w > 0.0
+                        and export_w <= export_guard_w
+                        and import_w <= hold_import_tolerance_w
+                    ):
+                        discharge_w = max(
+                            engine._discharge_keepalive_w(ctx),
+                            min(prev_discharge_w, float(ctx.max_discharge_w)),
+                        )
+
                 if discharge_w > 0:
                     return engine._with_thresholds(
                         ctx,
@@ -804,6 +1018,16 @@ class ManualRule(BaseRule):
 
 class DecisionEngine:
     def __init__(self):
+        self._collecting_candidates = False
+        self._last_strategy_selection: dict[str, Any] = {
+            "candidate_count": 0,
+            "eligible_candidate_count": 0,
+            "selected_rule": "fallback",
+            "selected_reason": "idle",
+            "selected_state": "idle_ready",
+            "selected_priority": 200,
+            "candidates": [],
+        }
         self._rules = [
             EmergencyRule(),
             AdditionalBatteryBlockRule(),
@@ -811,14 +1035,27 @@ class DecisionEngine:
             ManualRule(),
             VeryCheapRule(),
             PvHouseLoadPassthroughRule(),
+
+            # Real PV surplus keeps the highest normal charging priority.
             PvRule(),
-            PeakRule(),
-            ArbitrageRule(),
+
+            # A selected learned or classic charge window must be evaluated before
+            # optional peak reserve and economic discharge. Otherwise the current
+            # discharge price can prevent a planned charge from ever starting.
             LearnedPlanningRule(),
             PlanningRule(),
+
+            # Optional strategic charging may only take over when no planned charge
+            # and no usable PV surplus decision exists.
+            ReserveChargeRule(),
             ValleyBoostRule(),
             ValleyOpportunityRule(),
-            SummerRule(),
+
+            # Economic discharge is evaluated only after all valid charging plans.
+            PeakRule(),
+            ArbitrageRule(),
+
+            AutarkyLoadCoverageRule(),
         ]
 
     def _idle_result(self, ctx: DecisionContext, reason: str = "idle") -> DecisionResult:
@@ -852,6 +1089,12 @@ class DecisionEngine:
         self,
         ctx: DecisionContext,
     ) -> DecisionResult | None:
+        # V4.3.0-dev7 collects the actual charging candidate first and applies
+        # the directional blocker centrally. This lets a valid discharging
+        # candidate continue instead of turning the whole cycle into idle.
+        if self._collecting_candidates:
+            return None
+
         if not self._additional_battery_discharge_blocks_charge(ctx):
             return None
 
@@ -859,6 +1102,103 @@ class DecisionEngine:
             ctx,
             reason="additional_battery_discharging_block",
         )
+
+    @property
+    def last_strategy_selection(self) -> dict[str, Any]:
+        """Return diagnostics for the most recent candidate selection."""
+
+        return {
+            **self._last_strategy_selection,
+            "candidates": [
+                dict(candidate)
+                for candidate in self._last_strategy_selection.get(
+                    "candidates",
+                    [],
+                )
+            ],
+        }
+
+    def _context_validation_reason(
+        self,
+        ctx: DecisionContext,
+    ) -> str | None:
+        """Return the first critical context error that requires safe idle."""
+
+        if not bool(ctx.soc_limits_valid):
+            return "soc_limits_invalid"
+        if not bool(ctx.power_limits_valid):
+            return "power_limits_invalid"
+        return None
+
+    def _candidate_rejection_reason(
+        self,
+        ctx: DecisionContext,
+        strategy: Any,
+        result: DecisionResult,
+    ) -> str | None:
+        """Return a directional or planning rejection reason for a candidate."""
+
+        state = str(getattr(strategy.state, "value", strategy.state))
+        requested_mode = str(strategy.requested_mode or "idle")
+        requested_power_w = strategy.requested_power_w
+        active_direction = bool(
+            result.action != "idle"
+            or requested_power_w is None
+            or float(requested_power_w or 0.0) > 0.0
+        )
+
+        protection_states = {
+            "protection",
+            "emergency_charge",
+        }
+        manual_states = {
+            "manual_charge",
+            "manual_discharge",
+            "manual_idle",
+        }
+
+        if (
+            state not in protection_states
+            and state not in manual_states
+            and not bool(ctx.grid_sensor_valid)
+            and active_direction
+        ):
+            return "grid_sensor_invalid"
+
+        if state not in protection_states and active_direction:
+            if (
+                requested_mode == "output"
+                and float(ctx.additional_battery_charge_w or 0.0) > 0.0
+            ):
+                return "additional_battery_charging_block"
+
+            if (
+                requested_mode == "input"
+                and self._additional_battery_discharge_blocks_charge(ctx)
+            ):
+                return "additional_battery_discharging_block"
+
+        if (
+            self._learned_planning_waits_for_window(ctx)
+            and state
+            in {
+                "ac_charge_planned",
+                "ac_charge_price",
+                "ac_charge_reserve",
+            }
+        ):
+            return "learned_charge_window_wait"
+
+        return None
+
+    def _strategy_for_candidate(self, result: DecisionResult) -> Any:
+        """Convert a rule result through the canonical V4.3 strategy adapter."""
+
+        # Local import avoids the existing module-load cycle:
+        # strategy_adapter still accepts the legacy DecisionResult model.
+        from .strategy_adapter import decision_to_strategy_decision
+
+        return decision_to_strategy_decision(result)
 
     def _profile_flag(self, ctx: DecisionContext, key: str, default: bool = False) -> bool:
         try:
@@ -877,6 +1217,132 @@ class DecisionEngine:
 
     def _pv_houseload_passthrough_enabled(self, ctx: DecisionContext) -> bool:
         return self._profile_flag(ctx, "PV_HOUSELOAD_PASSTHROUGH", False)
+        
+    def _automatic_valley_charge_context_allows(
+        self,
+        ctx: DecisionContext,
+    ) -> bool:
+        """Return whether AutomaticStrategy permits optional valley charging.
+
+        This permission does not replace the existing price, forecast, PV,
+        battery or protection checks inside the individual valley rules.
+        """
+
+        return bool(
+            ctx.ai_mode == "automatic"
+            and ctx.automatic_strategy_active
+            and ctx.automatic_valley_charge_allowed
+        )
+        
+    def _automatic_planning_context_allows(
+        self,
+        ctx: DecisionContext,
+    ) -> bool:
+        """Return whether AutomaticStrategy permits strategic charge planning.
+
+        This permission does not replace learned-planning readiness, price,
+        forecast, deadline, energy-need, SoC or protection checks.
+        """
+
+        # Strategic grid-charge planning belongs exclusively to Automatic.
+        if ctx.ai_mode != "automatic":
+            return False
+
+        return bool(
+            ctx.automatic_strategy_active
+            and ctx.automatic_planning_allowed
+        )
+        
+    def _automatic_discharge_context_allows(
+        self,
+        ctx: DecisionContext,
+    ) -> bool:
+        """Return whether AutomaticStrategy permits economic discharge.
+
+        This permission never replaces the normal price, market-window, SoC or
+        protection checks. It only removes the legacy season branch from the
+        Automatic discharge decision.
+        """
+
+        if ctx.ai_mode != "automatic":
+            return True
+
+        return bool(
+            ctx.automatic_strategy_active
+            and ctx.automatic_discharge_allowed
+        )
+
+    def _learned_planning_waits_for_window(
+        self,
+        ctx: DecisionContext,
+    ) -> bool:
+        """Return whether a usable learned plan deliberately waits.
+
+        A ready learned plan has already evaluated the required energy, charge
+        duration, complete price curve and deadline. While it waits for its
+        selected window, simpler grid-charge rules must not start an earlier
+        charge binding. This is only a grid-charge constraint: emergency/manual
+        charge, real PV surplus, passthrough and economic discharge remain free.
+        """
+
+        if not self._learned_planning_has_usable_charge_need(ctx):
+            return False
+
+        plan = getattr(ctx, "learned_charge_plan", None)
+        status = str(getattr(plan, "status", "") or "")
+        mode = str(getattr(plan, "mode", "") or "")
+        decision_reason = str(
+            getattr(plan, "decision_reason", "") or ""
+        )
+
+        return bool(
+            status in ("ready", "active")
+            and (
+                mode == "wait"
+                or decision_reason == "learned_charge_window_wait"
+            )
+        )
+
+    def _learned_planning_has_usable_charge_need(
+        self,
+        ctx: DecisionContext,
+    ) -> bool:
+        """Return whether learned planning has an actionable energy plan."""
+
+        if not bool(getattr(ctx, "learned_planning_enabled", False)):
+            return False
+
+        plan = getattr(ctx, "learned_charge_plan", None)
+        if plan is None:
+            return False
+
+        if not self._automatic_planning_context_allows(ctx):
+            return False
+
+        # Dev5.8.2 remains authoritative: do not reserve tiny strategic grid
+        # charges for the final percentage points below maximum SoC.
+        if float(ctx.soc) >= (
+            float(ctx.soc_max) - PLANNING_NEAR_MAX_SOC_MARGIN_PCT
+        ):
+            return False
+
+        if (
+            ctx.price_now is None
+            or not ctx.price_points
+            or ctx.battery_capacity_kwh <= 0
+            or ctx.max_charge_w <= 0
+        ):
+            return False
+
+        status = str(getattr(plan, "status", "") or "")
+        required_kwh = float(
+            getattr(plan, "required_charge_energy_kwh", 0.0) or 0.0
+        )
+
+        return bool(
+            status in ("ready", "active")
+            and required_kwh > 0.0
+        )
 
     def _discharge_protection_active(self, ctx: DecisionContext) -> bool:
         return bool(
@@ -895,7 +1361,7 @@ class DecisionEngine:
         real active discharge.
         """
 
-        export_w = float(ctx.grid_export_w or 0.0)
+        export_w = self._pv_attributable_export_w(ctx)
         import_w = float(ctx.grid_import_w or 0.0)
         prev_discharge_w = float(ctx.prev_discharge_w or 0.0)
         start_export_threshold = float(ctx.pv_charge_start_export_w or 80.0)
@@ -920,6 +1386,29 @@ class DecisionEngine:
         # No real active discharge, only idle/old keepalive:
         # PV surplus should block starting or keeping economic discharge.
         return True
+
+    def _pv_attributable_export_w(self, ctx: DecisionContext) -> float:
+        """Return export that cannot be explained by battery discharge.
+
+        Grid export alone is not proof of PV surplus while OUTPUT is active:
+        regulation overshoot or a small discharge keepalive can create the same
+        signal. Subtract the strongest available main-battery discharge signal
+        and any configured additional-battery discharge before PV logic may use
+        the remaining export.
+        """
+
+        return compute_pv_attributable_export_w(
+            grid_export_w=float(ctx.grid_export_w or 0.0),
+            battery_discharge_w=float(
+                ctx.battery_discharge_w or 0.0
+            ),
+            previous_discharge_w=float(
+                ctx.prev_discharge_w or 0.0
+            ),
+            additional_battery_discharge_w=float(
+                ctx.additional_battery_discharge_w or 0.0
+            ),
+        )
         
     def _pv_power_is_relevant_for_charging(self, ctx: DecisionContext) -> bool:
         """Return True when current PV should keep priority over optional grid charge.
@@ -938,7 +1427,7 @@ class DecisionEngine:
 
         pv_w = max(0.0, float(ctx.pv_w or 0.0))
         house_load_w = max(0.0, float(ctx.house_load_w or 0.0))
-        export_w = max(0.0, float(ctx.grid_export_w or 0.0))
+        export_w = self._pv_attributable_export_w(ctx)
         import_w = max(0.0, float(ctx.grid_import_w or 0.0))
         prev_charge_w = max(0.0, float(ctx.prev_charge_w or 0.0))
 
@@ -1026,7 +1515,7 @@ class DecisionEngine:
         if ctx.soc >= ctx.soc_max:
             return False
 
-        export_w = float(ctx.grid_export_w or 0.0)
+        export_w = self._pv_attributable_export_w(ctx)
         import_w = float(ctx.grid_import_w or 0.0)
         pv_w = float(ctx.pv_w or 0.0)
         house_load_w = float(ctx.house_load_w or 0.0)
@@ -1115,38 +1604,87 @@ class DecisionEngine:
         except Exception:
             avg_charge_price_float = None
 
-        # Beta11:
-        # The user-configured expensive threshold must protect against false
-        # discharge when the stored average charge price is missing or effectively
-        # zero, e.g. after PV-only charging. In that case, avg_charge_price * margin
-        # would be near zero and normal prices such as 0.14 €/kWh could otherwise
-        # look profitable.
-        #
-        # If a real charge price exists, do not force every economic discharge up
-        # to the expensive threshold. Otherwise Automatic/Winter mode becomes too
-        # restrictive and may stop discharging entirely after the Beta7 threshold
-        # hardening.
         avg_price_missing_or_zero = (
             avg_charge_price_float is None
             or avg_charge_price_float <= 0.0001
         )
 
+        # V4.2.6 refinement:
+        # If the average charge price is missing or effectively zero, do not use
+        # the market peak threshold as a hard fallback. Also do not collapse to
+        # the valley threshold alone, because that would allow discharge too
+        # early on normal prices.
+        #
+        # Use a dynamic market fallback between valley and peak anchor.
+        # The configured threshold is only a soft anchor, not a hard floor.
+        market_anchor = max(
+            valley_threshold,
+            market_peak_threshold * 0.82,
+        )
+
+        safety_floor = max(0.0, valley_threshold)
+
+        try:
+            feed_in_floor = max(0.0, float(ctx.feed_in_tariff or 0.0)) * (
+                1.0 + float(ctx.profit_margin_pct or 0.0) / 100.0
+            )
+            safety_floor = max(safety_floor, feed_in_floor)
+        except Exception:
+            pass
+
+        configured_anchor = max(0.0, configured_expensive_threshold)
+
+        market_mid_threshold = valley_threshold + (
+            max(0.0, market_anchor - valley_threshold) * 0.55
+        )
+
+        if configured_anchor > 0.0:
+            configured_blend_threshold = (
+                configured_anchor * 0.65
+                + market_anchor * 0.35
+            )
+            dynamic_missing_price_threshold = max(
+                market_mid_threshold,
+                configured_blend_threshold,
+            )
+        else:
+            dynamic_missing_price_threshold = market_mid_threshold
+
+        missing_price_fallback_threshold = max(
+            safety_floor,
+            dynamic_missing_price_threshold,
+        )
+
+        # Safety cap:
+        # Never let the missing-price fallback become the full peak threshold again.
+        missing_price_fallback_threshold = min(
+            missing_price_fallback_threshold,
+            market_peak_threshold * 0.90,
+        )
+
         if economic_threshold is None:
-            return max(market_peak_threshold, configured_expensive_threshold)
+            return missing_price_fallback_threshold
 
         if avg_price_missing_or_zero:
-            return max(
-                market_peak_threshold,
-                configured_expensive_threshold,
-                valley_threshold,
-            )
+            return missing_price_fallback_threshold
 
         market_anchor = market_peak_threshold * 0.82
 
         effective = (market_anchor * 0.70) + (economic_threshold * 0.30)
 
         effective = max(effective, economic_threshold)
-        effective = max(effective, valley_threshold)
+
+        # V4.2.6 refinement:
+        # Do not let a very low but non-zero average charge price collapse the
+        # effective discharge threshold exactly to the valley threshold.
+        # The valley threshold remains the lower market reference, but the
+        # effective discharge threshold should stay slightly above it unless the
+        # calculated economic threshold itself is higher.
+        dynamic_valley_floor = valley_threshold + (
+            max(0.0, market_anchor - valley_threshold) * 0.35
+        )
+
+        effective = max(effective, dynamic_valley_floor)
 
         # Do not force valid economic discharge to the configured expensive
         # threshold. The configured threshold remains relevant when no real
@@ -1169,17 +1707,296 @@ class DecisionEngine:
         return result
 
     def _is_market_discharge_window(self, ctx: DecisionContext) -> bool:
-        if ctx.price_now is None or not ctx.price_points:
+        """Return whether the current price may be used for economic discharge.
+
+        V4.3.0-dev5.4.1:
+        The effective discharge threshold is the authoritative economic and
+        market threshold.
+
+        The former additional 90%-of-peak market anchor could block discharge
+        even when the displayed effective discharge threshold had clearly been
+        exceeded. That made the effective threshold misleading and delayed
+        discharge until almost the absolute daily peak.
+        """
+
+        if ctx.price_now is None:
             return False
+
+        effective_threshold = self._compute_effective_discharge_threshold(ctx)
+        if effective_threshold is None:
+            return False
+
+        return float(ctx.price_now) >= float(effective_threshold)
+        
+    def _reserve_charge_enabled(
+        self,
+        ctx: DecisionContext,
+    ) -> bool:
+        """Return whether Automatic may evaluate strategic reserve charging."""
+        return bool(
+            ctx.ai_mode == "automatic"
+            and ctx.automatic_strategy_active
+            and ctx.automatic_peak_reserve_allowed
+            and ctx.price_now is not None
+            and bool(ctx.price_points)
+            and ctx.battery_capacity_kwh > 0
+        )
+
+
+    def _reserve_future_peak_slots(
+        self,
+        ctx: DecisionContext,
+    ) -> list[PricePoint]:
+        if not self._reserve_charge_enabled(ctx):
+            return []
 
         prices = [p.price for p in ctx.price_points]
         if not prices:
+            return []
+
+        peak_threshold = self._compute_peak_threshold(prices, ctx.peak_factor)
+
+        future_slots = [
+            p
+            for p in ctx.price_points
+            if p.end > ctx.now
+            and (
+                p.price >= peak_threshold
+                or p.price >= float(ctx.very_expensive_threshold)
+            )
+        ]
+
+        return sorted(future_slots, key=lambda p: p.start)
+
+
+    def _reserve_expected_peak_price(
+        self,
+        ctx: DecisionContext,
+    ) -> float | None:
+        slots = self._reserve_future_peak_slots(ctx)
+        if not slots:
+            return None
+
+        try:
+            return max(float(p.price) for p in slots)
+        except Exception:
+            return None
+
+
+    def _reserve_charge_window(
+        self,
+        ctx: DecisionContext,
+    ) -> bool:
+        """Return whether the current slot is useful for peak-reserve charging.
+
+        V4.3.0-dev5.8:
+        Peak-reserve charging must prefer the cheapest amount of energy that is
+        actually required before the next high-price window.
+
+        The former broad 35-percent price band could start AC charging too early,
+        e.g. at 0.20 EUR/kWh although sufficient 0.15 EUR/kWh slots were still
+        available later.
+
+        The peak slot itself is never considered a charging candidate.
+        """
+
+        if not self._reserve_charge_enabled(ctx):
             return False
 
-        market_peak_threshold = self._compute_peak_threshold(prices, ctx.peak_factor)
-        market_anchor = market_peak_threshold * 0.82
+        if ctx.price_now is None or not ctx.price_points:
+            return False
 
-        return float(ctx.price_now) >= float(market_anchor)
+        future_slots = self._reserve_future_peak_slots(ctx)
+        future_slots = [
+            p
+            for p in future_slots
+            if p.start > ctx.now
+        ]
+
+        if not future_slots:
+            return False
+
+        next_peak = min(
+            future_slots,
+            key=lambda p: p.start,
+        )
+
+        expected_peak_price = (
+            self._reserve_expected_peak_price(ctx)
+        )
+
+        if expected_peak_price is None:
+            return False
+
+        prices = [
+            float(p.price)
+            for p in ctx.price_points
+        ]
+
+        if not prices:
+            return False
+
+        market_peak_threshold = self._compute_peak_threshold(
+            prices,
+            ctx.peak_factor,
+        )
+
+        price_now = float(ctx.price_now)
+
+        # Never charge inside an active high-price / peak window.
+        if price_now >= float(market_peak_threshold):
+            return False
+
+        # Do not charge when the current price is already too close
+        # to the expected peak price.
+        if price_now >= float(expected_peak_price) * 0.85:
+            return False
+
+        target_soc = self._reserve_target_soc(ctx)
+
+        if target_soc is None:
+            return False
+
+        soc_gap_pct = max(
+            0.0,
+            float(target_soc) - float(ctx.soc),
+        )
+
+        required_kwh = (
+            float(ctx.battery_capacity_kwh)
+            * (soc_gap_pct / 100.0)
+        )
+
+        if required_kwh <= 0.0:
+            return False
+
+        charge_power_kw = max(
+            0.1,
+            float(ctx.max_charge_w or 0.0) / 1000.0,
+        )
+
+        hours_needed = max(
+            0.25,
+            required_kwh / charge_power_kw,
+        )
+
+        # Only real pre-peak slots are candidates.
+        # The peak slot itself must never widen the acceptable price range.
+        candidate_slots = [
+            p
+            for p in ctx.price_points
+            if (
+                p.end > ctx.now
+                and p.start < next_peak.start
+            )
+        ]
+
+        if not candidate_slots:
+            return False
+
+        # Determine the price ceiling of the cheapest amount of energy
+        # that is actually required before the peak.
+        remaining_kwh = float(required_kwh)
+        required_price_ceiling: float | None = None
+
+        cheapest_slots = sorted(
+            candidate_slots,
+            key=lambda p: (
+                float(p.price),
+                p.start,
+            ),
+        )
+
+        for slot in cheapest_slots:
+            usable_start = max(
+                ctx.now,
+                slot.start,
+            )
+            usable_end = min(
+                next_peak.start,
+                slot.end,
+            )
+
+            usable_hours = max(
+                0.0,
+                (
+                    usable_end - usable_start
+                ).total_seconds()
+                / 3600.0,
+            )
+
+            if usable_hours <= 0.0:
+                continue
+
+            slot_energy_kwh = (
+                charge_power_kw * usable_hours
+            )
+
+            if slot_energy_kwh <= 0.0:
+                continue
+
+            required_price_ceiling = float(slot.price)
+            remaining_kwh -= slot_energy_kwh
+
+            if remaining_kwh <= 0.0:
+                break
+
+        # Enough future charging capacity exists:
+        # start only when the current slot belongs to the price range
+        # actually needed for the reserve.
+        if (
+            remaining_kwh <= 0.0
+            and required_price_ceiling is not None
+            and price_now <= required_price_ceiling
+        ):
+            return True
+
+        # Urgency fallback:
+        # If there is no longer enough comfortable time to wait,
+        # charging must start even at a less attractive price.
+        hours_until_peak = max(
+            0.0,
+            (
+                next_peak.start - ctx.now
+            ).total_seconds()
+            / 3600.0,
+        )
+
+        return bool(
+            required_kwh > 0.15
+            and hours_until_peak <= hours_needed * 1.25
+            and price_now
+            < float(expected_peak_price) * 0.80
+        )
+
+
+    def _reserve_target_soc(
+        self,
+        ctx: DecisionContext,
+    ) -> float | None:
+        """Return the target SoC for strategic peak-reserve charging.
+
+        V4.3.0-dev5.6:
+        Once Automatic starts a strategic AC charge in a valid economical
+        pre-peak window, the configured maximum SoC is authoritative.
+
+        The former fixed 80/85/90/95 percent severity levels could end an
+        otherwise valid charge prematurely, even with a poor PV outlook and a
+        user-configured maximum SoC of 100 percent.
+        """
+
+        expected_peak = self._reserve_expected_peak_price(ctx)
+        if expected_peak is None:
+            return None
+
+        if not ctx.price_points:
+            return None
+
+        return max(
+            float(ctx.soc_min),
+            min(100.0, float(ctx.soc_max)),
+        )
+
 
     def _is_effective_discharge_price_reached(self, ctx: DecisionContext) -> bool:
         if ctx.price_now is None:
@@ -1353,6 +2170,10 @@ class DecisionEngine:
 
     def _profile_for_discharge(self, profile: dict) -> dict:
         mapped = dict(profile)
+        mapped["TARGET_IMPORT_W"] = profile.get(
+            "DISCHARGE_TARGET_IMPORT_W",
+            profile.get("TARGET_IMPORT_W"),
+        )
         mapped["DEADBAND_W"] = profile.get("DISCHARGE_DEADBAND_W", profile.get("DEADBAND_W"))
         mapped["KP_UP"] = profile.get("DISCHARGE_KP_UP", profile.get("KP_UP"))
         mapped["KP_DOWN"] = profile.get("DISCHARGE_KP_DOWN", profile.get("KP_DOWN"))
@@ -1423,11 +2244,16 @@ class DecisionEngine:
         return False
 
     def _evaluate_adaptive_planning(self, ctx: DecisionContext) -> Optional[DecisionResult]:
+        if self._learned_planning_waits_for_window(ctx):
+            return None
+
         if (
-            ctx.ai_mode not in ("automatic", "winter")
+            not self._automatic_planning_context_allows(ctx)
             or not ctx.price_points
             or ctx.price_now is None
-            or ctx.soc >= ctx.soc_max
+            or float(ctx.soc) >= (
+                float(ctx.soc_max) - PLANNING_NEAR_MAX_SOC_MARGIN_PCT
+            )
             or ctx.battery_capacity_kwh <= 0
             or ctx.max_charge_w <= 0
         ):
@@ -1542,12 +2368,238 @@ class DecisionEngine:
         return None
 
     def evaluate(self, ctx: DecisionContext) -> DecisionResult:
-        for rule in self._rules:
-            result = rule.evaluate(self, ctx)
-            if result:
-                return result
+        """Evaluate every admissible rule and select the highest priority.
 
-        return self._idle_result(
-            ctx,
-            reason="idle",
-        )
+        Rule order remains the deterministic tie-breaker only. It no longer
+        decides which strategy wins before the V4.3 priority model is applied.
+        """
+
+        context_error = self._context_validation_reason(ctx)
+        if context_error is not None:
+            result = self._idle_result(ctx, reason=context_error)
+            strategy = self._strategy_for_candidate(result)
+            state = str(getattr(strategy.state, "value", strategy.state))
+            self._last_strategy_selection = {
+                "candidate_count": 1,
+                "eligible_candidate_count": 1,
+                "selected_rule": "ContextValidation",
+                "selected_reason": context_error,
+                "selected_state": state,
+                "selected_priority": int(strategy.priority),
+                "candidates": [
+                    {
+                        "rule": "ContextValidation",
+                        "state": state,
+                        "reason": context_error,
+                        "priority": int(strategy.priority),
+                        "requested_mode": "idle",
+                        "status": "selected",
+                        "selection_reason": "critical_context_invalid",
+                    }
+                ],
+            }
+            return result
+
+        raw_candidates: list[tuple[int, str, DecisionResult]] = []
+
+        self._collecting_candidates = True
+        try:
+            for index, rule in enumerate(self._rules):
+                result = rule.evaluate(self, ctx)
+                if result is not None:
+                    raw_candidates.append(
+                        (
+                            index,
+                            rule.__class__.__name__,
+                            result,
+                        )
+                    )
+        finally:
+            self._collecting_candidates = False
+
+        if not raw_candidates:
+            raw_candidates.append(
+                (
+                    len(self._rules),
+                    "SafeIdleFallback",
+                    self._idle_result(
+                        ctx,
+                        reason="idle",
+                    ),
+                )
+            )
+
+        evaluated: list[dict[str, Any]] = []
+
+        for index, rule_name, result in raw_candidates:
+            strategy = self._strategy_for_candidate(result)
+            rejection_reason = self._candidate_rejection_reason(
+                ctx,
+                strategy,
+                result,
+            )
+
+            evaluated.append(
+                {
+                    "index": int(index),
+                    "rule": rule_name,
+                    "result": result,
+                    "strategy": strategy,
+                    "state": str(
+                        getattr(
+                            strategy.state,
+                            "value",
+                            strategy.state,
+                        )
+                    ),
+                    "reason": str(result.reason or "idle"),
+                    "priority": int(strategy.priority),
+                    "requested_mode": str(
+                        strategy.requested_mode or "idle"
+                    ),
+                    "rejection_reason": rejection_reason,
+                }
+            )
+
+        eligible = [
+            candidate
+            for candidate in evaluated
+            if candidate["rejection_reason"] is None
+        ]
+
+        eligible_active = [
+            candidate
+            for candidate in eligible
+            if int(candidate["priority"]) > 300
+        ]
+
+        safe_idle_rejections = [
+            candidate
+            for candidate in evaluated
+            if candidate["rejection_reason"]
+            in {
+                "additional_battery_charging_block",
+                "additional_battery_discharging_block",
+                "grid_sensor_invalid",
+            }
+        ]
+
+        grid_sensor_block = not bool(ctx.grid_sensor_valid)
+
+        # A critical grid-data outage always becomes safe idle unless an
+        # emergency or explicit manual action is already eligible. Directional
+        # blockers become terminal only when no valid opposite strategy remains.
+        if (safe_idle_rejections or grid_sensor_block) and not eligible_active:
+            blocker_reason = (
+                "grid_sensor_invalid"
+                if grid_sensor_block
+                else str(safe_idle_rejections[0]["rejection_reason"])
+            )
+            blocker_result = self._idle_result(
+                ctx,
+                reason=blocker_reason,
+            )
+            blocker_strategy = self._strategy_for_candidate(
+                blocker_result
+            )
+            selected = {
+                "index": len(self._rules) + 1,
+                "rule": "DirectionalBlocker",
+                "result": blocker_result,
+                "strategy": blocker_strategy,
+                "state": str(
+                    getattr(
+                        blocker_strategy.state,
+                        "value",
+                        blocker_strategy.state,
+                    )
+                ),
+                "reason": blocker_reason,
+                "priority": int(blocker_strategy.priority),
+                "requested_mode": str(
+                    blocker_strategy.requested_mode or "idle"
+                ),
+                "rejection_reason": None,
+            }
+            eligible.append(selected)
+            evaluated.append(selected)
+        elif eligible:
+            # max() is stable for equal keys, so the earlier rule remains the
+            # deterministic tie-breaker without overriding higher priorities.
+            selected = max(
+                eligible,
+                key=lambda candidate: int(candidate["priority"]),
+            )
+        else:
+            fallback_result = self._idle_result(
+                ctx,
+                reason="idle",
+            )
+            fallback_strategy = self._strategy_for_candidate(
+                fallback_result
+            )
+            selected = {
+                "index": len(self._rules) + 2,
+                "rule": "SafeIdleFallback",
+                "result": fallback_result,
+                "strategy": fallback_strategy,
+                "state": str(
+                    getattr(
+                        fallback_strategy.state,
+                        "value",
+                        fallback_strategy.state,
+                    )
+                ),
+                "reason": "idle",
+                "priority": int(fallback_strategy.priority),
+                "requested_mode": "idle",
+                "rejection_reason": None,
+            }
+            eligible.append(selected)
+            evaluated.append(selected)
+
+        candidate_diagnostics: list[dict[str, Any]] = []
+
+        for candidate in evaluated:
+            if candidate is selected:
+                status = "selected"
+                selection_reason = "highest_priority"
+            elif candidate["rejection_reason"] is not None:
+                status = "rejected"
+                selection_reason = str(
+                    candidate["rejection_reason"]
+                )
+            else:
+                status = "not_selected"
+                selection_reason = (
+                    "lower_priority"
+                    if int(candidate["priority"])
+                    < int(selected["priority"])
+                    else "rule_order_tiebreak"
+                )
+
+            candidate_diagnostics.append(
+                {
+                    "rule": str(candidate["rule"]),
+                    "state": str(candidate["state"]),
+                    "reason": str(candidate["reason"]),
+                    "priority": int(candidate["priority"]),
+                    "requested_mode": str(
+                        candidate["requested_mode"]
+                    ),
+                    "status": status,
+                    "selection_reason": selection_reason,
+                }
+            )
+
+        self._last_strategy_selection = {
+            "candidate_count": len(evaluated),
+            "eligible_candidate_count": len(eligible),
+            "selected_rule": str(selected["rule"]),
+            "selected_reason": str(selected["reason"]),
+            "selected_state": str(selected["state"]),
+            "selected_priority": int(selected["priority"]),
+            "candidates": candidate_diagnostics,
+        }
+
+        return selected["result"]

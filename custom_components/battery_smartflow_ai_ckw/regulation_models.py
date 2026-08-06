@@ -51,6 +51,26 @@ CommandSkipReason = Literal[
     "mode_hold_active",
 ]
 
+AutomaticWeighting = Literal[
+    "inactive",
+    "pv_oriented",
+    "balanced",
+    "price_oriented",
+    "reserve_oriented",
+]
+
+SeasonContext = Literal[
+    "neutral",
+    "summer_like",
+    "winter_like",
+]
+
+PvHandoverPolicy = Literal[
+    "default",
+    "fast",
+    "stable",
+]
+
 
 @dataclass
 class StrategyIntent:
@@ -74,6 +94,40 @@ class StrategyIntent:
     allow_mode_switch: bool = True
     force: bool = False
 
+    # V4.3.0-dev5.7:
+    # Technical handover behavior for PV charging.
+    #
+    # fast:
+    #   Strategic PV confirmation is sufficient. The technical layer should
+    #   avoid repeating the same export confirmation unnecessarily.
+    #
+    # stable:
+    #   Preserve stronger technical hysteresis because continuous house-load
+    #   coverage has priority and clouds must not cause INPUT/OUTPUT flapping.
+    #
+    # default:
+    #   Conservative compatibility behavior.
+    pv_handover_policy: PvHandoverPolicy = "default"
+    load_coverage_priority: bool = False
+
+    metadata: dict[str, Any] = field(default_factory=dict)
+    
+
+@dataclass
+class StrategyContext:
+    """High-level context consumed by the unified automatic strategy."""
+
+    active: bool = False
+
+    weighting: AutomaticWeighting = "inactive"
+    season_context: SeasonContext = "neutral"
+
+    pv_weight: float = 0.0
+    price_weight: float = 0.0
+    reserve_weight: float = 0.0
+    forecast_weight: float = 0.0
+
+    reason: str = "not_evaluated"
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -133,6 +187,44 @@ class PowerControllerResult:
 
     reason: str = "none"
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ChargeSourceAllocation:
+    """Calculated source split for an active strategic AC charge binding.
+
+    V4.3.0-dev4.0:
+    Diagnostic-only source allocation.
+
+    total_target_w:
+        Strategic total battery charge target.
+
+    pv_available_w:
+        Estimated PV power remaining after house load.
+
+    pv_allocated_w:
+        PV contribution assigned to the total charge target.
+
+    grid_requested_w:
+        Remaining AC/grid contribution required to reach the total target.
+
+    unfilled_w:
+        Part of the total target that cannot be covered because the grid input
+        limit is lower than the required remaining power.
+    """
+
+    active: bool = False
+
+    total_target_w: float = 0.0
+    pv_available_w: float = 0.0
+    pv_allocated_w: float = 0.0
+    grid_requested_w: float = 0.0
+    unfilled_w: float = 0.0
+
+    pv_share_pct: float = 0.0
+    grid_share_pct: float = 0.0
+
+    reason: str = "inactive"
 
 
 @dataclass
