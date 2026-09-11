@@ -3,12 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .core.models import DeviceCapabilities
+
 from .regulation_models import (
     GridHistoryState,
     ModeArbiterResult,
     PowerControllerResult,
     StrategyIntent,
 )
+from .price_math import comparison_tolerance
 
 
 DEFAULT_TARGET_IMPORT_W = 10.0
@@ -38,7 +41,6 @@ DEFAULT_DISCHARGE_NEAR_ZERO_MAX_TRIM_W = 80.0
 # A small export is preferable to small import when export has a monetary
 # value or when stored battery energy is cheaper than the feed-in tariff.
 DEFAULT_ECONOMIC_EXPORT_TARGET_W = -15.0
-DEFAULT_ECONOMIC_EXPORT_MARGIN_EUR_KWH = 0.01
 DEFAULT_ECONOMIC_TARGET_DEADBAND_W = 15.0
 
 DEFAULT_CHARGE_DEADBAND_W = 30.0
@@ -71,9 +73,7 @@ class RegulationPowerConfig:
     discharge_near_zero_max_trim_w: float = DEFAULT_DISCHARGE_NEAR_ZERO_MAX_TRIM_W
     
     economic_export_target_w: float = DEFAULT_ECONOMIC_EXPORT_TARGET_W
-    economic_export_margin_eur_kwh: float = (
-        DEFAULT_ECONOMIC_EXPORT_MARGIN_EUR_KWH
-    )
+    economic_export_margin_per_kwh: float = 0.0
     economic_target_deadband_w: float = DEFAULT_ECONOMIC_TARGET_DEADBAND_W
 
     charge_deadband_w: float = DEFAULT_CHARGE_DEADBAND_W
@@ -100,7 +100,12 @@ def _profile_int(profile: dict[str, Any], key: str, default: int) -> int:
         return int(default)
 
 
-def build_regulation_power_config(profile: dict[str, Any]) -> RegulationPowerConfig:
+def build_regulation_power_config(
+    profile: dict[str, Any],
+    *,
+    capabilities: DeviceCapabilities | None = None,
+    price_step: float = 0.0,
+) -> RegulationPowerConfig:
     """Build technical power-controller config from device profile."""
 
     return RegulationPowerConfig(
@@ -132,27 +137,27 @@ def build_regulation_power_config(profile: dict[str, Any]) -> RegulationPowerCon
         discharge_deadband_w=_profile_float(
             profile,
             "DISCHARGE_DEADBAND_W",
-            _profile_float(profile, "DEADBAND_W", DEFAULT_DISCHARGE_DEADBAND_W),
+            DEFAULT_DISCHARGE_DEADBAND_W,
         ),
         discharge_kp_up=_profile_float(
             profile,
             "DISCHARGE_KP_UP",
-            _profile_float(profile, "KP_UP", DEFAULT_DISCHARGE_KP_UP),
+            DEFAULT_DISCHARGE_KP_UP,
         ),
         discharge_kp_down=_profile_float(
             profile,
             "DISCHARGE_KP_DOWN",
-            _profile_float(profile, "KP_DOWN", DEFAULT_DISCHARGE_KP_DOWN),
+            DEFAULT_DISCHARGE_KP_DOWN,
         ),
         discharge_max_step_up=_profile_float(
             profile,
             "DISCHARGE_MAX_STEP_UP",
-            _profile_float(profile, "MAX_STEP_UP", DEFAULT_DISCHARGE_MAX_STEP_UP),
+            DEFAULT_DISCHARGE_MAX_STEP_UP,
         ),
         discharge_max_step_down=_profile_float(
             profile,
             "DISCHARGE_MAX_STEP_DOWN",
-            _profile_float(profile, "MAX_STEP_DOWN", DEFAULT_DISCHARGE_MAX_STEP_DOWN),
+            DEFAULT_DISCHARGE_MAX_STEP_DOWN,
         ),
         discharge_near_zero_deadband_w=_profile_float(
             profile,
@@ -179,10 +184,14 @@ def build_regulation_power_config(profile: dict[str, Any]) -> RegulationPowerCon
             "ECONOMIC_EXPORT_TARGET_W",
             DEFAULT_ECONOMIC_EXPORT_TARGET_W,
         ),
-        economic_export_margin_eur_kwh=_profile_float(
+        economic_export_margin_per_kwh=_profile_float(
             profile,
-            "ECONOMIC_EXPORT_MARGIN_EUR_KWH",
-            DEFAULT_ECONOMIC_EXPORT_MARGIN_EUR_KWH,
+            "ECONOMIC_EXPORT_MARGIN_PER_KWH",
+            _profile_float(
+                profile,
+                "ECONOMIC_EXPORT_MARGIN_EUR_KWH",
+                comparison_tolerance(price_step),
+            ),
         ),
         economic_target_deadband_w=_profile_float(
             profile,
@@ -192,30 +201,38 @@ def build_regulation_power_config(profile: dict[str, Any]) -> RegulationPowerCon
         charge_deadband_w=_profile_float(
             profile,
             "CHARGE_DEADBAND_W",
-            _profile_float(profile, "DEADBAND_W", DEFAULT_CHARGE_DEADBAND_W),
+            DEFAULT_CHARGE_DEADBAND_W,
         ),
         charge_kp_up=_profile_float(
             profile,
             "CHARGE_KP_UP",
-            _profile_float(profile, "KP_UP", DEFAULT_CHARGE_KP_UP),
+            DEFAULT_CHARGE_KP_UP,
         ),
         charge_kp_down=_profile_float(
             profile,
             "CHARGE_KP_DOWN",
-            _profile_float(profile, "KP_DOWN", DEFAULT_CHARGE_KP_DOWN),
+            DEFAULT_CHARGE_KP_DOWN,
         ),
         charge_max_step_up=_profile_float(
             profile,
             "CHARGE_MAX_STEP_UP",
-            _profile_float(profile, "MAX_STEP_UP", DEFAULT_CHARGE_MAX_STEP_UP),
+            DEFAULT_CHARGE_MAX_STEP_UP,
         ),
         charge_max_step_down=_profile_float(
             profile,
             "CHARGE_MAX_STEP_DOWN",
-            _profile_float(profile, "MAX_STEP_DOWN", DEFAULT_CHARGE_MAX_STEP_DOWN),
+            DEFAULT_CHARGE_MAX_STEP_DOWN,
         ),
-        max_input_w=_profile_float(profile, "MAX_INPUT_W", 2400.0),
-        max_output_w=_profile_float(profile, "MAX_OUTPUT_W", 2400.0),
+        max_input_w=(
+            capabilities.max_input_w
+            if capabilities is not None
+            else _profile_float(profile, "MAX_INPUT_W", 2400.0)
+        ),
+        max_output_w=(
+            capabilities.max_output_w
+            if capabilities is not None
+            else _profile_float(profile, "MAX_OUTPUT_W", 2400.0)
+        ),
     )
 
 
@@ -238,7 +255,18 @@ class RegulationPowerController:
         grid: GridHistoryState,
         previous_input_w: float = 0.0,
         previous_output_w: float = 0.0,
+        max_input_w: float | None = None,
+        max_output_w: float | None = None,
     ) -> PowerControllerResult:
+        effective_max_input_w = self._effective_runtime_limit(
+            profile_limit_w=self.config.max_input_w,
+            runtime_limit_w=max_input_w,
+        )
+        effective_max_output_w = self._effective_runtime_limit(
+            profile_limit_w=self.config.max_output_w,
+            runtime_limit_w=max_output_w,
+        )
+
         if not arbiter.allowed:
             return PowerControllerResult(
                 raw_target_w=0.0,
@@ -277,6 +305,7 @@ class RegulationPowerController:
                 intent=intent,
                 arbiter=arbiter,
                 previous_output_w=previous_output_w,
+                max_output_w=effective_max_output_w,
             )
 
         if arbiter.resolved_mode == "ramp_down_input":
@@ -284,6 +313,7 @@ class RegulationPowerController:
                 intent=intent,
                 arbiter=arbiter,
                 previous_input_w=previous_input_w,
+                max_input_w=effective_max_input_w,
             )
 
         if arbiter.resolved_mode == "output":
@@ -292,6 +322,7 @@ class RegulationPowerController:
                 arbiter=arbiter,
                 grid=grid,
                 previous_output_w=previous_output_w,
+                max_output_w=effective_max_output_w,
             )
 
         if arbiter.resolved_mode == "input":
@@ -300,9 +331,27 @@ class RegulationPowerController:
                 arbiter=arbiter,
                 grid=grid,
                 previous_input_w=previous_input_w,
+                max_input_w=effective_max_input_w,
             )
 
         return self._idle_result(intent=intent, arbiter=arbiter)
+
+    @staticmethod
+    def _effective_runtime_limit(
+        *,
+        profile_limit_w: float,
+        runtime_limit_w: float | None,
+    ) -> float:
+        """Combine the device capability with the current user limit."""
+
+        profile_limit = max(0.0, float(profile_limit_w or 0.0))
+        if runtime_limit_w is None:
+            return profile_limit
+
+        return min(
+            profile_limit,
+            max(0.0, float(runtime_limit_w or 0.0)),
+        )
 
     def _control_grid_w(self, grid: GridHistoryState) -> float:
         """Weighted grid value for fast but smooth regulation.
@@ -478,19 +527,29 @@ class RegulationPowerController:
             base_target_w,
             float(self.config.economic_export_target_w),
         )
-        margin_eur_kwh = max(
+        margin_per_kwh = max(
             0.0,
-            float(self.config.economic_export_margin_eur_kwh),
+            float(self.config.economic_export_margin_per_kwh),
         )
 
         feed_in_tariff = self._intent_metadata_float(
             intent,
-            "feed_in_tariff_eur_kwh",
+            "feed_in_tariff_per_kwh",
         )
+        if feed_in_tariff is None:
+            feed_in_tariff = self._intent_metadata_float(
+                intent,
+                "feed_in_tariff_eur_kwh",
+            )
         battery_value = self._intent_metadata_float(
             intent,
-            "battery_value_eur_kwh",
+            "battery_value_per_kwh",
         )
+        if battery_value is None:
+            battery_value = self._intent_metadata_float(
+                intent,
+                "battery_value_eur_kwh",
+            )
 
         tariff_configured = bool(
             intent.metadata.get("feed_in_tariff_configured", False)
@@ -502,9 +561,9 @@ class RegulationPowerController:
             "economic_base_target_import_w": round(base_target_w, 2),
             "economic_effective_target_import_w": round(base_target_w, 2),
             "economic_export_target_w": round(export_target_w, 2),
-            "economic_feed_in_tariff_eur_kwh": feed_in_tariff,
-            "economic_battery_value_eur_kwh": battery_value,
-            "economic_margin_eur_kwh": round(margin_eur_kwh, 4),
+            "economic_feed_in_tariff_per_kwh": feed_in_tariff,
+            "economic_battery_value_per_kwh": battery_value,
+            "economic_margin_per_kwh": round(margin_per_kwh, 4),
         }
 
         if (
@@ -549,7 +608,7 @@ class RegulationPowerController:
                 return base_target_w, metadata
 
             economic_export_allowed = (
-                float(battery_value) + margin_eur_kwh
+                float(battery_value) + margin_per_kwh
                 < float(feed_in_tariff)
             )
 
@@ -683,6 +742,7 @@ class RegulationPowerController:
         arbiter: ModeArbiterResult,
         grid: GridHistoryState,
         previous_output_w: float,
+        max_output_w: float,
     ) -> PowerControllerResult:
         prev = max(0.0, float(previous_output_w or 0.0))
 
@@ -719,6 +779,7 @@ class RegulationPowerController:
                     "resolved_mode": arbiter.resolved_mode,
                     "control_grid_w": round(control_grid_w, 2),
                 },
+                max_output_w=max_output_w,
             )
 
         if intent.intent == "passthrough":
@@ -736,6 +797,7 @@ class RegulationPowerController:
                     "resolved_mode": arbiter.resolved_mode,
                     "control_grid_w": round(control_grid_w, 2),
                 },
+                max_output_w=max_output_w,
             )
 
         requested = (
@@ -865,6 +927,7 @@ class RegulationPowerController:
                 **near_zero_metadata,
                 **economic_target_metadata,
             },
+            max_output_w=max_output_w,
         )
 
     def _calculate_input(
@@ -874,6 +937,7 @@ class RegulationPowerController:
         arbiter: ModeArbiterResult,
         grid: GridHistoryState,
         previous_input_w: float,
+        max_input_w: float,
     ) -> PowerControllerResult:
         prev = max(0.0, float(previous_input_w or 0.0))
 
@@ -996,6 +1060,7 @@ class RegulationPowerController:
                     **economic_target_metadata,
                 },
                 max_step_down_override_w=max_step_down_override_w,
+                max_input_w=max_input_w,
             )
 
         # V4.3.0-dev5.7:
@@ -1013,7 +1078,7 @@ class RegulationPowerController:
 
             limited_target = min(
                 raw_target,
-                float(self.config.max_input_w),
+                float(max_input_w),
             )
 
             profile_limited = abs(
@@ -1036,6 +1101,7 @@ class RegulationPowerController:
                     "resolved_mode": arbiter.resolved_mode,
                     "control_grid_w": round(control_grid_w, 2),
                     "requested_power_w": round(raw_target, 2),
+                    "effective_max_input_w": round(float(max_input_w), 2),
                     "fixed_ac_charge": True,
                     "input_step_limiter_bypassed": True,
                     **economic_target_metadata,
@@ -1059,6 +1125,7 @@ class RegulationPowerController:
                 "input_step_limiter_bypassed": False,
                 **economic_target_metadata,
             },
+            max_input_w=max_input_w,
         )
 
     def _ramp_down_output(
@@ -1067,6 +1134,7 @@ class RegulationPowerController:
         intent: StrategyIntent,
         arbiter: ModeArbiterResult,
         previous_output_w: float,
+        max_output_w: float,
     ) -> PowerControllerResult:
         prev = max(0.0, float(previous_output_w or 0.0))
         raw_target = 0.0
@@ -1079,6 +1147,7 @@ class RegulationPowerController:
                 "intent": intent.intent,
                 "resolved_mode": arbiter.resolved_mode,
             },
+            max_output_w=max_output_w,
         )
 
     def _ramp_down_input(
@@ -1087,6 +1156,7 @@ class RegulationPowerController:
         intent: StrategyIntent,
         arbiter: ModeArbiterResult,
         previous_input_w: float,
+        max_input_w: float,
     ) -> PowerControllerResult:
         prev = max(0.0, float(previous_input_w or 0.0))
         raw_target = 0.0
@@ -1099,6 +1169,7 @@ class RegulationPowerController:
                 "intent": intent.intent,
                 "resolved_mode": arbiter.resolved_mode,
             },
+            max_input_w=max_input_w,
         )
 
     def _idle_result(
@@ -1128,11 +1199,13 @@ class RegulationPowerController:
         previous_output_w: float,
         reason: str,
         metadata: dict[str, Any],
+        max_output_w: float,
     ) -> PowerControllerResult:
         prev = max(0.0, float(previous_output_w or 0.0))
         raw = max(0.0, float(raw_target_w or 0.0))
 
-        profile_limited_target = min(raw, float(self.config.max_output_w))
+        effective_max_output_w = max(0.0, float(max_output_w or 0.0))
+        profile_limited_target = min(raw, effective_max_output_w)
         profile_limited = profile_limited_target != raw
 
         if profile_limited_target > prev:
@@ -1157,7 +1230,7 @@ class RegulationPowerController:
             )
             final = prev + allowed_delta
 
-        final = max(0.0, min(final, float(self.config.max_output_w)))
+        final = max(0.0, min(final, effective_max_output_w))
 
         step_limited = abs(final - profile_limited_target) > 0.01
         applied_step = final - prev
@@ -1170,7 +1243,10 @@ class RegulationPowerController:
             profile_limited=bool(profile_limited),
             step_limited=bool(step_limited),
             reason=reason,
-            metadata=metadata,
+            metadata={
+                **metadata,
+                "effective_max_output_w": round(effective_max_output_w, 2),
+            },
         )
 
     def _limit_input_step(
@@ -1181,11 +1257,13 @@ class RegulationPowerController:
         reason: str,
         metadata: dict[str, Any],
         max_step_down_override_w: float | None = None,
+        max_input_w: float,
     ) -> PowerControllerResult:
         prev = max(0.0, float(previous_input_w or 0.0))
         raw = max(0.0, float(raw_target_w or 0.0))
 
-        profile_limited_target = min(raw, float(self.config.max_input_w))
+        effective_max_input_w = max(0.0, float(max_input_w or 0.0))
+        profile_limited_target = min(raw, effective_max_input_w)
         profile_limited = profile_limited_target != raw
 
         if profile_limited_target > prev:
@@ -1207,7 +1285,7 @@ class RegulationPowerController:
             )
             final = prev + allowed_delta
 
-        final = max(0.0, min(final, float(self.config.max_input_w)))
+        final = max(0.0, min(final, effective_max_input_w))
 
         step_limited = abs(final - profile_limited_target) > 0.01
         applied_step = final - prev
@@ -1227,5 +1305,6 @@ class RegulationPowerController:
                     if max_step_down_override_w is not None
                     else None
                 ),
+                "effective_max_input_w": round(effective_max_input_w, 2),
             },
         )

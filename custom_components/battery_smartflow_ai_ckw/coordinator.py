@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from functools import partial
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -10,16 +11,18 @@ import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
+from .ai_status import map_ai_status
 from .const import (
     DOMAIN,
     UPDATE_INTERVAL,
+    INTEGRATION_VERSION,
     # config keys
     CONF_SOC_ENTITY,
     CONF_PV_ENTITY,
+    CONF_NATIVE_PV_ENTITY,
     CONF_PV_FORECAST_TODAY_ENTITY,
     CONF_PV_FORECAST_TOMORROW_ENTITY,
     CONF_PRICE_EXPORT_ENTITY,
@@ -27,6 +30,7 @@ from .const import (
     CONF_CKW_ENABLED,
     CKW_API_URL,
     CKW_FETCH_INTERVAL,
+    CONF_DYNAMIC_FEED_IN_PRICE_ENTITY,
     CONF_AC_MODE_ENTITY,
     CONF_INPUT_LIMIT_ENTITY,
     CONF_OUTPUT_LIMIT_ENTITY,
@@ -75,8 +79,6 @@ from .const import (
     DEFAULT_SOC_MAX,
     DEFAULT_MAX_CHARGE,
     DEFAULT_MAX_DISCHARGE,
-    DEFAULT_PRICE_THRESHOLD,
-    DEFAULT_VERY_EXPENSIVE_THRESHOLD,
     DEFAULT_EMERGENCY_SOC,
     DEFAULT_EMERGENCY_CHARGE,
     DEFAULT_PROFIT_MARGIN_PCT,
@@ -103,14 +105,6 @@ from .const import (
     # statuses
     STATUS_OK,
     STATUS_SENSOR_INVALID,
-    AI_STATUS_STANDBY,
-    AI_STATUS_CHARGE_SURPLUS,
-    AI_STATUS_PRICE_CHARGE,
-    AI_STATUS_COVER_DEFICIT,
-    AI_STATUS_EXPENSIVE_DISCHARGE,
-    AI_STATUS_VERY_EXPENSIVE_FORCE,
-    AI_STATUS_EMERGENCY_CHARGE,
-    AI_STATUS_MANUAL,
     RECO_STANDBY,
     RECO_CHARGE,
     RECO_DISCHARGE,
@@ -118,15 +112,14 @@ from .const import (
     ZENDURE_MODE_INPUT,
     ZENDURE_MODE_OUTPUT,
 )
-from .device_profiles import DEVICE_PROFILES, merge_profile_with_overrides
+from .device_profiles import get_device_profile, merge_profile_with_overrides
 from .decision_engine import (
     advance_pv_charge_hysteresis,
     compute_pv_attributable_export_w,
-    DecisionContext,
     DecisionEngine,
     DecisionResult,
-    PricePoint,
 )
+from .core.models.runtime import RuntimeSnapshot
 from .forecast import build_forecast_summary
 from .learned_planning import (
     LearningSample,
@@ -141,28 +134,84 @@ from .learned_planning import (
 )
 from .grid_history import GridHistory, build_grid_history_config
 from .charge_source_allocator import ChargeSourceAllocator
+from .charge_commit_policy import (
+    current_inactive_commit_abort_reason,
+    learned_commit_is_forced,
+    learned_commit_price_phase,
+    learned_commit_should_yield_to_discharge,
+    learned_plan_may_complete_active_commit,
+    preserved_learned_commit_power,
+)
+from .battery_protection import (
+    cell_voltage_emergency_minimum_elapsed,
+    next_cell_voltage_discharge_lock_state,
+    next_cell_voltage_emergency_state,
+)
 from .charge_economics import (
     add_charge_evidence,
     classify_charge_pricing,
     pricing_from_charge_evidence,
     recent_charge_evidence,
+    resolve_feed_in_tariff,
+    trade_soc_min_reset_state,
 )
-from .automatic_strategy import AutomaticStrategy
+from .economics import (
+    EconomicPowerFlows,
+    EconomicsEngine,
+    EnergyAccumulator,
+    priceable_energy_flows,
+)
+from .automatic_strategy import (
+    AutomaticStrategy,
+    economic_discharge_continuation_reason,
+    forecast_supports_early_pv_passthrough,
+    maintain_active_economic_discharge,
+)
 from .strategy_adapter import decision_to_strategy_intent
 from .strategy_state import ChargeCommitState
 from .mode_arbiter import ModeArbiter, build_mode_arbiter_config
 from .regulation_models import RegulationRuntimeState
+from .core.models import CommandExecutionResult, DeviceCapabilities, DeviceCommand
+from .core.ports import Clock, DeviceBackend, DeviceBackendExecutionError
 from .regulation_power_controller import (
     RegulationPowerController,
     build_regulation_power_config,
 )
-from .device_command import DeviceCommandBuilder
+from .device_command import DeviceCommandBuilder, clamp_number_power_request
+from .adapters.home_assistant.device_backend import (
+    HomeAssistantEntityBackend,
+)
+from .adapters.home_assistant.clock import HomeAssistantClock
+from .adapters.home_assistant.state_store import HomeAssistantStateStore
 from .command_effectiveness import (
     CommandEffectivenessConfig,
     CommandEffectivenessState,
     evaluate_command_effectiveness,
     record_effectiveness_retry,
 )
+from .debug_recorder import DebugRecorder
+from .debug_exporter import DebugExportError, export_debug_package
+from .debug_sample_builder import build_debug_sample
+from .price_currency import (
+    PriceCurrency,
+    migrate_legacy_price_fields,
+    price_input_profile,
+    resolve_price_currency,
+)
+from .price_math import comparison_tolerance
+from .market_price import (
+    ExportMarketPriceResolver,
+    GenericStatePriceSource,
+    LegacyImportForecastAdapter,
+    MarketPrice,
+    MarketPriceDirection,
+    MarketPriceForecast,
+    MarketPricePoint,
+    MarketPriceSourceAdapter,
+    MarketPriceValidity,
+    NumericPriceNormalizer,
+)
+from .manual_standby import active_power_direction
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -170,11 +219,6 @@ STORE_VERSION = 1
 ACTIVE_STATUS_DISPLAY_HOLD_S = 60
 
 CHARGE_COMMIT_PRICE_VALID_MINUTES = 20
-
-# V4.3.0-dev5.0.1:
-# Small hysteresis for the strategic AC-charge price guard.
-# Prevents a charge binding from flickering exactly at the discharge threshold.
-STRATEGIC_AC_CHARGE_PRICE_GUARD_MARGIN_EUR_KWH = 0.005
 
 # V4.3.0-dev5.8.3:
 # Treat a strategic AC charge target as practically reached when the battery
@@ -262,10 +306,12 @@ def _clamp_season_counter(value: Any) -> int:
 class SelectedEntities:
     soc: str
     pv: str
+    native_pv: str | None
     pv_forecast_today: str | None
     pv_forecast_tomorrow: str | None
     price_export: str | None
     price_now: str | None
+    dynamic_feed_in_price: str | None
     ac_mode: str
     input_limit: str
     output_limit: str
@@ -283,9 +329,28 @@ class SelectedEntities:
 
 
 class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        *,
+        clock: Clock | None = None,
+    ) -> None:
         self.hass = hass
         self.entry = entry
+        self.price_currency: PriceCurrency = resolve_price_currency(
+            getattr(hass.config, "currency", None)
+        )
+
+        if self.price_currency.used_fallback:
+            _LOGGER.warning(
+                "Home Assistant has no valid system currency; using %s for "
+                "Battery SmartFlow AI price units",
+                self.price_currency.code,
+            )
+        self.price_comparison_tolerance = comparison_tolerance(
+            price_input_profile(self.price_currency).step
+        )
 
         self.device_profile_key = (
             entry.options.get(CONF_DEVICE_PROFILE)
@@ -293,16 +358,15 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             or DEFAULT_DEVICE_PROFILE
         )
 
-        self._device_profile_cfg = DEVICE_PROFILES.get(
-            self.device_profile_key,
-            DEVICE_PROFILES[DEFAULT_DEVICE_PROFILE],
-        )
+        self._device_profile = get_device_profile(self.device_profile_key)
+        self._device_profile_cfg = self._device_profile.as_legacy_mapping()
 
         self.runtime_settings: dict[str, float] = dict(entry.options)
 
         self.entities = SelectedEntities(
             soc=str(entry.data[CONF_SOC_ENTITY]),
             pv=str(entry.data[CONF_PV_ENTITY]),
+            native_pv=entry.data.get(CONF_NATIVE_PV_ENTITY),
             pv_forecast_today=entry.data.get(CONF_PV_FORECAST_TODAY_ENTITY),
             pv_forecast_tomorrow=entry.data.get(CONF_PV_FORECAST_TOMORROW_ENTITY),
             battery_ac_power=str(
@@ -313,6 +377,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             additional_battery_discharge=entry.data.get(CONF_ADDITIONAL_BATTERY_DISCHARGE_ENTITY),
             price_export=entry.data.get(CONF_PRICE_EXPORT_ENTITY),
             price_now=entry.data.get(CONF_PRICE_NOW_ENTITY),
+            dynamic_feed_in_price=entry.data.get(
+                CONF_DYNAMIC_FEED_IN_PRICE_ENTITY
+            ),
             ac_mode=str(entry.data[CONF_AC_MODE_ENTITY]),
             input_limit=str(entry.data[CONF_INPUT_LIMIT_ENTITY]),
             output_limit=str(entry.data[CONF_OUTPUT_LIMIT_ENTITY]),
@@ -334,26 +401,51 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
         self._engine = DecisionEngine()
+        self._debug_recorder = DebugRecorder(integration_version=INTEGRATION_VERSION)
+        self._debug_last_package: str | None = None
+        self._debug_last_error: str | None = None
         self._automatic_strategy = AutomaticStrategy()
         self._charge_source_allocator = ChargeSourceAllocator()
+        self._energy_accumulator = EnergyAccumulator()
+        self._economics_engine = EconomicsEngine(
+            currency=self.price_currency.code
+        )
         
         self._grid_history = GridHistory(
             build_grid_history_config(self._get_active_profile())
         )
         
         self._mode_arbiter = ModeArbiter(
-            build_mode_arbiter_config(self._get_active_profile())
+            build_mode_arbiter_config(
+                self._get_active_profile(),
+                self._device_profile.capabilities,
+            )
         )
         
         self._regulation_power_controller = RegulationPowerController(
-            build_regulation_power_config(self._get_active_profile())
+            build_regulation_power_config(
+                self._get_active_profile(),
+                capabilities=self._device_profile.capabilities,
+                price_step=price_input_profile(self.price_currency).step,
+            )
         )
         
         self._device_command_builder = DeviceCommandBuilder()
+        self._device_backend: DeviceBackend = HomeAssistantEntityBackend(
+            capabilities=self._device_profile.capabilities,
+            set_ac_mode=self._set_ac_mode,
+            set_input_limit=self._set_input_limit,
+            set_output_limit=self._set_output_limit,
+        )
         self._command_effectiveness_config = CommandEffectivenessConfig()
+        self._clock = clock or HomeAssistantClock()
 
-        self._store = Store(hass, STORE_VERSION, f"{DOMAIN}.{entry.entry_id}")
-        self._ckw_prices: list[PricePoint] = []
+        self._state_store = HomeAssistantStateStore(
+            hass,
+            version=STORE_VERSION,
+            key=f"{DOMAIN}.{entry.entry_id}",
+        )
+        self._ckw_prices: list[MarketPricePoint] = []
         self._ckw_last_fetch: datetime | None = None
         self._persist: dict[str, Any] = {
             "runtime_mode": dict(self.runtime_mode),
@@ -375,14 +467,18 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "trade_avg_charge_price": None,
             "trade_charged_kwh": 0.0,
             "trade_cycle_below_soc_min": False,
+            "trade_soc_min_reset_count": 0,
             "prev_soc": None,
             "pending_charge_price_evidence": None,
 
             "avg_charge_price": None,
             "charged_kwh": 0.0,
             "discharged_kwh": 0.0,
-            "profit_eur": 0.0,
+            "profit": 0.0,
             "last_ts": None,
+            "economics_energy_state": None,
+            "economics_money_state": None,
+            "economics_money_day": None,
 
             # season detection
             "season_mode": "winter",
@@ -391,8 +487,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # cell voltage
             "global_lowest_cell_voltage": None,
             "cell_voltage_status": "disabled",
+            "cell_voltage_emergency_active": False,
+            "cell_voltage_emergency_started_at": None,
             "cell_voltage_discharge_blocked": False,
             "cell_voltage_resume_threshold": None,
+            "cell_voltage_post_emergency_discharge_locked": False,
+            "cell_voltage_normal_charge_observed": False,
             "cell_voltage_soc_plausibility": "not_available",
 
             # PV charge debounce / hysteresis
@@ -437,6 +537,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "regulation_post_output_overshoot_hold_until": None,
             "regulation_pv_charge_latch_started_ts": None,
             "regulation_discharge_latch_started_ts": None,
+            "automatic_economic_discharge_source_reason": "",
             "regulation_passthrough_latch_started_ts": None,
             "regulation_skipped_write_reason": "none",
 
@@ -470,12 +571,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "charge_commit_optimal_start": None,
             "charge_commit_latest_start": None,
             "charge_commit_deadline": None,
-            "charge_commit_acceptable_price_eur_kwh": None,
+            "charge_commit_acceptable_price_per_kwh": None,
 
             "charge_commit_requested_power_w": 0.0,
             "charge_commit_allow_pv_blend": True,
             "charge_commit_abort_reason": "none",
-            "charge_commit_price_eur_kwh": None,
+            "charge_commit_price_per_kwh": None,
 
             # V4.3.0-dev5.8.3:
             # Start time of a continuously detected BMS/full-charge stall.
@@ -493,9 +594,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def _load(self) -> None:
-        data = await self._store.async_load()
-        if isinstance(data, dict):
-            self._persist.update(data)
+        load_result = await self._state_store.load()
+        if load_result.usable:
+            loaded_data = dict(load_result.data)
+            migrate_legacy_price_fields(loaded_data)
+            self._persist.update(loaded_data)
 
             # V4.2.2:
             # Normalize old persisted extreme values. Previous versions could let
@@ -505,8 +608,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._persist.get("season_counter", 0)
             )
 
-            if "runtime_mode" in data and isinstance(data["runtime_mode"], dict):
-                self.runtime_mode.update(data["runtime_mode"])
+            if "runtime_mode" in loaded_data and isinstance(
+                loaded_data["runtime_mode"], dict
+            ):
+                self.runtime_mode.update(loaded_data["runtime_mode"])
                 
             self.runtime_mode["ai_mode"] = normalize_ai_mode(
                 self.runtime_mode.get("ai_mode")
@@ -523,9 +628,29 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ):
                 self._persist.pop(legacy_key, None)
 
+            self._energy_accumulator = EnergyAccumulator.from_state(
+                self._persist.get("economics_energy_state")
+            )
+            self._economics_engine = EconomicsEngine.from_state(
+                self._persist.get("economics_money_state"),
+                currency=self.price_currency.code,
+            )
+        elif load_result.error:
+            _LOGGER.warning(
+                "Persistent state load skipped (%s): %s",
+                load_result.status,
+                load_result.error,
+            )
+
     async def _save(self) -> None:
         self._persist["runtime_mode"] = dict(self.runtime_mode)
-        await self._store.async_save(self._persist)
+        save_result = await self._state_store.save(self._persist)
+        if not save_result.saved:
+            _LOGGER.warning(
+                "Persistent state save failed (%s): %s",
+                save_result.status,
+                save_result.error or "unknown error",
+            )
         
     def _charge_pricing_reason(self, decision_reason: str | None) -> str:
         """Return the reason that should be used for charge price attribution.
@@ -687,9 +812,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "charge_commit_deadline",
                 )
             ),
-            acceptable_price_eur_kwh=_to_float(
+            acceptable_price_per_kwh=_to_float(
                 self._persist.get(
-                    "charge_commit_acceptable_price_eur_kwh",
+                    "charge_commit_acceptable_price_per_kwh",
                 ),
                 None,
             ),
@@ -774,8 +899,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         self._persist[
-            "charge_commit_acceptable_price_eur_kwh"
-        ] = commit.acceptable_price_eur_kwh
+            "charge_commit_acceptable_price_per_kwh"
+        ] = commit.acceptable_price_per_kwh
 
         self._persist["charge_commit_requested_power_w"] = float(
             commit.requested_power_w or 0.0
@@ -816,7 +941,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._persist["charge_commit_latest_start"] = None
         self._persist["charge_commit_deadline"] = None
         self._persist[
-            "charge_commit_acceptable_price_eur_kwh"
+            "charge_commit_acceptable_price_per_kwh"
         ] = None
 
         self._persist["charge_commit_requested_power_w"] = 0.0
@@ -824,7 +949,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._persist["charge_commit_abort_reason"] = str(
             abort_reason or "none"
         )
-        self._persist["charge_commit_price_eur_kwh"] = None
+        self._persist["charge_commit_price_per_kwh"] = None
         self._persist["charge_commit_bms_stall_started_at"] = None
 
 
@@ -881,7 +1006,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         margin = max(
             0.0,
-            float(STRATEGIC_AC_CHARGE_PRICE_GUARD_MARGIN_EUR_KWH),
+            float(self.price_comparison_tolerance),
         )
 
         return float(current_price) >= (
@@ -905,6 +1030,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         effective_discharge_threshold: float | None,
         automatic_peak_reserve_allowed: bool,
         battery_charge_w: float,
+        learned_charge_plan: Any | None,
     ) -> str:
         if not commit.active:
             return "none"
@@ -920,6 +1046,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if float(additional_battery_discharge_w or 0.0) > 50.0:
             return "additional_battery_discharging_blocks_charge"
+
+        # A falling live need must not replace an active binding's target SoC.
+        # Only legacy targetless bindings retain the zero-need fail-safe.
+        if learned_plan_may_complete_active_commit(
+            commit=commit,
+            learned_charge_plan=learned_charge_plan,
+        ):
+            return "learned_charge_no_longer_needed"
 
         # V4.3.0-dev8:
         # A continuously used island socket is an independent device path.
@@ -1196,7 +1330,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         acceptable_price = _to_float(
             getattr(
                 learned_charge_plan,
-                "acceptable_charge_price_eur_kwh",
+                "acceptable_charge_price_per_kwh",
                 None,
             ),
             None,
@@ -1295,6 +1429,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     automatic_peak_reserve_allowed
                 ),
                 battery_charge_w=float(battery_charge_w or 0.0),
+                learned_charge_plan=learned_charge_plan,
             )
 
             if abort_reason != "none":
@@ -1303,6 +1438,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "target_soc_reached",
                     "target_unreachable_battery_full",
                     "target_nearly_reached_discharge_window",
+                    "learned_charge_no_longer_needed",
                 }
 
                 self._clear_charge_commit(
@@ -1332,38 +1468,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     commit.phase or "waiting"
                 )
 
-                latest_start_reached = bool(
-                    commit.latest_start is not None
-                    and now_utc >= dt_util.as_utc(
-                        commit.latest_start
-                    )
+                forced = learned_commit_is_forced(
+                    commit=commit,
+                    now=now_utc,
                 )
 
-                deadline_too_close = bool(
-                    str(commit.source_reason or "")
-                    == (
-                        "learned_charge_window_"
-                        "deadline_too_close_start_now"
-                    )
-                )
-
-                if (
-                    current_phase == "forced"
-                    or latest_start_reached
-                    or deadline_too_close
-                ):
+                if forced:
                     commit.phase = "forced"
 
-                elif current_phase == "active":
-                    # Once charging has started, keep the charge binding active.
-                    # A later price or planning recalculation must not pause it.
-                    commit.phase = "active"
-
                 else:
-                    # Only a still-waiting binding may use its original price
-                    # threshold to decide when AC charging starts.
                     acceptable_price = _to_float(
-                        commit.acceptable_price_eur_kwh,
+                        commit.acceptable_price_per_kwh,
                         None,
                     )
                     current_price = _to_float(
@@ -1378,15 +1493,26 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         > (
                             float(acceptable_price)
                             + float(
-                                STRATEGIC_AC_CHARGE_PRICE_GUARD_MARGIN_EUR_KWH
+                                self.price_comparison_tolerance
                             )
                         )
                     )
 
-                    if price_too_high:
-                        commit.phase = "waiting"
-                    else:
-                        commit.phase = "active"
+                    commit.phase = learned_commit_price_phase(
+                        current_phase=current_phase,
+                        price_too_high=price_too_high,
+                    )
+
+                # The Decision Engine has already verified that economic
+                # discharge is genuinely possible (SoC, protection, data and
+                # Automatic permissions included). A non-forced learned binding
+                # must yield instead of overriding that selected OUTPUT action.
+                if learned_commit_should_yield_to_discharge(
+                    commit=commit,
+                    now=now_utc,
+                    selected_reason=str(decision.reason or ""),
+                ):
+                    commit.phase = "waiting"
 
                 commit.updated_at = now_utc
                 self._store_charge_commit(commit)
@@ -1397,26 +1523,15 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         commit=commit,
                     )
 
-                # Dev9.1: A binding restored from Dev9 may still contain the
-                # self-limited learned value (for example 1161 W). Refresh an
-                # active/forced learned binding directly from the newly
-                # calculated energy/window request, even when the base decision
-                # temporarily exposes another reason.
-                replanned_power_w = _to_float(
-                    getattr(
-                        learned_charge_plan,
-                        "requested_charge_power_w",
-                        None,
-                    ),
-                    None,
+                # The target, timing and power form one planning snapshot. A
+                # shrinking live need must not taper the stored 800 W request to
+                # the planner's 100 W minimum while the old target SoC remains.
+                commit.requested_power_w = preserved_learned_commit_power(
+                    requested_power_w=float(commit.requested_power_w or 0.0),
+                    max_charge_w=float(max_charge_w),
                 )
-                if replanned_power_w is not None and replanned_power_w > 0.0:
-                    commit.requested_power_w = min(
-                        float(replanned_power_w),
-                        float(max_charge_w),
-                    )
-                    commit.updated_at = now_utc
-                    self._store_charge_commit(commit)
+                commit.updated_at = now_utc
+                self._store_charge_commit(commit)
 
             # If the same charge reason is still present, refresh power and
             # price-window timeout for optional price commits.
@@ -1435,7 +1550,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if refreshed_until is not None:
                     commit.valid_until = refreshed_until
                 if price_now is not None:
-                    self._persist["charge_commit_price_eur_kwh"] = float(price_now)
+                    self._persist["charge_commit_price_per_kwh"] = float(price_now)
                 self._store_charge_commit(commit)
                 
             return self._committed_charge_decision(
@@ -1518,7 +1633,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         > (
                             float(acceptable_price)
                             + float(
-                                STRATEGIC_AC_CHARGE_PRICE_GUARD_MARGIN_EUR_KWH
+                                self.price_comparison_tolerance
                             )
                         )
                     ):
@@ -1558,7 +1673,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if commit_type == "learned"
                     else None
                 ),
-                acceptable_price_eur_kwh=(
+                acceptable_price_per_kwh=(
                     learned_acceptable_price
                     if commit_type == "learned"
                     else None
@@ -1573,9 +1688,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._store_charge_commit(new_commit)
             
             if price_now is not None:
-                self._persist["charge_commit_price_eur_kwh"] = float(price_now)
+                self._persist["charge_commit_price_per_kwh"] = float(price_now)
             else:
-                self._persist["charge_commit_price_eur_kwh"] = None
+                self._persist["charge_commit_price_per_kwh"] = None
                 
             if new_commit.phase == "waiting":
                 return self._waiting_charge_commit_decision(
@@ -1589,7 +1704,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 max_charge_w=float(max_charge_w),
             )
 
-        # Keep last abort reason visible, but no active commit.
+        self._persist["charge_commit_abort_reason"] = (
+            current_inactive_commit_abort_reason(
+                stored_abort_reason=str(
+                    self._persist.get("charge_commit_abort_reason", "none") or "none"
+                ),
+                learned_charge_plan=learned_charge_plan,
+            )
+        )
         return decision
 
     def _state(self, entity_id: str | None) -> Any:
@@ -1597,6 +1719,142 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
         st = self.hass.states.get(entity_id)
         return st.state if st else None
+
+    def _debug_status_data(self) -> dict[str, Any]:
+        """Return the small V4.4.0 debug status surface for Home Assistant."""
+
+        status = self._debug_recorder.status
+        return {
+            "debug_recording_active": status.active,
+            "debug_recording_ends_at": status.recording_end,
+            "debug_sample_count": status.sample_count,
+            "debug_last_package": self._debug_last_package,
+            "debug_last_error": self._debug_last_error,
+        }
+
+    @property
+    def debug_last_package_path(self) -> str | None:
+        """Return the latest package path for Home Assistant diagnostics."""
+
+        return self._debug_last_package
+
+    @property
+    def debug_recording_status(self):
+        """Return the sparse recording status for the options flow."""
+
+        return self._debug_recorder.status
+
+    def _debug_configured_entities(self) -> dict[str, str | None]:
+        """Return entity ids by diagnostic role without reading their contents."""
+
+        return {
+            "soc": self.entities.soc,
+            "pv": self.entities.pv,
+            "native_pv": self.entities.native_pv,
+            "pv_forecast_today": self.entities.pv_forecast_today,
+            "pv_forecast_tomorrow": self.entities.pv_forecast_tomorrow,
+            "price_now": self.entities.price_now,
+            "price_export": self.entities.price_export,
+            "dynamic_feed_in_price": self.entities.dynamic_feed_in_price,
+            "ac_mode": self.entities.ac_mode,
+            "input_limit": self.entities.input_limit,
+            "output_limit": self.entities.output_limit,
+            "battery_ac_power": self.entities.battery_ac_power,
+            "additional_battery_charge": self.entities.additional_battery_charge,
+            "additional_battery_discharge": self.entities.additional_battery_discharge,
+            "soc_limit": self.entities.soc_limit,
+            "grid_power": self.entities.grid_power,
+            "grid_import": self.entities.grid_import,
+            "grid_export": self.entities.grid_export,
+            "offgrid_power": self.entities.offgrid_power,
+            "offgrid_mode": self.entities.offgrid_mode,
+        }
+
+    def _debug_entity_availability(self) -> dict[str, bool | None]:
+        """Return availability for configured diagnostic entities."""
+
+        return {
+            role: (
+                self.hass.states.get(entity_id) is not None
+                if entity_id
+                else None
+            )
+            for role, entity_id in self._debug_configured_entities().items()
+        }
+
+    async def _async_export_debug_package(self, package) -> None:
+        """Write a completed package outside the event loop and retain its path."""
+
+        try:
+            result = await self.hass.async_add_executor_job(
+                partial(
+                    export_debug_package,
+                    package,
+                    config_directory=self.hass.config.config_dir,
+                )
+            )
+        except DebugExportError as err:
+            self._debug_last_error = str(err)
+            _LOGGER.warning("Debug package export failed: %s", err)
+            return
+        self._debug_last_package = str(result.path)
+        self._debug_last_error = None
+
+    async def async_start_debug_recording(self, *, duration_minutes: int) -> None:
+        """Start a user-requested bounded debug recording."""
+
+        self._debug_recorder.start(
+            duration_minutes=duration_minutes,
+            now=self._clock.utc_now(),
+            device_profile=self.device_profile_key,
+            ai_mode=str(self.runtime_mode.get("ai_mode") or AI_MODE_AUTOMATIC),
+            season_mode=str(self._persist.get("season_mode", "winter")),
+            config={
+                "configured_entities": self._debug_configured_entities(),
+                # Options may change without recreating the coordinator. Keep
+                # the debug package aligned with the live control settings.
+                "runtime_settings": {
+                    **self.runtime_settings,
+                    **dict(self.entry.options),
+                },
+            },
+            profile=self._get_active_profile(),
+        )
+        self._debug_last_error = None
+        await self.async_request_refresh()
+
+    async def async_stop_debug_recording(self) -> None:
+        """Stop the active debug recording and write its JSON package."""
+
+        package = self._debug_recorder.stop(now=self._clock.utc_now())
+        if package is not None:
+            await self._async_export_debug_package(package)
+        await self.async_request_refresh()
+
+    async def _async_capture_debug_sample(
+        self,
+        *,
+        now: datetime,
+        details: dict[str, Any],
+    ) -> None:
+        """Capture one cycle only while a recording is active."""
+
+        if not self._debug_recorder.is_active:
+            return
+        package = self._debug_recorder.record(
+            build_debug_sample(
+                timestamp=now,
+                details=details,
+                configured_entities=self._debug_configured_entities(),
+                entity_availability=self._debug_entity_availability(),
+            ),
+            now=now,
+        )
+        if package is not None:
+            await self._async_export_debug_package(package)
+            # Queue one follow-up refresh after an automatic completion so HA
+            # publishes the inactive state and exported path immediately.
+            self.hass.async_create_task(self.async_request_refresh())
 
     def _attr(self, entity_id: str | None, attr: str) -> Any:
         if not entity_id:
@@ -1623,14 +1881,32 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return float(DEFAULT_INSTALLED_PV_WP)
             
     def _get_feed_in_tariff(self) -> float:
-        try:
-            value = self.entry.options.get(
-                CONF_FEED_IN_TARIFF,
-                self.entry.data.get(CONF_FEED_IN_TARIFF, DEFAULT_FEED_IN_TARIFF),
-            )
-            return max(0.0, float(value or DEFAULT_FEED_IN_TARIFF))
-        except Exception:
-            return float(DEFAULT_FEED_IN_TARIFF)
+        price = self._get_export_market_price()
+        return float(price.current_price) if price.valid else 0.0
+
+    def _get_export_market_price(
+        self,
+        now: datetime | None = None,
+    ) -> MarketPrice:
+        """Return dynamic export price, static fallback, or explicit missing."""
+
+        static_configured = bool(
+            CONF_FEED_IN_TARIFF in self.entry.data
+            or CONF_FEED_IN_TARIFF in self.entry.options
+        )
+        static_value = resolve_feed_in_tariff(
+            data=self.entry.data,
+            options=self.entry.options,
+            default=DEFAULT_FEED_IN_TARIFF,
+        )
+        return ExportMarketPriceResolver(
+            state_getter=self.hass.states.get,
+            active_currency=self.price_currency.code,
+            dynamic_entity_id=self.entities.dynamic_feed_in_price,
+            static_value=static_value,
+            static_configured=static_configured,
+            now=now,
+        ).resolve()
 
     def _expert_mode_enabled(self) -> bool:
         return bool(
@@ -1680,7 +1956,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
 
         tz = dt_util.get_default_time_zone()
-        out: list[PricePoint] = []
+        out: list[MarketPricePoint] = []
 
         for item in (data.get("prices") or []):
             start_s = str(item.get("start_timestamp", ""))
@@ -1714,7 +1990,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if t_end <= t_start:
                 continue
 
-            out.append(PricePoint(start=t_start, end=t_end, price=float(value)))
+            out.append(
+                MarketPricePoint(start=t_start, end=t_end, price=float(value))
+            )
 
         out.sort(key=lambda x: x.start)
         self._ckw_prices = out
@@ -1828,8 +2106,6 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
 
         requested = max(0.0, float(requested_w or 0.0))
-        effective = requested
-
         min_value = _to_float(
             self._attr(entity_id, "min"),
             None,
@@ -1839,13 +2115,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             None,
         )
 
-        if min_value is not None:
-            effective = max(float(min_value), effective)
-
-        if max_value is not None:
-            effective = min(float(max_value), effective)
-
-        effective_int = int(round(effective, 0))
+        effective_int = clamp_number_power_request(
+            requested,
+            min_value=min_value,
+            max_value=max_value,
+        )
         requested_int = int(round(requested, 0))
 
         self._persist[
@@ -1869,6 +2143,47 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ] = effective_int != requested_int
 
         return effective_int
+
+    def _store_command_execution_result(
+        self,
+        result: CommandExecutionResult,
+    ) -> None:
+        """Expose neutral backend feedback without leaking HA details to core."""
+
+        self._persist["command_execution_status"] = str(result.status)
+        self._persist["command_execution_reason"] = str(result.reason)
+        self._persist["command_execution_mode_written"] = bool(
+            result.mode_written
+        )
+        self._persist["command_execution_input_written"] = bool(
+            result.input_written
+        )
+        self._persist["command_execution_output_written"] = bool(
+            result.output_written
+        )
+        self._persist["command_execution_error"] = result.error
+
+    async def _execute_device_command(
+        self,
+        command: DeviceCommand,
+        *,
+        force_power: bool = True,
+        power_before_mode: bool = False,
+    ) -> CommandExecutionResult:
+        """Execute one neutral command through the configured backend."""
+
+        try:
+            result = await self._device_backend.execute(
+                command,
+                force_power=force_power,
+                power_before_mode=power_before_mode,
+            )
+        except DeviceBackendExecutionError as err:
+            self._store_command_execution_result(err.result)
+            raise
+
+        self._store_command_execution_result(result)
+        return result
 
     async def _set_ac_mode(self, mode: str) -> None:
         """Write the AC mode reliably.
@@ -2109,19 +2424,75 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return None, None
 
-    def _get_price_now(self) -> float | None:
+    def _get_ckw_import_market_price(self, now: datetime) -> MarketPrice:
+        """Build the import price from the direct CKW dynamic tariff API."""
+
+        tz = dt_util.get_default_time_zone()
+        if now.tzinfo is None:
+            now_local = now.replace(tzinfo=tz)
+        else:
+            now_local = now.astimezone(tz)
+
+        current: float | None = None
+        for p in self._ckw_prices:
+            if p.start <= now_local < p.end:
+                current = p.price
+                break
+
+        points = tuple(p for p in self._ckw_prices if p.end > now_local)
+        return MarketPrice(
+            direction=MarketPriceDirection.IMPORT,
+            current_price=current,
+            currency=self.price_currency.code,
+            unit=self.price_currency.price_unit,
+            timestamp=self._ckw_last_fetch,
+            source="ckw_api",
+            validity=(
+                MarketPriceValidity.VALID
+                if current is not None
+                else MarketPriceValidity.UNAVAILABLE
+            ),
+            is_dynamic=True,
+            is_fallback=False,
+            forecast=MarketPriceForecast(
+                points=points,
+                timestamp=self._ckw_last_fetch,
+            ),
+        )
+
+    def _get_import_market_price(self, now: datetime) -> MarketPrice:
+        """Build the canonical import price from the configured V4.5 sources."""
+
         if self._ckw_enabled():
-            tz = dt_util.get_default_time_zone()
-            now = dt_util.now().astimezone(tz)
-            for p in self._ckw_prices:
-                if p.start <= now < p.end:
-                    return p.price
-            return None
-        if self.entities.price_now:
-            p = _to_float(self._state(self.entities.price_now), None)
-            if p is not None:
-                return float(p)
-        return None
+            return self._get_ckw_import_market_price(now)
+
+        source = GenericStatePriceSource(
+            entity_id=self.entities.price_now or "not_configured",
+            state_getter=self.hass.states.get,
+        )
+        current_price = MarketPriceSourceAdapter(
+            source=source,
+            normalizer=NumericPriceNormalizer(now=now),
+            direction=MarketPriceDirection.IMPORT,
+            active_currency=self.price_currency.code,
+        ).read()
+
+        forecast = None
+        if self.entities.price_export:
+            forecast_state = self.hass.states.get(self.entities.price_export)
+            if forecast_state is not None:
+                adapter = LegacyImportForecastAdapter(
+                    now=now,
+                    default_timezone=dt_util.get_default_time_zone(),
+                    parse_datetime=dt_util.parse_datetime,
+                )
+                forecast = adapter.normalize(
+                    forecast_state.attributes or {},
+                    direction=MarketPriceDirection.IMPORT,
+                    active_currency=self.price_currency.code,
+                )
+
+        return replace(current_price, forecast=forecast)
 
     def _normalize_offgrid_mode(self, raw: Any) -> str:
         if raw is None:
@@ -2868,8 +3239,13 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         cell_voltage_emergency_active: bool,
         additional_battery_charge_w: float,
         pv_charge_latched: bool,
+        forecast_status: str,
+        pv_outlook: str,
+        forecast_remaining_today_kwh: float,
+        battery_capacity_kwh: float,
     ) -> tuple[bool, float, str]:
-        enabled = bool(profile.get("PV_HOUSELOAD_PASSTHROUGH", False))
+        capabilities = DeviceCapabilities.from_profile(profile)
+        enabled = capabilities.supports_pv_house_load_passthrough
 
         active = bool(self._persist.get("pv_houseload_passthrough_active", False))
         started_ts_raw = self._persist.get("pv_houseload_passthrough_started_ts")
@@ -2964,12 +3340,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     except (TypeError, ValueError):
                         daylight_available = False
 
-            mppt_clips_without_output = bool(
-                profile.get(
-                    "MPPT_CLIPS_WITHOUT_OUTPUT",
-                    False,
-                )
-            )
+            mppt_clips_without_output = capabilities.mppt_clips_without_output
             full_soc_threshold = max(
                 float(soc_min),
                 float(soc_max) - 1.0,
@@ -2980,6 +3351,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             battery_near_full = bool(
                 float(soc) >= full_soc_release_threshold
+            )
+            forecast_surplus_expected = forecast_supports_early_pv_passthrough(
+                forecast_status=str(forecast_status),
+                pv_outlook=str(pv_outlook),
+                remaining_today_kwh=float(forecast_remaining_today_kwh or 0.0),
+                battery_capacity_kwh=float(battery_capacity_kwh or 0.0),
+                soc=float(soc),
+                soc_max=float(soc_max),
             )
             forced = bool(
                 mppt_clips_without_output
@@ -3046,7 +3425,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
                 stop_reason = "full_battery_pv_passthrough"
 
-            elif mppt_clips_without_output and not battery_near_full:
+            elif (
+                mppt_clips_without_output
+                and not battery_near_full
+                and not forecast_surplus_expected
+            ):
                 active = False
                 export_counter = 0
                 target_w = 0.0
@@ -3094,7 +3477,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     and enough_house_load
                     and useful_target
                     and export_val < float(pv_charge_start_export_w or 0.0)
-                    and import_val <= max(250.0, house_val * 0.50)
+                    and (
+                        forecast_surplus_expected
+                        or import_val <= max(250.0, house_val * 0.50)
+                    )
                 ):
                     active = True
                     self._persist["pv_houseload_passthrough_started_ts"] = (
@@ -3189,151 +3575,102 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._persist["cell_voltage_discharge_blocked"] = blocked
         return blocked
 
-    def _parse_price_points(self, now) -> list[PricePoint]:
-        """
-        Universal price parser (production hardened).
-
-        Supports:
-        - CKW dynamic tariff (direct API, no HA sensor needed)
-        - Tibber (attributes.data[])
-        - Octopus (attributes.rates[])
-        - Octopus Germany (unit_rate_forecast[])
-        - EPEX style exports
-        - Generic 15min APIs
-
-        Handles:
-        - Mixed timezones (UTC / CET)
-        - Broken Octopus slots (end <= start)
-        - DST edge cases
-        """
-
-        if self._ckw_enabled():
-            tz = dt_util.get_default_time_zone()
-            if now.tzinfo is None:
-                now_local = dt_util.replace(now, tzinfo=tz)
-            else:
-                now_local = now.astimezone(tz)
-            return [p for p in self._ckw_prices if p.end > now_local]
-
-        if not self.entities.price_export:
-            return []
-
-        st = self.hass.states.get(self.entities.price_export)
-        if not st:
-            return []
-
-        attrs = st.attributes or {}
-
-        raw = (
-            attrs.get("rates")
-            or attrs.get("data")
-            or attrs.get("unit_rate_forecast")
+    def _update_cell_voltage_emergency_hysteresis(
+        self,
+        global_lowest_cell_voltage: float | None,
+    ) -> bool:
+        now_utc = self._clock.utc_now()
+        previously_active = bool(
+            self._persist.get("cell_voltage_emergency_active", False)
+        )
+        started_at = self._parse_commit_dt(
+            self._persist.get("cell_voltage_emergency_started_at")
         )
 
-        if not raw:
-            return []
+        if previously_active and started_at is None:
+            # Safe upgrade/restart fallback for an already active emergency
+            # charge without a stored Beta4 start timestamp.
+            started_at = now_utc
 
-        if isinstance(raw, dict):
-            raw = raw.get("rates") or raw.get("data") or raw.get("timeslots")
+        minimum_charge_elapsed = cell_voltage_emergency_minimum_elapsed(
+            started_at=started_at if previously_active else None,
+            now=now_utc,
+        )
 
-        if not isinstance(raw, list):
-            return []
+        active = next_cell_voltage_emergency_state(
+            previously_active=previously_active,
+            protection_enabled=self._cell_voltage_protection_enabled(),
+            lowest_cell_voltage=global_lowest_cell_voltage,
+            warning_voltage=float(
+                self._get_setting(
+                    SETTING_CELL_VOLTAGE_WARNING,
+                    DEFAULT_CELL_VOLTAGE_WARNING,
+                )
+            ),
+            resume_voltage=float(
+                self._get_setting(
+                    SETTING_CELL_VOLTAGE_RESUME,
+                    DEFAULT_CELL_VOLTAGE_RESUME,
+                )
+            ),
+            minimum_charge_elapsed=minimum_charge_elapsed,
+        )
 
-        tz = dt_util.get_default_time_zone()
-
-        def normalize(dt):
-            if not dt:
-                return None
-            if dt.tzinfo is None:
-                return dt.replace(tzinfo=tz)
-            return dt.astimezone(tz)
-
-        now = normalize(now)
-
-        out: list[PricePoint] = []
-
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-
-            if "validFrom" in item and "validTo" in item:
-                start = item.get("validFrom")
-                end = item.get("validTo")
-
-                cents = None
-                uinfo = item.get("unitRateInformation") or {}
-                rates_list = uinfo.get("rates") or []
-                if rates_list and isinstance(rates_list[0], dict):
-                    cents = _to_float(
-                        rates_list[0].get("latestGrossUnitRateCentsPerKwh"),
-                        None,
-                    )
-
-                if not start or not end or cents is None:
-                    continue
-
-                t_start = normalize(dt_util.parse_datetime(str(start)))
-                t_end = normalize(dt_util.parse_datetime(str(end)))
-
-                if not t_start or not t_end:
-                    continue
-
-                if t_end <= t_start:
-                    continue
-
-                if t_end <= now:
-                    continue
-
-                price = float(cents) / 100.0
-                out.append(PricePoint(start=t_start, end=t_end, price=price))
-                continue
-
-            start = (
-                item.get("start_time")
-                or item.get("starts_at")
-                or item.get("start")
-                or item.get("time")
+        if active:
+            if started_at is None:
+                started_at = now_utc
+            self._persist["cell_voltage_emergency_started_at"] = (
+                started_at.isoformat()
             )
+        else:
+            self._persist["cell_voltage_emergency_started_at"] = None
 
-            end = (
-                item.get("end_time")
-                or item.get("ends_at")
-                or item.get("end")
+        self._persist["cell_voltage_emergency_active"] = active
+        return active
+
+    def _update_cell_voltage_post_emergency_discharge_lock(
+        self,
+        *,
+        cell_voltage_emergency_active: bool,
+        decision_action: str,
+        decision_reason: str,
+        measured_charge_w: float,
+        soc: float,
+        resume_soc: float,
+        global_lowest_cell_voltage: float | None,
+    ) -> bool:
+        """Keep discharge blocked after a pure cell-voltage emergency charge."""
+        resume_voltage = float(
+            self._get_setting(
+                SETTING_CELL_VOLTAGE_RESUME,
+                DEFAULT_CELL_VOLTAGE_RESUME,
             )
-
-            p = _to_float(
-                item.get("price_per_kwh")
-                or item.get("value_inc_vat")
-                or item.get("value")
-                or item.get("unit_rate")
-                or item.get("price"),
-                None,
-            )
-
-            if not start or p is None:
-                continue
-
-            t_start = normalize(dt_util.parse_datetime(str(start)))
-            if not t_start:
-                continue
-
-            if end:
-                t_end = normalize(dt_util.parse_datetime(str(end)))
-                if not t_end:
-                    continue
-            else:
-                t_end = t_start + timedelta(minutes=15)
-
-            if t_end <= t_start:
-                continue
-
-            if t_end <= now:
-                continue
-
-            out.append(PricePoint(start=t_start, end=t_end, price=float(p)))
-
-        out.sort(key=lambda x: x.start)
-        return out
+        )
+        locked, normal_charge_observed = next_cell_voltage_discharge_lock_state(
+            previously_locked=bool(
+                self._persist.get(
+                    "cell_voltage_post_emergency_discharge_locked", False
+                )
+            ),
+            normal_charge_observed=bool(
+                self._persist.get("cell_voltage_normal_charge_observed", False)
+            ),
+            cell_voltage_emergency_active=bool(cell_voltage_emergency_active),
+            decision_action=str(decision_action or ""),
+            decision_reason=str(decision_reason or ""),
+            measured_charge_w=float(measured_charge_w or 0.0),
+            soc=float(soc),
+            resume_soc=float(resume_soc),
+            lowest_cell_voltage=global_lowest_cell_voltage,
+            resume_voltage=resume_voltage,
+            protection_enabled=self._cell_voltage_protection_enabled(),
+            battery_full=bool(self._get_soc_limit() == 1),
+        )
+        self._persist["cell_voltage_post_emergency_discharge_locked"] = locked
+        self._persist["cell_voltage_normal_charge_observed"] = (
+            normal_charge_observed
+        )
+        return locked
 
     def _season_detection(
         self,
@@ -3371,7 +3708,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         
         try:
-            local_now = dt_util.as_local(now or dt_util.utcnow())
+            local_now = dt_util.as_local(now or self._clock.utc_now())
             season_eval_hour = local_now.hour + (local_now.minute / 60.0)
         except Exception:
             season_eval_hour = 12.0
@@ -3428,30 +3765,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return season
 
     def _map_ai_status(self, ai_mode: str, action: str, reason: str) -> str:
-        if ai_mode == AI_MODE_MANUAL:
-            return AI_STATUS_MANUAL
-        if action == "passthrough" or reason == "pv_house_load_passthrough":
-            return AI_STATUS_STANDBY
-        if action == "emergency":
-            return AI_STATUS_EMERGENCY_CHARGE
-        if action == "charge":
-            if reason == "pv_surplus_charge":
-                return AI_STATUS_CHARGE_SURPLUS
-            if (
-                "valley" in reason
-                or "planning" in reason
-                or "price" in reason
-                or reason == "summer_peak_reserve_charge"
-            ):
-                return AI_STATUS_PRICE_CHARGE
-            return AI_STATUS_CHARGE_SURPLUS
-        if action == "discharge":
-            if "very_expensive" in reason or "adaptive_peak" in reason:
-                return AI_STATUS_VERY_EXPENSIVE_FORCE
-            if "price" in reason:
-                return AI_STATUS_EXPENSIVE_DISCHARGE
-            return AI_STATUS_COVER_DEFICIT
-        return AI_STATUS_STANDBY
+        source_reason = None
+        if reason == "charge_commit_active":
+            source_reason = str(
+                self._persist.get("charge_commit_source_reason", "") or ""
+            )
+        return map_ai_status(
+            ai_mode,
+            action,
+            reason,
+            source_reason=source_reason,
+        )
 
     def _map_reco(self, action: str) -> str:
         if action == "passthrough":
@@ -3514,6 +3838,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> dict[str, Any]:
         """Stop the active command and expose a deterministic safe-idle state."""
 
+        package = self._debug_recorder.tick(now=self._clock.utc_now())
+        if package is not None:
+            await self._async_export_debug_package(package)
+
         current_mode = str(
             self._state(self.entities.ac_mode)
             or self._persist.get("last_set_mode")
@@ -3526,10 +3854,32 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._persist.get("last_set_output_w", 0.0) or 0.0
         )
 
-        if current_mode == ZENDURE_MODE_INPUT or last_input_w > 0.0:
-            await self._set_input_limit(0.0, force=True)
-        elif current_mode == ZENDURE_MODE_OUTPUT or last_output_w > 0.0:
-            await self._set_output_limit(0.0, force=True)
+        stop_input = bool(
+            current_mode == ZENDURE_MODE_INPUT or last_input_w > 0.0
+        )
+        stop_output = bool(
+            not stop_input
+            and (
+                current_mode == ZENDURE_MODE_OUTPUT
+                or last_output_w > 0.0
+            )
+        )
+        safe_idle_command = DeviceCommand(
+            ac_mode=("input" if stop_input else "output"),
+            input_limit_w=0.0,
+            output_limit_w=0.0,
+            reason=reason,
+            should_write_mode=False,
+            should_write_input=stop_input,
+            should_write_output=stop_output,
+            skipped=not (stop_input or stop_output),
+            skip_reason=("none" if stop_input or stop_output else "unchanged"),
+            metadata={"command_path": "safe_idle"},
+        )
+        await self._execute_device_command(
+            safe_idle_command,
+            force_power=True,
+        )
 
         self._persist["last_set_input_w"] = 0
         self._persist["last_set_output_w"] = 0
@@ -3542,7 +3892,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._persist["regulation_last_resolved_mode"] = "idle"
         self._persist["regulation_skipped_write_reason"] = reason
         self._persist["debug"] = reason.upper()
-        self._persist["last_ts"] = dt_util.utcnow().isoformat()
+        self._persist["last_ts"] = self._clock.utc_now().isoformat()
         await self._save()
 
         details = {
@@ -3560,6 +3910,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "ai_status": AI_STATUS_STANDBY,
             "recommendation": RECO_STANDBY,
             "debug": reason.upper(),
+            **self._debug_status_data(),
             "details": details,
             "decision_reason": reason,
             "next_action_time": None,
@@ -3579,12 +3930,13 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             if self._persist.get("last_ts") is None:
                 await self._load()
-                self._persist["last_ts"] = dt_util.utcnow().isoformat()
+                self._persist["last_ts"] = self._clock.utc_now().isoformat()
 
-            now = dt_util.utcnow()
+            now = self._clock.utc_now()
 
             soc = _to_float(self._state(self.entities.soc), None)
             pv = _to_float(self._state(self.entities.pv), None)
+            native_pv = _to_float(self._state(self.entities.native_pv), None)
 
             if soc is None or not 0.0 <= float(soc) <= 100.0:
                 return await self._enter_safe_idle(
@@ -3598,6 +3950,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             soc = float(soc)
             pv_sensor_valid = pv is not None
             pv_w = float(pv or 0.0)
+            native_pv_configured = bool(self.entities.native_pv)
+            native_pv_sensor_valid = native_pv is not None
+            native_pv_w = float(native_pv or 0.0)
 
             battery_capacity_kwh = self._get_battery_capacity()
 
@@ -3611,8 +3966,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._persist["prev_soc"] = soc
 
             profile = self._get_active_profile()
+            device_capabilities = self._device_profile.capabilities
             
-            feed_in_tariff = self._get_feed_in_tariff()
+            export_market_price = self._get_export_market_price(now)
+            feed_in_tariff = float(
+                export_market_price.current_price
+                if export_market_price.valid
+                else 0.0
+            )
 
             offgrid_raw = _to_float(
                 self._state(self.entities.offgrid_power),
@@ -3623,12 +3984,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             offgrid_mode = self._normalize_offgrid_mode(offgrid_mode_raw)
 
             supports_offgrid_socket = bool(
-                profile.get("SUPPORTS_OFFGRID_SOCKET", False)
+                device_capabilities.supports_offgrid_socket
             ) or bool(self.entities.offgrid_power)
 
-            supports_offgrid_input = bool(
-                profile.get("SUPPORTS_OFFGRID_INPUT", False)
-            )
+            supports_offgrid_input = device_capabilities.supports_offgrid_input
 
             offgrid_load_active_w = float(
                 profile.get("OFFGRID_LOAD_ACTIVE_W", 50.0) or 50.0
@@ -3692,16 +4051,20 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 0.0 <= float(soc_min) < float(soc_max) <= 100.0
             )
             power_limits_valid = bool(
-                float(max_charge) > 0.0
+                float(max_charge) >= 0.0
                 and float(max_discharge) > 0.0
                 and float(profile_max_in) > 0.0
                 and float(profile_max_out) > 0.0
             )
 
-            expensive = self._get_setting(SETTING_PRICE_THRESHOLD, DEFAULT_PRICE_THRESHOLD)
+            price_profile = price_input_profile(self.price_currency)
+            expensive = self._get_setting(
+                SETTING_PRICE_THRESHOLD,
+                price_profile.default_expensive_threshold,
+            )
             very_expensive = self._get_setting(
                 SETTING_VERY_EXPENSIVE_THRESHOLD,
-                DEFAULT_VERY_EXPENSIVE_THRESHOLD,
+                price_profile.default_very_expensive_threshold,
             )
             emergency_soc = self._get_setting(SETTING_EMERGENCY_SOC, DEFAULT_EMERGENCY_SOC)
             emergency_w = self._get_setting(SETTING_EMERGENCY_CHARGE, DEFAULT_EMERGENCY_CHARGE)
@@ -3772,8 +4135,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if last is None or (now - last).total_seconds() > CKW_FETCH_INTERVAL * 60:
                     await self._fetch_ckw_prices()
 
-            price_now = self._get_price_now()
-            price_points = self._parse_price_points(now)
+            import_market_price = self._get_import_market_price(now)
+            price_now = (
+                import_market_price.current_price
+                if import_market_price.valid
+                else None
+            )
+            price_points = list(
+                import_market_price.forecast.points
+                if import_market_price.forecast is not None
+                else ()
+            )
 
             forecast_summary = build_forecast_summary(
                 hass=self.hass,
@@ -3781,6 +4153,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 tomorrow_entity_id=self.entities.pv_forecast_tomorrow,
                 installed_pv_wp=self._get_installed_pv_wp(),
                 forecast_base_load_w=float(forecast_base_load_w),
+                clock=self._clock,
             )
 
             additional_battery_charge_w = _to_float(
@@ -3879,8 +4252,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     additional_battery_discharge_w=float(
                         additional_battery_discharge_w or 0.0
                     ),
-                    mppt_clips_without_output=bool(
-                        profile.get("MPPT_CLIPS_WITHOUT_OUTPUT", False)
+                    mppt_clips_without_output=(
+                        device_capabilities.mppt_clips_without_output
                     ),
                 )
             )
@@ -3941,7 +4314,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 model=learned_slot_model,
                 readiness=learned_readiness,
                 now=now,
-                price_points=price_points,
+                market_price=import_market_price,
                 forecast=forecast_summary,
                 total_battery_capacity_kwh=float(battery_capacity_kwh),
                 current_soc=float(soc),
@@ -4001,6 +4374,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 forecast_tomorrow_kwh=float(
                     forecast_summary.tomorrow_kwh
                 ),
+                grid_import_w=float(grid_import or 0.0),
                 metadata={
                     "legacy_season_mode": str(season),
                     "grid_import_w": round(
@@ -4032,6 +4406,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             cell_voltage_discharge_blocked = self._update_cell_voltage_discharge_hysteresis(
                 global_lowest_cell_voltage
             )
+            cell_voltage_discharge_blocked = bool(
+                cell_voltage_discharge_blocked
+                or self._persist.get(
+                    "cell_voltage_post_emergency_discharge_locked", False
+                )
+            )
 
             discharge_blocked_by_soc_min = self._update_discharge_resume_hysteresis(
                 soc=float(soc),
@@ -4039,7 +4419,24 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 resume_margin=float(resume_margin),
             )
 
-            if float(soc) <= float(soc_min):
+            (
+                trade_soc_min_reset_count,
+                trade_cycle_below_soc_min,
+            ) = trade_soc_min_reset_state(
+                soc=float(soc),
+                soc_min=float(soc_min),
+                previous_count=int(
+                    self._persist.get("trade_soc_min_reset_count", 0) or 0
+                ),
+                previously_confirmed=bool(
+                    self._persist.get("trade_cycle_below_soc_min", False)
+                ),
+            )
+            self._persist["trade_soc_min_reset_count"] = (
+                trade_soc_min_reset_count
+            )
+
+            if trade_cycle_below_soc_min:
                 self._persist["trade_avg_charge_price"] = 0.0
                 self._persist["trade_charged_kwh"] = 0.0
                 self._persist["trade_cycle_below_soc_min"] = True
@@ -4047,15 +4444,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elif float(soc) > float(soc_min):
                 self._persist["trade_cycle_below_soc_min"] = False
 
-            cell_voltage_emergency_active = bool(
-                self._cell_voltage_protection_enabled()
-                and global_lowest_cell_voltage is not None
-                and float(global_lowest_cell_voltage)
-                <= float(
-                    self._get_setting(
-                        SETTING_CELL_VOLTAGE_WARNING,
-                        DEFAULT_CELL_VOLTAGE_WARNING,
-                    )
+            cell_voltage_emergency_active = (
+                self._update_cell_voltage_emergency_hysteresis(
+                    global_lowest_cell_voltage
                 )
             )
 
@@ -4093,10 +4484,16 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         cell_voltage_emergency_active=bool(cell_voltage_emergency_active),
                         additional_battery_charge_w=float(additional_battery_charge_w or 0.0),
                         pv_charge_latched=bool(pv_charge_latched),
+                        forecast_status=str(forecast_summary.status),
+                        pv_outlook=str(forecast_summary.pv_outlook),
+                        forecast_remaining_today_kwh=float(
+                            forecast_summary.remaining_today_kwh
+                        ),
+                        battery_capacity_kwh=float(battery_capacity_kwh),
                     )
                 )
 
-            ctx = DecisionContext(
+            ctx = RuntimeSnapshot(
                 now=now,
                 soc=soc,
                 soc_min=float(soc_min),
@@ -4114,13 +4511,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._persist.get("last_set_output_w", 0.0)
                     or 0.0
                 ),
-                price_now=price_now,
                 avg_charge_price=self._persist.get("trade_avg_charge_price"),
                 expensive_threshold=float(expensive),
                 very_expensive_threshold=float(very_expensive),
                 profit_margin_pct=float(profit_margin_pct),
-                price_points=price_points,
-                feed_in_tariff=float(feed_in_tariff),
+                import_market_price=import_market_price,
+                export_market_price=export_market_price,
                 ai_mode=ai_mode,
                 manual_action=manual_action,
                 season=season,
@@ -4254,6 +4650,24 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             decision = self._engine.evaluate(ctx)
             strategy_selection = self._engine.last_strategy_selection
 
+            cell_voltage_post_emergency_discharge_locked = (
+                self._update_cell_voltage_post_emergency_discharge_lock(
+                    cell_voltage_emergency_active=bool(
+                        cell_voltage_emergency_active
+                    ),
+                    decision_action=str(decision.action or ""),
+                    decision_reason=str(decision.reason or ""),
+                    measured_charge_w=float(battery_charge_w or 0.0),
+                    soc=float(soc),
+                    resume_soc=float(soc_min) + max(0.0, float(resume_margin)),
+                    global_lowest_cell_voltage=global_lowest_cell_voltage,
+                )
+            )
+            cell_voltage_discharge_blocked = bool(
+                cell_voltage_discharge_blocked
+                or cell_voltage_post_emergency_discharge_locked
+            )
+
             strict_low_soc_protection = bool(profile.get("LOW_SOC_PROTECTION_STRICT", False))
             low_soc_pv_charge_requires_export = bool(
                 profile.get("LOW_SOC_PV_CHARGE_REQUIRES_EXPORT", False)
@@ -4331,16 +4745,29 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ai_mode == AI_MODE_SUMMER
             )
 
-            automatic_economic_hold_active = bool(
-                ai_mode == AI_MODE_AUTOMATIC
-                and automatic_strategy_context.active
-                and bool(
+            previous_regulation_state = str(
+                self._persist.get("regulation_active_state", "none") or "none"
+            )
+
+            last_output_w = max(
+                0.0,
+                float(self._persist.get("last_set_output_w", 0.0) or 0.0),
+            )
+
+            automatic_economic_hold_active = maintain_active_economic_discharge(
+                automatic_mode_active=(ai_mode == AI_MODE_AUTOMATIC),
+                strategy_active=bool(automatic_strategy_context.active),
+                strategy_allows_discharge=bool(
                     automatic_strategy_context.metadata.get(
                         "automatic_discharge_allowed",
                         False,
                     )
-                )
-                and self._engine._is_effective_discharge_price_reached(ctx)
+                ),
+                effective_price_reached=(
+                    self._engine._is_effective_discharge_price_reached(ctx)
+                ),
+                previous_regulation_state=previous_regulation_state,
+                active_output_w=last_output_w,
             )
 
             discharge_hold_mode_active = bool(
@@ -4349,6 +4776,25 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
             original_discharge_reason = str(decision.reason or "")
+
+            previous_economic_discharge_source_reason = str(
+                self._persist.get(
+                    "automatic_economic_discharge_source_reason",
+                    "",
+                )
+                or ""
+            )
+
+            economic_discharge_source_reason = (
+                economic_discharge_continuation_reason(
+                    hold_active=automatic_economic_hold_active,
+                    decision_action=str(decision.action or ""),
+                    decision_reason=original_discharge_reason,
+                    previous_source_reason=(
+                        previous_economic_discharge_source_reason
+                    ),
+                )
+            )
 
             previous_discharge_w = max(
                 0.0,
@@ -4359,6 +4805,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
                     or 0.0
                 ),
+            )
+
+            active_discharge_output_w = max(
+                previous_discharge_w,
+                last_output_w,
             )
 
             stable_export_cycles = int(
@@ -4403,12 +4854,18 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 discharge_hold_mode_active
                 and ai_mode != AI_MODE_MANUAL
                 and decision.action == "idle"
-                and original_discharge_reason in {
-                    "idle",
-                    "state_idle",
-                    "standby",
-                }
-                and previous_discharge_w > 0.0
+                and (
+                    (
+                        autarky_cover_mode_active
+                        and original_discharge_reason
+                        in {"idle", "state_idle", "standby"}
+                    )
+                    or (
+                        automatic_economic_hold_active
+                        and economic_discharge_source_reason is not None
+                    )
+                )
+                and active_discharge_output_w > 0.0
                 and float(soc) > float(soc_min)
                 and not bool(discharge_blocked_by_soc_min)
                 and not bool(cell_voltage_discharge_blocked)
@@ -4420,7 +4877,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 hold_discharge_w = max(
                     self._engine._discharge_keepalive_w(ctx),
                     min(
-                        previous_discharge_w,
+                        active_discharge_output_w,
                         float(max_discharge),
                     ),
                 )
@@ -4428,7 +4885,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 hold_reason = (
                     "summer_cover_deficit"
                     if autarky_cover_mode_active
-                    else "price_based_discharge"
+                    else economic_discharge_source_reason
                 )
 
                 decision = DecisionResult(
@@ -4468,6 +4925,19 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 self._persist["summer_discharge_latch_reason"] = "none"
                 self._persist["automatic_discharge_latch_reason"] = "none"
+
+            if (
+                ai_mode == AI_MODE_AUTOMATIC
+                and economic_discharge_source_reason is not None
+                and str(decision.action or "") == "discharge"
+            ):
+                self._persist[
+                    "automatic_economic_discharge_source_reason"
+                ] = economic_discharge_source_reason
+            else:
+                self._persist[
+                    "automatic_economic_discharge_source_reason"
+                ] = ""
             
             regulation_runtime = self._get_regulation_runtime_state()
 
@@ -4603,7 +5073,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             charge_pricing_reason = self._charge_pricing_reason(decision.reason)
 
             stored_commit_price = _to_float(
-                self._persist.get("charge_commit_price_eur_kwh"),
+                self._persist.get("charge_commit_price_per_kwh"),
                 None,
             )
             pricing_price_now = (
@@ -4621,7 +5091,111 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 feed_in_tariff=float(feed_in_tariff),
                 battery_charge_w=float(battery_charge_w),
                 decision_reason=charge_pricing_reason,
+                native_pv_w=float(native_pv_w),
+                native_pv_valid=bool(
+                    native_pv_configured and native_pv_sensor_valid
+                ),
             )
+
+            # V4.6.0 economics energy accounting uses measured battery/grid
+            # power and the already centralized charge-source attribution.
+            # Each physical direction is represented once: total grid export
+            # remains an export flow, while its battery-attributable subset is
+            # tracked separately for later benefit calculations.
+            battery_to_grid_w = min(
+                float(battery_discharge_w), float(grid_export)
+            )
+            battery_to_home_w = max(
+                0.0, float(battery_discharge_w) - battery_to_grid_w
+            )
+            economics_energy_result = self._energy_accumulator.add_sample(
+                sampled_at=now,
+                power=EconomicPowerFlows(
+                    grid_to_battery_w=float(
+                        current_charge_pricing.grid_part_w
+                        if current_charge_pricing.active
+                        else 0.0
+                    ),
+                    pv_to_battery_w=float(
+                        current_charge_pricing.pv_part_w
+                        if current_charge_pricing.active
+                        else 0.0
+                    ),
+                    grid_export_w=float(grid_export),
+                    battery_to_home_w=battery_to_home_w,
+                    battery_to_grid_w=battery_to_grid_w,
+                ),
+            )
+            economics_energy_snapshot = self._energy_accumulator.snapshot()
+            self._persist[
+                "economics_energy_state"
+            ] = self._energy_accumulator.to_state()
+            economics_day = economics_energy_snapshot.day.isoformat()
+            if self._persist.get("economics_money_day") != economics_day:
+                self._economics_engine.reset_daily()
+            priceable_total = priceable_energy_flows(
+                economics_energy_result.energy,
+                import_price=import_market_price,
+                export_price=export_market_price,
+            )
+            priceable_daily = priceable_energy_flows(
+                economics_energy_result.daily_energy,
+                import_price=import_market_price,
+                export_price=export_market_price,
+            )
+            self._economics_engine.record_grid_flows(
+                flows=priceable_total.flows,
+                daily_flows=priceable_daily.flows,
+                import_price=import_market_price,
+                export_price=export_market_price,
+            )
+            self._economics_engine.record_battery_value_flows(
+                flows=priceable_total.flows,
+                daily_flows=priceable_daily.flows,
+                import_price=import_market_price,
+                export_price=export_market_price,
+            )
+            economics_daily_snapshot = self._economics_engine.daily_snapshot()
+            economics_total_snapshot = self._economics_engine.total_snapshot()
+            self._persist["economics_money_day"] = economics_day
+            self._persist[
+                "economics_money_state"
+            ] = self._economics_engine.to_state()
+            economics_runtime_values = {
+                **{
+                    f"economics_daily_{key}": value
+                    for key, value in economics_daily_snapshot.as_dict().items()
+                    if key != "currency"
+                },
+                **{
+                    f"economics_total_{key}": value
+                    for key, value in economics_total_snapshot.as_dict().items()
+                    if key != "currency"
+                },
+                **{
+                    f"economics_daily_{key}": value
+                    for key, value in economics_energy_snapshot.daily.as_dict().items()
+                },
+                **{
+                    f"economics_total_{key}": value
+                    for key, value in economics_energy_snapshot.total.as_dict().items()
+                },
+                "economics_average_grid_charge_price": (
+                    economics_total_snapshot.average_grid_charge_price
+                ),
+                "economics_average_pv_opportunity_value": (
+                    economics_total_snapshot.average_pv_opportunity_value
+                ),
+                "economics_average_export_price": (
+                    economics_total_snapshot.average_export_price
+                ),
+                "economics_average_battery_discharge_value": (
+                    economics_total_snapshot.average_battery_discharge_value
+                ),
+                "economics_total_economic_efficiency_pct": (
+                    self._economics_engine.total_economic_efficiency_pct()
+                ),
+            }
 
             sample_duration_seconds = float(UPDATE_INTERVAL)
             try:
@@ -4665,7 +5239,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         delta_charge_pricing.is_grid_charge
                     )
                     charge_price_applied = float(
-                        delta_charge_pricing.price_eur_kwh
+                        delta_charge_pricing.price_per_kwh
                     )
                     charge_source = str(delta_charge_pricing.source)
                     charge_grid_part_w = float(
@@ -4684,7 +5258,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             "trade_avg_charge_price"
                         )
                         applied_price = float(
-                            delta_charge_pricing.price_eur_kwh
+                            delta_charge_pricing.price_per_kwh
                         )
                         new_total_kwh = charged_kwh + float(delta_kwh)
 
@@ -4715,7 +5289,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # economic energy ledger still waits for a real SoC increase.
                 is_grid_charge = bool(current_charge_pricing.is_grid_charge)
                 charge_price_applied = float(
-                    current_charge_pricing.price_eur_kwh
+                    current_charge_pricing.price_per_kwh
                 )
                 charge_source = str(current_charge_pricing.source)
                 charge_grid_part_w = float(current_charge_pricing.grid_part_w)
@@ -4732,7 +5306,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             #
             # The real energy ledger is still updated only by delta_kwh > 0.
             # This fallback only prevents the average charge price from staying
-            # at 0.00 €/kWh throughout a real AC charge because of coarse or
+            # at a zero price throughout a real AC charge because of coarse or
             # delayed SoC updates.
             current_trade_avg_price = _to_float(
                 self._persist.get("trade_avg_charge_price"),
@@ -4818,8 +5392,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         float(price_now) - float(avg_price)
                     ) * float(accounted_sold_kwh)
 
-                    self._persist["profit_eur"] = (
-                        float(self._persist.get("profit_eur", 0.0))
+                    self._persist["profit"] = (
+                        float(self._persist.get("profit", 0.0))
                         + float(profit)
                     )
 
@@ -4836,12 +5410,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             adaptive_peak_active = decision.reason == "adaptive_peak_discharge"
             
-            # V4.3.0-dev4.0:
-            # Calculate the provisional PV/grid split through the dedicated
-            # ChargeSourceAllocator.
-            #
-            # Diagnostic only in dev4.0. The result does not yet modify
-            # decision.charge_w or the final device command.
+            # V4.3.1-dev9:
+            # Calculate the PV/grid split for an active strategic AC charge binding.
+            # The binding target is the TOTAL battery charge target. Usable PV
+            # therefore reduces only the AC/grid share instead of being added on
+            # top of the full binding target.
             charge_source_allocation = self._charge_source_allocator.allocate(
                 charge_commit_active=bool(
                     self._persist.get("charge_commit_active", False)
@@ -4859,7 +5432,39 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 pv_w=float(pv_w or 0.0),
                 house_load_w=float(house_load or 0.0),
                 max_grid_input_w=float(max_charge),
+                native_pv_w=float(native_pv_w),
+                native_pv_valid=bool(
+                    native_pv_configured and native_pv_sensor_valid
+                ),
             )
+
+            if (
+                charge_source_allocation.active
+                and bool(
+                    self._persist.get(
+                        "charge_commit_allow_pv_blend",
+                        True,
+                    )
+                )
+                and str(decision.action or "") == "charge"
+                and str(decision.ac_mode or "") == "input"
+                and (
+                    str(decision.reason or "") == "charge_commit_active"
+                    or str(decision.reason or "")
+                    in CHARGE_COMMIT_SOURCE_REASONS
+                )
+            ):
+                # Keep the binding active even when PV covers the complete
+                # target. The SF AC input expects TOTAL charging power; using
+                # only grid_requested_w here would turn a PV-covered target
+                # into INPUT 0 W and export the available surplus.
+                decision.charge_w = max(
+                    0.0,
+                    float(
+                        charge_source_allocation.device_input_w
+                        or 0.0
+                    ),
+                )
                 
             # Store final effective previous power only after all protection and limit
             # blockers have modified the decision. Otherwise a blocked discharge can leave
@@ -4968,8 +5573,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "charge_pv_allocated_w": float(
                         charge_source_allocation.pv_allocated_w
                     ),
+                    "charge_native_pv_available_w": float(
+                        charge_source_allocation.native_pv_available_w
+                    ),
+                    "charge_native_pv_allocated_w": float(
+                        charge_source_allocation.native_pv_allocated_w
+                    ),
                     "charge_grid_requested_w": float(
                         charge_source_allocation.grid_requested_w
+                    ),
+                    "charge_device_input_w": float(
+                        charge_source_allocation.device_input_w
                     ),
                     "charge_unfilled_w": float(
                         charge_source_allocation.unfilled_w
@@ -5088,19 +5702,16 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # The PowerController does not decide whether charging or discharging
             # should start. It only uses these values to shift the small technical
             # target range toward slight export when that is economically preferable.
-            feed_in_tariff_configured = bool(
-                CONF_FEED_IN_TARIFF in self.entry.options
-                or CONF_FEED_IN_TARIFF in self.entry.data
-            )
+            feed_in_tariff_configured = bool(export_market_price.valid)
 
-            battery_value_eur_kwh = _to_float(
+            battery_value_per_kwh = _to_float(
                 self._persist.get("trade_avg_charge_price"),
                 None,
             )
 
             # Compatibility fallback for older persisted installations.
-            if battery_value_eur_kwh is None:
-                battery_value_eur_kwh = _to_float(
+            if battery_value_per_kwh is None:
+                battery_value_per_kwh = _to_float(
                     self._persist.get("avg_charge_price"),
                     None,
                 )
@@ -5110,10 +5721,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "feed_in_tariff_configured": bool(
                         feed_in_tariff_configured
                     ),
-                    "feed_in_tariff_eur_kwh": float(
+                    "feed_in_tariff_per_kwh": float(
                         feed_in_tariff or 0.0
                     ),
-                    "battery_value_eur_kwh": battery_value_eur_kwh,
+                    "battery_value_per_kwh": battery_value_per_kwh,
                 }
             )
 
@@ -5229,6 +5840,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 grid=grid_history_state,
                 previous_input_w=float(self._persist.get("last_set_input_w", 0.0) or 0.0),
                 previous_output_w=float(self._persist.get("last_set_output_w", 0.0) or 0.0),
+                max_input_w=float(max_charge),
+                max_output_w=float(max_discharge),
             )
             
             regulation_device_command = self._device_command_builder.build(
@@ -5246,6 +5859,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._state(self.entities.output_limit),
                     None,
                 ),
+                max_input_w=float(max_charge),
+                max_output_w=float(max_discharge),
             )
 
             technical_reason = (
@@ -5353,45 +5968,64 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 and str(manual_action) == MANUAL_STANDBY
             )
 
-            manual_standby_active_charge = bool(
-                manual_standby_no_command
-                and (
-                    str(self._state(self.entities.ac_mode) or "")
-                    == ZENDURE_MODE_INPUT
-                    or str(self._persist.get("last_set_mode") or "")
-                    == ZENDURE_MODE_INPUT
-                    or float(
-                        self._persist.get(
-                            "last_set_input_w",
-                            0.0,
-                        )
-                        or 0.0
-                    )
-                    > 0.0
-                )
-            )
-
             if manual_standby_no_command:
-                # Dev5.6 emergency correction:
-                # Manual standby must actively stop an AC charge that BSFAI previously
-                # started. Merely stopping future writes leaves the device in its last
-                # INPUT state and therefore allows grid charging to continue indefinitely.
-                #
-                # After the neutral stop command has been sent, subsequent standby cycles
-                # remain passive and do not fight external control.
-                if manual_standby_active_charge:
-                    # Stop the active INPUT side once, then leave the neutral
-                    # display mode in OUTPUT. Do not follow it with a redundant
-                    # outputLimit=0 command.
-                    await self._set_input_limit(0.0, force=True)
-                    await self._set_ac_mode(ZENDURE_MODE_OUTPUT)
+                # Stop BSFAI's active side exactly once when manual standby is
+                # entered. Later standby cycles stay passive, so external
+                # controls are not overwritten. The persisted latch also makes
+                # an update/restart in an already active standby safe.
+                if not bool(self._persist.get("manual_standby_stop_applied")):
+                    standby_direction = active_power_direction(
+                        current_ac_mode=self._state(self.entities.ac_mode),
+                        last_ac_mode=self._persist.get("last_set_mode"),
+                        current_input_limit_w=_to_float(
+                            self._state(self.entities.input_limit), 0.0
+                        ),
+                        current_output_limit_w=_to_float(
+                            self._state(self.entities.output_limit), 0.0
+                        ),
+                        last_input_limit_w=_to_float(
+                            self._persist.get("last_set_input_w"), 0.0
+                        ),
+                        last_output_limit_w=_to_float(
+                            self._persist.get("last_set_output_w"), 0.0
+                        ),
+                        measured_charge_w=battery_charge_w,
+                        measured_discharge_w=battery_discharge_w,
+                    )
+
+                    standby_command = DeviceCommand(
+                        ac_mode=ZENDURE_MODE_OUTPUT,
+                        input_limit_w=0.0,
+                        output_limit_w=0.0,
+                        reason="manual_standby",
+                        should_write_mode=standby_direction == "input",
+                        should_write_input=standby_direction == "input",
+                        should_write_output=standby_direction == "output",
+                        skipped=standby_direction is None,
+                        skip_reason=(
+                            "none"
+                            if standby_direction is not None
+                            else "unchanged"
+                        ),
+                        metadata={"command_path": "manual_standby"},
+                    )
+                    await self._execute_device_command(
+                        standby_command,
+                        force_power=True,
+                        # Preserve the established INPUT-stop then OUTPUT-mode
+                        # sequence used when entering passive manual standby.
+                        power_before_mode=standby_direction == "input",
+                    )
 
                     self._persist["last_set_input_w"] = 0
                     self._persist["last_set_output_w"] = 0
                     self._persist["last_set_mode"] = ZENDURE_MODE_OUTPUT
+                    self._persist["manual_standby_stop_applied"] = True
 
                     self._persist["regulation_skipped_write_reason"] = (
-                        "manual_standby_stopped_active_charge"
+                        f"manual_standby_stopped_active_{standby_direction}"
+                        if standby_direction
+                        else "manual_standby_no_active_power"
                     )
                 else:
                     self._persist["regulation_skipped_write_reason"] = (
@@ -5399,28 +6033,32 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
 
             else:
-                if regulation_device_command.should_write_mode:
-                    await self._set_ac_mode(ac_mode)
+                self._persist["manual_standby_stop_applied"] = False
+                # DeviceCommandBuilder already applied the write tolerance.
+                # Force the selected active-side command so a direction change
+                # cannot be skipped merely because the Number entity still
+                # displays the same watt value as an earlier cycle.
+                execution_result = await self._execute_device_command(
+                    regulation_device_command,
+                    force_power=True,
+                )
 
-                if regulation_device_command.should_write_input:
-                    # DeviceCommandBuilder already applied the write tolerance.
-                    # Force the selected active-side command so a direction
-                    # change cannot be skipped merely because the Number entity
-                    # still displays the same watt value as an earlier cycle.
-                    await self._set_input_limit(in_w, force=True)
-                    if effectiveness_retry_direction == "input":
-                        self._record_command_effectiveness_retry(
-                            now=now,
-                            direction="input",
-                        )
-
-                if regulation_device_command.should_write_output:
-                    await self._set_output_limit(out_w, force=True)
-                    if effectiveness_retry_direction == "output":
-                        self._record_command_effectiveness_retry(
-                            now=now,
-                            direction="output",
-                        )
+                if (
+                    effectiveness_retry_direction == "input"
+                    and execution_result.input_written
+                ):
+                    self._record_command_effectiveness_retry(
+                        now=now,
+                        direction="input",
+                    )
+                elif (
+                    effectiveness_retry_direction == "output"
+                    and execution_result.output_written
+                ):
+                    self._record_command_effectiveness_retry(
+                        now=now,
+                        direction="output",
+                    )
 
             is_charging = ac_mode == ZENDURE_MODE_INPUT and in_w > 0.0
 
@@ -5442,7 +6080,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 + float(
                     profile.get(
                         "DISCHARGE_DEADBAND_W",
-                        profile.get("DEADBAND_W", 30.0),
+                        30.0,
                     )
                     or 30.0
                 ),
@@ -5621,7 +6259,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 reason=display_decision.reason,
             )
 
-            transparency_ctx = DecisionContext(
+            transparency_ctx = RuntimeSnapshot(
                 now=now,
                 soc=soc,
                 soc_min=float(soc_min),
@@ -5639,13 +6277,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._persist.get("last_set_output_w", 0.0)
                     or 0.0
                 ),
-                price_now=price_now,
                 avg_charge_price=self._persist.get("trade_avg_charge_price"),
                 expensive_threshold=float(expensive),
                 very_expensive_threshold=float(very_expensive),
                 profit_margin_pct=float(profit_margin_pct),
-                price_points=price_points,
-                feed_in_tariff=float(feed_in_tariff),
+                import_market_price=import_market_price,
+                export_market_price=export_market_price,
                 ai_mode=ai_mode,
                 manual_action=manual_action,
                 season=season,
@@ -5777,6 +6414,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "soc": soc,
                 "pv_w": pv_w,
                 "pv_sensor_valid": bool(pv_sensor_valid),
+                "native_pv_w": native_pv_w,
+                "native_pv_configured": native_pv_configured,
+                "native_pv_sensor_valid": native_pv_sensor_valid,
                 "deficit": float(grid_import),
                 "surplus": float(grid_export),
                 "grid_sensor_configured": bool(grid_sensor_configured),
@@ -5814,11 +6454,24 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 
                 "price_now": price_now,
                 "feed_in_tariff": float(feed_in_tariff),
+                "feed_in_tariff_source": str(export_market_price.source),
+                "feed_in_tariff_is_dynamic": bool(
+                    export_market_price.is_dynamic
+                ),
+                "feed_in_tariff_is_fallback": bool(
+                    export_market_price.is_fallback
+                ),
+                "feed_in_tariff_validity": str(
+                    export_market_price.validity
+                ),
                 "pv_opportunity_price": float(feed_in_tariff),
                 "avg_charge_price": self._persist.get("trade_avg_charge_price"),
                 "economic_discharge_threshold": economic_discharge_threshold,
                 "effective_discharge_threshold": effective_discharge_threshold,
-                "profit_eur": float(self._persist.get("profit_eur") or 0.0),
+                # Keep the existing entity runtime key stable so Home Assistant
+                # does not create a replacement entity during the update. The
+                # displayed monetary unit is supplied dynamically by sensor.py.
+                "profit_eur": float(self._persist.get("profit") or 0.0),
                 "delta_kwh": float(delta_kwh),
                 "is_grid_charge": is_grid_charge,
                 "charge_source": charge_source,
@@ -5832,6 +6485,24 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     float(charge_grid_part_w or 0.0) > 0.0
                     and float(charge_pv_part_w or 0.0) > 0.0
                 ),
+                "economics_energy_sample_status": economics_energy_result.status,
+                "economics_accounting_status": priceable_total.status,
+                "economics_energy_elapsed_seconds": float(
+                    economics_energy_result.elapsed_seconds
+                ),
+                "economics_energy_accounted_seconds": float(
+                    economics_energy_result.accounted_seconds
+                ),
+                "economics_energy_day": economics_energy_snapshot.day.isoformat(),
+                "economics_energy_daily": (
+                    economics_energy_snapshot.daily.as_dict()
+                ),
+                "economics_energy_total": (
+                    economics_energy_snapshot.total.as_dict()
+                ),
+                "economics_daily": economics_daily_snapshot.as_dict(),
+                "economics_total": economics_total_snapshot.as_dict(),
+                **economics_runtime_values,
                 "battery_ac_power_raw": battery_power,
                 "battery_ac_power_sensor_valid": bool(
                     battery_ac_power_sensor_valid
@@ -5864,10 +6535,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "mode_write_requested": self._persist.get(
                     "mode_write_requested"
                 ),
-                "mode_write_entity_state": self._persist.get(
+                "mode_write_entity_state_before_write": self._persist.get(
                     "mode_write_entity_state"
                 ),
-                "mode_live_entity_state": str(
+                "mode_write_live_entity_state": str(
                     self._state(self.entities.ac_mode) or ""
                 ),
                 "mode_write_skipped": bool(
@@ -6041,9 +6712,19 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "regulation_command_path": "unified",
                 
                 "ai_mode": ai_mode,
+                "season_mode": (
+                    "manual"
+                    if ai_mode == AI_MODE_MANUAL
+                    else "summer"
+                    if ai_mode == AI_MODE_SUMMER
+                    else self._persist.get("season_mode", "winter")
+                ),
                 "manual_action": manual_action,
+                "decision_action": display_decision.action,
                 "decision_reason": decision.reason,
                 "charge_strategy": charge_strategy,
+                "current_peak_threshold": current_peak_threshold,
+                "current_valley_threshold": current_valley_threshold,
                 
                 # V4.2.0 regulation / strategy intent diagnostics
                 "regulation_strategy_intent": strategy_intent.intent,
@@ -6325,8 +7006,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "charge_commit_deadline_debug": self._persist.get(
                     "charge_commit_deadline"
                 ),
-                "charge_commit_acceptable_price_eur_kwh_debug": self._persist.get(
-                    "charge_commit_acceptable_price_eur_kwh"
+                "charge_commit_acceptable_price_per_kwh_debug": self._persist.get(
+                    "charge_commit_acceptable_price_per_kwh"
                 ),
 
                 # SF800Pro passthrough / arbiter debug
@@ -6483,6 +7164,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "cell_voltage_resume_threshold"
                 ),
                 "cell_voltage_emergency_active": cell_voltage_emergency_active,
+                "cell_voltage_post_emergency_discharge_locked": bool(
+                    self._persist.get(
+                        "cell_voltage_post_emergency_discharge_locked", False
+                    )
+                ),
+                "cell_voltage_normal_charge_observed": bool(
+                    self._persist.get("cell_voltage_normal_charge_observed", False)
+                ),
                 "forecast_status": forecast_summary.status,
                 "pv_outlook": forecast_summary.pv_outlook,
                 "forecast_remaining_today_kwh": float(forecast_summary.remaining_today_kwh),
@@ -6534,6 +7223,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ),
                 "learned_planning_required_charge_energy_kwh": float(
                     learned_charge_plan.required_charge_energy_kwh
+                ),
+                "learned_planning_minimum_actionable_charge_energy_kwh": float(
+                    learned_charge_plan.minimum_actionable_charge_energy_kwh
                 ),
                 "learned_planning_effective_charge_power_w": float(
                     learned_charge_plan.effective_charge_power_w
@@ -6718,8 +7410,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "charge_pv_allocated_w": float(
                     charge_source_allocation.pv_allocated_w
                 ),
+                "charge_native_pv_available_w": float(
+                    charge_source_allocation.native_pv_available_w
+                ),
+                "charge_native_pv_allocated_w": float(
+                    charge_source_allocation.native_pv_allocated_w
+                ),
                 "charge_grid_requested_w": float(
                     charge_source_allocation.grid_requested_w
+                ),
+                "charge_device_input_w": float(
+                    charge_source_allocation.device_input_w
                 ),
                 "charge_unfilled_w": float(
                     charge_source_allocation.unfilled_w
@@ -6758,6 +7459,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 else "none"
             )
 
+            await self._async_capture_debug_sample(now=now, details=details)
+
             return {
                 "status": (
                     STATUS_SENSOR_INVALID
@@ -6775,6 +7478,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "ai_status": ai_status,
                 "recommendation": recommendation,
                 "debug": "OK",
+                **self._debug_status_data(),
                 "details": details,
                 "decision_reason": decision.reason,
                 "next_action_time": next_action_time_state,
@@ -6897,8 +7601,17 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "charge_pv_allocated_w": float(
                     charge_source_allocation.pv_allocated_w
                 ),
+                "charge_native_pv_available_w": float(
+                    charge_source_allocation.native_pv_available_w
+                ),
+                "charge_native_pv_allocated_w": float(
+                    charge_source_allocation.native_pv_allocated_w
+                ),
                 "charge_grid_requested_w": float(
                     charge_source_allocation.grid_requested_w
+                ),
+                "charge_device_input_w": float(
+                    charge_source_allocation.device_input_w
                 ),
                 "charge_unfilled_w": float(
                     charge_source_allocation.unfilled_w

@@ -1,6 +1,19 @@
 from __future__ import annotations
 
-from homeassistant.const import Platform
+try:
+    from homeassistant.const import Platform
+except ModuleNotFoundError as err:
+    if err.name is None or not err.name.startswith("homeassistant"):
+        raise
+
+    from enum import StrEnum
+
+    class Platform(StrEnum):
+        """Minimal platform names for standalone core imports."""
+
+        SENSOR = "sensor"
+        NUMBER = "number"
+        SELECT = "select"
 
 # ==================================================
 # Integration meta
@@ -8,9 +21,24 @@ from homeassistant.const import Platform
 DOMAIN = "battery_smartflow_ai_ckw"
 
 INTEGRATION_NAME = "Battery SmartFlow AI"
+
+VIRTUAL_DEVICE_MODELS = {
+    "de": "Virtuelles Gerät",
+    "en": "Virtual device",
+    "fr": "Appareil virtuel",
+    "nl": "Virtueel apparaat",
+}
+
+
+def virtual_device_model(language: str | None) -> str:
+    """Return the short virtual-device label for the HA backend language."""
+    language_code = (language or "en").replace("_", "-").split("-", 1)[0]
+    return VIRTUAL_DEVICE_MODELS.get(language_code, VIRTUAL_DEVICE_MODELS["en"])
+
+
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "4.3.0"
+INTEGRATION_VERSION = "4.7.4"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -23,12 +51,14 @@ PLATFORMS: list[Platform] = [
 # ==================================================
 CONF_SOC_ENTITY = "soc_entity"
 CONF_PV_ENTITY = "pv_entity"
+CONF_NATIVE_PV_ENTITY = "native_pv_entity"
 
 CONF_SOC_LIMIT_ENTITY = "soc_limit_entity"
 
 # Preis ist optional (Sommer/PV-only Nutzer)
 CONF_PRICE_EXPORT_ENTITY = "price_export_entity"  # Tibber Export (attributes.data)
-CONF_PRICE_NOW_ENTITY = "price_now_entity"        # direkter Preis-Sensor (€/kWh)
+CONF_PRICE_NOW_ENTITY = "price_now_entity"        # direct price sensor (currency/kWh)
+CONF_DYNAMIC_FEED_IN_PRICE_ENTITY = "dynamic_feed_in_price_entity"
 
 # --- CKW Dynamischer Tarif ---
 CONF_CKW_ENABLED = "ckw_enabled"
@@ -36,11 +66,6 @@ CKW_API_URL = "https://e-ckw-public-data.de-c1.eu1.cloudhub.io/api/v1/netzinform
 CKW_FETCH_INTERVAL = 30  # minutes
 
 # --- Währung ---
-CONF_CURRENCY = "currency"
-CURRENCY_EUR = "EUR"
-CURRENCY_CHF = "CHF"
-DEFAULT_CURRENCY = CURRENCY_EUR
-
 CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY = "additional_battery_charge_entity"
 CONF_ADDITIONAL_BATTERY_DISCHARGE_ENTITY = "additional_battery_discharge_entity"
 
@@ -225,8 +250,6 @@ DEFAULT_SOC_MAX = 100.0  # Herstellerempfehlung ✔
 DEFAULT_MAX_CHARGE = 2400.0
 DEFAULT_MAX_DISCHARGE = 700.0
 
-DEFAULT_PRICE_THRESHOLD = 0.35
-DEFAULT_VERY_EXPENSIVE_THRESHOLD = 0.49
 
 DEFAULT_EMERGENCY_SOC = 8.0
 DEFAULT_EMERGENCY_CHARGE = 1200.0
@@ -478,6 +501,7 @@ STRATEGY_REASON_ENUMS = [
     "offgrid_load_support",
     "offgrid_load_active_blocks_ac_charge",
     "summer_cover_deficit",
+    "load_coverage",
     "adaptive_peak_discharge",
     "very_expensive_force_discharge",
     "price_based_discharge",
@@ -581,6 +605,7 @@ TECHNICAL_REASON_ENUMS = [
     "emergency_charge_fixed_input_power",
     "ramp_down_output_step_limited",
     "ramp_down_input_step_limited",
+    "blocked_by_arbiter_pv_charge_wait_current_export",
 ]
 
 # ==================================================
@@ -603,6 +628,7 @@ CHARGE_COMMIT_ABORT_REASON_ENUMS = [
     "max_soc_reached",
     "target_unreachable_battery_full",
     "target_nearly_reached_discharge_window",
+    "learned_charge_no_longer_needed",
     "deadline_passed",
     "battery_full",
     "price_window_expired",

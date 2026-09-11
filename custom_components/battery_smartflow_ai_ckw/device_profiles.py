@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .core.models import DeviceProfile
+
 
 # V4.2.0:
 # Normal user-editable profile fields.
@@ -807,17 +809,25 @@ DEVICE_PROFILES = {
 }
 
 
+# Canonical V4.7 view. ``DEVICE_PROFILES`` remains the stable V4.6 mapping
+# facade for config/options, diagnostics and third-party imports.
+DEVICE_PROFILE_MODELS: dict[str, DeviceProfile] = {
+    key: DeviceProfile.from_legacy_mapping(key, profile)
+    for key, profile in DEVICE_PROFILES.items()
+}
+
+
+def get_device_profile(profile_key: str) -> DeviceProfile:
+    """Return a typed profile with the established SF2400AC fallback."""
+
+    return DEVICE_PROFILE_MODELS.get(
+        profile_key,
+        DEVICE_PROFILE_MODELS["SF2400AC"],
+    )
+
+
 def get_profile_config(profile_key: str) -> dict:
-    return DEVICE_PROFILES.get(profile_key, DEVICE_PROFILES["SF2400AC"])
-
-
-def get_profile_defaults(profile_key: str) -> dict:
-    profile = get_profile_config(profile_key)
-    return {
-        key: value
-        for key, value in profile.items()
-        if key in PROFILE_OVERRIDE_FIELDS
-    }
+    return get_device_profile(profile_key).as_legacy_mapping()
 
 
 def merge_profile_with_overrides(profile_key: str, overrides: dict | None) -> dict:
