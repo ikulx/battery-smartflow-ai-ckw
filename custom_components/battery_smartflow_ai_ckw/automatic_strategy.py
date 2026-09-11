@@ -5,9 +5,123 @@ from typing import Any
 from .regulation_models import SeasonContext, StrategyContext
 
 
+ECONOMIC_DISCHARGE_REASONS = {
+    "adaptive_peak_discharge",
+    "very_expensive_force_discharge",
+    "price_based_discharge",
+}
+
+ECONOMIC_DISCHARGE_NEUTRAL_HOLD_REASONS = {
+    "idle",
+    "state_idle",
+    "standby",
+    "learned_charge_window_wait",
+}
+
+
 def _clamp01(value: float) -> float:
     """Clamp a numeric value to the range 0.0 ... 1.0."""
     return max(0.0, min(1.0, float(value)))
+
+
+def forecast_supports_early_pv_passthrough(
+    *,
+    forecast_status: str,
+    pv_outlook: str,
+    remaining_today_kwh: float,
+    battery_capacity_kwh: float,
+    soc: float,
+    soc_max: float,
+) -> bool:
+    """Return whether forecast PV exceeds the battery's remaining headroom."""
+
+    if str(forecast_status or "").strip().lower() != "available":
+        return False
+    if str(pv_outlook or "").strip().lower() not in {
+        "good",
+        "high",
+        "very_good",
+        "excellent",
+        "gut",
+    }:
+        return False
+
+    capacity = max(0.0, float(battery_capacity_kwh or 0.0))
+    if capacity <= 0.0:
+        return False
+
+    free_capacity_kwh = capacity * max(
+        0.0,
+        float(soc_max) - float(soc),
+    ) / 100.0
+
+    return float(remaining_today_kwh or 0.0) > free_capacity_kwh + 0.25
+
+
+def maintain_active_economic_discharge(
+    *,
+    automatic_mode_active: bool,
+    strategy_active: bool,
+    strategy_allows_discharge: bool,
+    effective_price_reached: bool,
+    previous_regulation_state: str,
+    active_output_w: float,
+) -> bool:
+    """Keep self-reducing grid import from cancelling active discharge.
+
+    A DC-PV passthrough-capable device can report net battery charging while supplying
+    AC output from its DC bus. Therefore the commanded output, rather than the
+    signed battery-power sensor alone, identifies an active discharge cycle.
+    The hold is only inherited from a real discharge state; PV passthrough must
+    not accidentally become an economic discharge latch.
+    """
+
+    inherited_active_discharge = bool(
+        str(previous_regulation_state) == "discharge_active"
+        and float(active_output_w or 0.0) > 0.0
+    )
+
+    return bool(
+        automatic_mode_active
+        and strategy_active
+        and effective_price_reached
+        and (strategy_allows_discharge or inherited_active_discharge)
+    )
+
+
+def economic_discharge_continuation_reason(
+    *,
+    hold_active: bool,
+    decision_action: str,
+    decision_reason: str,
+    previous_source_reason: str,
+) -> str | None:
+    """Return the economic source reason that may continue through neutral hold.
+
+    A waiting learned charge plan is neutral with respect to an already active
+    economic discharge.  It must not turn the output off merely because the
+    discharge itself, together with PV, reduced visible grid import.  Preserve
+    the source reason as well so the adaptive-peak diagnostic does not flap
+    while the same peak discharge remains active.
+    """
+
+    action = str(decision_action or "")
+    reason = str(decision_reason or "")
+    previous = str(previous_source_reason or "")
+
+    if action == "discharge" and reason in ECONOMIC_DISCHARGE_REASONS:
+        return reason
+
+    if not bool(hold_active) or action != "idle":
+        return None
+
+    if reason not in ECONOMIC_DISCHARGE_NEUTRAL_HOLD_REASONS:
+        return None
+
+    if previous in ECONOMIC_DISCHARGE_REASONS:
+        return previous
+
+    return "price_based_discharge"
 
 
 class AutomaticStrategy:
@@ -94,14 +208,15 @@ class AutomaticStrategy:
             or price_max is None
             or float(price_max) <= float(price_min)
         ):
-            if price_average is None or float(price_average) <= 0.0:
+            if price_average is None:
                 return 0.35, "price_range_missing"
 
-            deviation = abs(current - float(price_average))
-            relative_deviation = deviation / max(
-                0.01,
-                float(price_average),
-            )
+            average = float(price_average)
+            deviation = abs(current - average)
+            magnitude = max(abs(current), abs(average))
+            if magnitude <= 0.0:
+                return 0.35, "price_range_missing"
+            relative_deviation = deviation / magnitude
 
             return (
                 _clamp01(0.30 + relative_deviation),
@@ -110,7 +225,7 @@ class AutomaticStrategy:
 
         low = float(price_min)
         high = float(price_max)
-        span = max(0.001, high - low)
+        span = high - low
         position = _clamp01((current - low) / span)
 
         # Distance from the center:
@@ -278,6 +393,7 @@ class AutomaticStrategy:
         reserve_reason: str,
         pv_weight: float,
         pv_reason: str,
+        grid_import_w: float,
     ) -> tuple[bool, str]:
         """Return whether Automatic may consider economic discharge.
 
@@ -295,6 +411,7 @@ class AutomaticStrategy:
         if (
             pv_reason == "pv_covers_house_load"
             and float(pv_weight) >= 0.85
+            and float(grid_import_w or 0.0) <= 120.0
         ):
             return False, "pv_covers_load_blocks_discharge"
 
@@ -552,6 +669,7 @@ class AutomaticStrategy:
         pv_outlook: str = "unknown",
         forecast_remaining_today_kwh: float = 0.0,
         forecast_tomorrow_kwh: float = 0.0,
+        grid_import_w: float = 0.0,
         metadata: dict[str, Any] | None = None,
     ) -> StrategyContext:
         """Return the current automatic-strategy context."""
@@ -638,6 +756,7 @@ class AutomaticStrategy:
             reserve_reason=reserve_reason,
             pv_weight=pv_weight,
             pv_reason=pv_reason,
+            grid_import_w=float(grid_import_w or 0.0),
         )
         (
             automatic_peak_reserve_allowed,

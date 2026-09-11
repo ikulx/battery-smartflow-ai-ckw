@@ -1,5 +1,10 @@
 # 📘 Battery SmartFlow AI – Anleitung
 
+**Sprache:** Deutsch | [English](user-guide.md)
+
+> Gültig ab Battery SmartFlow AI V4.6.0
+> Letzte inhaltliche Aktualisierung: 25. August 2026
+
 **Intelligente, wirtschaftliche und stabile Steuerung für Zendure SolarFlow Systeme in Home Assistant**
 
 ---
@@ -12,7 +17,7 @@
 * [Kapitel 4 – Konfiguration der Integration](#kapitel-4--konfiguration-der-integration)
 * [Kapitel 5 – Betriebsmodi & Arbeitsweise](#kapitel-5--betriebsmodi--arbeitsweise)
 * [Kapitel 6 – Sensoren & Steuerelemente](#kapitel-6--sensoren--steuerelemente)
-* [Kapitel 7 – Regelprofil bearbeiten](#kapitel-7--regelprofil-bearbeiten)
+* [Kapitel 7 – Einstellungen bearbeiten](#kapitel-7--einstellungen-bearbeiten)
 * [Kapitel 8 – Technischer Hintergrund](#kapitel-8--technischer-hintergrund)
 * [Kapitel 9 – FAQ & typische Probleme](#kapitel-9--faq--typische-probleme)
 * [Kapitel 10 – Best Practices](#kapitel-10--best-practices--empfohlene-einstellungen)
@@ -35,7 +40,7 @@ Auf Basis dieser Informationen entscheidet die Integration automatisch:
 * wann Stillstand sinnvoller ist
 * wann Schutzfunktionen Vorrang haben
 * wann technische Haltezustände sinnvoll sind
-* wann eine Off-Grid-/Inselsteckdose aktiv unterstützt werden soll
+* wann eine Off-Grid-/Inselsteckdose diagnostisch berücksichtigt werden muss
 
 ---
 
@@ -55,8 +60,9 @@ Das Ziel ist ein ausgewogenes Zusammenspiel aus:
 | 🔍 Transparenz        | Entscheidungen nachvollziehbar machen          |
 
 > [!TIP]
-> Das beste Ergebnis ist nicht immer exakt `0 W` Netzbezug.
-> Ein kleiner, stabiler Ziel-Netzbezug kann oft ruhiger und geräteschonender sein als eine aggressive 0-W-Regelung.
+> Das beste Ergebnis ist nicht immer jeder einzelne Messwert exakt bei `0 W`.
+> V4.3.0 regelt nahe am wirtschaftlichen Zielpunkt; je nach Geräteprofil und
+> Einspeisevergütung kann dieser leicht auf der Bezugs- oder Einspeiseseite liegen.
 
 ---
 
@@ -77,7 +83,7 @@ Beispiele:
 * günstiges Preisfenster zum Laden nutzen
 * teures Preisfenster zum Entladen nutzen
 * Notladung auslösen
-* Off-Grid-Last unterstützen
+* Off-Grid-Last getrennt vom Netzregelpfad beobachten
 * wegen Schutzbedingungen nichts tun
 
 ### 2. Technische Leistungsregelung
@@ -94,29 +100,26 @@ Beispiele:
 * Soll ein Befehl erneut geschrieben werden oder kann er übersprungen werden?
 * Wie stark darf die Leistung pro Regelzyklus steigen oder fallen?
 
-Diese Trennung ist die wichtigste Grundlage der V4.2-Architektur.
+Diese Trennung bildet in V4.3.0 den verbindlichen Regelpfad für alle Installationen.
 
 ---
 
-## ✨ Was ist neu ab V4.x / V4.2?
+## ✨ Wichtigste Neuerungen in V4.3.0
 
 Battery SmartFlow AI hat sich seit den frühen Versionen deutlich weiterentwickelt.
 
-Wichtige Neuerungen:
+Wichtige Neuerungen gegenüber V4.2.8:
 
-* 🌦️ optionale PV-Prognoseintegration
-* 🧠 lernbasierte Ladefenster-Planung
-* 📊 zusätzliche Diagnosewerte
-* ⚙️ Profil-Editor für Lade- und Entladeverhalten
-* 🛡️ Zellspannungs-Schutz
-* 🔋 Zusatzakku-Erkennung
-* 🔌 Unterstützung für Off-Grid-/Inselsteckdose
-* 🔁 neue V4.2-Leistungsregelung
-* ☀️ stabilere PV-Überschussladung
-* 🏠 stabilere Entladung bei schnellen Lastwechseln
-* 🧩 mehr gerätespezifische Profile
-* ⚡ verbesserte Regelung für kleinere Systeme wie 800-W-Klassen
-* 🧘 deutlich weniger Modusflattern
+* 🧠 einheitliche, saisonunabhängige Automatik
+* ☀️ eigener Autarkiemodus statt des bisherigen Sommermodus
+* 🔒 AC-Ladebindung für geplante und wirtschaftlich gestartete Netzladungen
+* 🎯 präzisere netzgeführte Lade- und Entladeregelung nahe 0 W
+* ⚖️ wirtschaftlich begründete leichte Einspeisung statt unnötigem Netzbezug
+* 💶 Einspeisevergütung als Kostenbasis bei PV-Ladung
+* 🔀 gewichteter Mischpreis bei gleichzeitiger PV- und Netzladung
+* 🔍 getrennte strategische, sichtbare und technische Diagnosezustände
+* 🧩 neue Profile für SolarFlow 3000/4000 Mix AC+ und 4000 Mix Pro
+* ⚡ Leistungsgrenzen bis 4000 W bei weiterhin gerätespezifischem Sicherheitsdeckel
 
 ---
 
@@ -176,9 +179,12 @@ Battery SmartFlow AI benötigt eine möglichst saubere Hardwarekonfiguration ohn
 Folgende Einstellungen sind erforderlich:
 
 * Energie-Export: **Erlaubt**
-* kein P1-Sensor in der Zendure-Integration auswählen
-* Zendure Manager: **deaktiviert**
+* bei der Ersteinrichtung von Z-HA darf der P1-Sensor ausgewählt werden
+* anschließend im Z-HA-Manager den Betriebsmodus auf **AUS** stellen, damit Z-HA
+  nicht selbst parallel zu BSFAI regelt
 * keine parallelen Automationen, die AC-Modus oder Leistungsgrenzen verändern
+
+![Z-HA-Manager mit Betriebsmodus AUS](images/zha_manager.png)
 
 Falsche Einstellungen können führen zu:
 
@@ -208,7 +214,7 @@ Typische Quellen:
 Ohne Strompreis bleibt weiterhin möglich:
 
 * PV-Überschussladung
-* Sommer-Hauslastdeckung
+* Hauslastdeckung im Autarkiemodus
 * manuelle Steuerung
 * Schutzlogik
 * Off-Grid-Erkennung
@@ -366,20 +372,35 @@ Das Profil definiert:
 
 Aktuell unterstützte bzw. vorgesehene Profile:
 
-| Profil              | Typischer Einsatz                       |
-| ------------------- | --------------------------------------- |
-| SolarFlow 800 Pro   | kleinere 800-W-Systeme                  |
-| SolarFlow 800 Pro 2 | neues 800Pro2-System mit eigenem Tuning |
-| SolarFlow 1600 AC   | 1600-W-Klasse                           |
-| SolarFlow 2400 AC   | 2400-W-AC-System                        |
-| SolarFlow 2400 AC+  | erweiterte 2400-W-AC-Variante           |
-| SolarFlow 2400 Pro  | 2400-Pro-Systeme                        |
-| Hyper 2000          | Hyper-Systeme                           |
-| HUB 2000            | HUB-Systeme                             |
+| Profil                    | Typischer Einsatz                                      |
+| ------------------------- | ------------------------------------------------------ |
+| SolarFlow 800 Pro         | 800-W-System mit eigenem Stabilitätsprofil             |
+| SolarFlow 800 Pro 2       | 800-W-System mit besonders konservativer Abstimmung    |
+| SolarFlow 1600 AC+        | 1600-W-AC-System                                       |
+| SolarFlow 2400 AC         | reiner AC-gekoppelter Speicher der 2400-W-Klasse       |
+| SolarFlow 2400 AC+        | AC+-Variante der 2400-W-Klasse                         |
+| SolarFlow 2400 Pro        | 2400-Pro-System                                        |
+| SolarFlow 3000 Mix AC+    | AC-gekoppelter Speicher, 3000 W AC / 3680 W Off-Grid  |
+| SolarFlow 4000 Mix AC+    | AC-gekoppelter Speicher, 4000 W AC / 3680 W Off-Grid  |
+| SolarFlow 4000 Mix Pro    | AC-gekoppelter Speicher, 4000 W AC / 3680 W Off-Grid  |
+| Hyper 2000                | Hyper-System                                           |
+| HUB 2000                  | HUB-System                                             |
 
 > [!IMPORTANT]
 > Wähle immer das Profil, das deinem System am nächsten kommt.
 > Ein falsches Profil kann zu zu aggressiver oder zu träger Regelung führen.
+
+Die drei Mix-Modelle sind reine AC-gekoppelte Batteriespeicher ohne direkten
+PV-Anschluss. Sie verwenden deshalb die neutrale Regelabstimmung des
+SF2400AC, jeweils mit ihren bestätigten eigenen Leistungsgrenzen.
+
+> [!WARNING]
+> Bei den neuen 3000er- und 4000er-Modellen kann die praktische Nutzung derzeit
+> noch durch ein Firmwareproblem eingeschränkt sein. Eine Token-Verbindung zu
+> Z-HA kann zustande kommen, ohne dass das Gerät anschließend aktuelle Daten
+> liefert. Über MQTT angelegte Entitäten sind keine verlässliche Alternative,
+> da dieser Weg von Zendure nicht mehr unterstützt und nicht zuverlässig
+> aktualisiert wird.
 
 ---
 
@@ -477,6 +498,15 @@ Wenn das Vorzeichen falsch ist, können Berechnungen und Diagnosen unplausibel w
 
 ---
 
+### Installierte PV-Leistung
+
+Hier wird die theoretisch installierte Modulleistung der Anlage in Wp angegeben.
+
+Der Wert unterstützt die relative Einordnung der aktuellen PV-Leistung und den
+Automatikkontext. Er schaltet keine getrennte Sommer- oder Winterstrategie um.
+
+---
+
 ### PV-Leistung Sensor
 
 Sensor mit aktueller PV-Leistung in Watt.
@@ -485,11 +515,27 @@ Wird genutzt für:
 
 * Überschusserkennung
 * dynamische Regelung
-* saisonale Bewertung
+* PV-Gewichtung der Automatik
 * Lernplanungskontext
 * PV-Hauslastdeckung
 * Off-Grid-Kontext
 * Prognosevergleich
+
+---
+
+### Native PV-Leistung des Batteriesystems (optional)
+
+Hier darf nur ein Sensor ausgewählt werden, der die direkt am Batteriesystem
+angeschlossene PV-Leistung meldet, beispielsweise die summierte Solar-Eingangsleistung
+eines SF2400Pro. Während einer aktiven AC-Ladung reserviert Battery SmartFlow AI
+diese Leistung innerhalb der eingestellten maximalen Ladeleistung und fordert
+über den steuerbaren AC-Eingang nur den verbleibenden Anteil an. Dadurch kann
+Netzladung an der physischen Ladegrenze keine kostenlose native PV-Leistung
+mehr verdrängen.
+
+Hier nicht den Sensor der gesamten Haus-PV auswählen. Ist kein nativer
+PV-Sensor konfiguriert oder ist er vorübergehend nicht verfügbar, bleibt das
+bisherige kompatible Ladeverhalten erhalten.
 
 ---
 
@@ -540,6 +586,28 @@ Beispiele:
 * Ist der aktuelle Preis hoch genug zum Entladen?
 * Lohnt sich eine Entladung gegenüber dem gespeicherten Ladepreis?
 * Ist eine Notladung oder geplante Ladung wirtschaftlich sinnvoll?
+
+---
+
+### Einspeisevergütung
+
+Die optionale Einspeisevergütung wird in ganzer Währung pro kWh eingetragen.
+
+Beispiel:
+
+```text
+0,122 €/kWh = 12,2 ct/kWh
+```
+
+Sie wird für zwei wirtschaftliche Bewertungen genutzt:
+
+* Eine optionale Netzladung soll vorhandene PV-Ladung nur verdrängen, wenn der
+  Netzstrom günstiger als die entgangene Einspeisevergütung ist.
+* Bei PV-Ladung wird die Vergütung als entgangener Erlös in den durchschnittlichen
+  Ladepreis des Akkus eingerechnet.
+
+Ohne eingetragene Einspeisevergütung wird PV-Ladung weiterhin mit `0,00 €/kWh`
+bewertet.
 
 ---
 
@@ -609,7 +677,7 @@ Nicht optimal möglich sind:
 * genaue Hauslastdeckung
 * genaue PV-Überschusserkennung
 * stabile 0-W-Regelung
-* präzise V4.2-Leistungsregelung
+* präzise netzgeführte Leistungsregelung
 
 ---
 
@@ -778,7 +846,9 @@ Off-Grid-Leistung: 520 W
 → an der Inselsteckdose hängt eine Last von ca. 520 W
 ```
 
-Battery SmartFlow AI kann diese Information nutzen, um zu verhindern, dass automatische AC-/Netzladung die Inselsteckdosen-Versorgung überstimmt.
+Battery SmartFlow AI nutzt diese Information für eine getrennte Diagnose.
+Eine erkannte Off-Grid-Last blockiert eine ansonsten gültige Lade- oder
+Entladestrategie nicht pauschal.
 
 ---
 
@@ -822,7 +892,8 @@ Das bedeutet:
 
 ### Was beeinflusst Off-Grid?
 
-Off-Grid-Leistung fließt in Energiebilanz und Diagnose ein. Sie überstimmt
+Off-Grid-Leistung wird als eigener Gerätepfad diagnostisch erfasst. Sie wird
+nicht als zusätzliche Hauslast in den Netzregelpfad eingerechnet und überstimmt
 keine gültigen Kandidaten für:
 
 * Preisladung
@@ -850,7 +921,8 @@ Besonders kritisch sind:
 * automatische HEMS-Regelung
 * eigene Lade-/Entladepläne
 * dynamische Leistungsregelung außerhalb von BSFAI
-* P1-Regelung innerhalb der Zendure-Integration
+* ein Z-HA-Manager-Betriebsmodus ungleich **AUS**; die P1-Sensorauswahl bei der
+  Z-HA-Ersteinrichtung ist dagegen erlaubt
 * parallele Home-Assistant-Automationen auf denselben Entitäten
 
 ---
@@ -879,12 +951,14 @@ Er kombiniert:
 * dynamische Preise
 * PV-Prognose
 * Lernplanung
-* saisonaler Kontext
+* aktueller PV-, Preis-, Reserve- und Prognosekontext
 * Schutzlogik
 
-Battery SmartFlow AI bewertet alle wirtschaftlichen Strategien ganzjährig. Die
-Saisonerkennung liefert nur zusätzlichen Kontext und schaltet keine getrennte
-Sommer- oder Winterstrategie mehr um.
+Die Automatik arbeitet ganzjährig mit einer gemeinsamen Strategie. Sie schaltet
+nicht mehr zwischen einer Sommer- und einer Winterlogik um. Stattdessen bewertet
+sie, ob die aktuelle Situation eher PV-, preis-, reserve- oder ausgewogen
+orientiert ist. Die eigentliche Lade- oder Entladeentscheidung bleibt bei der
+Decision Engine.
 
 Typische Entscheidungen:
 
@@ -895,6 +969,9 @@ Typische Entscheidungen:
 * bei schwacher PV-Prognose rechtzeitig nachladen
 * bei ausreichender Batterie nichts tun
 * Schutzbedingungen respektieren
+
+Strategische Netzladung durch Planung, Lernplanung, Talpreise, sehr günstige
+Preise oder Reservebedarf ist ausschließlich in der Automatik erlaubt.
 
 ---
 
@@ -911,6 +988,10 @@ Typische Ziele:
 * Akku nicht unnötig aus dem Netz laden
 
 Im Autarkiemodus ist Entladung zur Hauslastdeckung besonders wichtig.
+
+Normale strategische Netzladungen werden in diesem Modus nicht gestartet. Beim
+Wechsel aus der Automatik in den Autarkiemodus wird eine aktive AC-Ladebindung
+beendet. PV-Überschussladung, Hauslastdeckung und Schutzfunktionen bleiben aktiv.
 
 Wenn SoC-Minimum oder Entlade-Wiederfreigabe aktiv ist, kann Entladung blockiert werden. In solchen Fällen hat die Schutzlogik Vorrang.
 
@@ -935,7 +1016,7 @@ Der manuelle Modus ist nützlich für:
 * manuelle Eingriffe
 * Vergleich mit automatischer Regelung
 
-Schutzmechanismen können dennoch weiterhin relevant bleiben.
+Schutzmechanismen bleiben dennoch wirksam.
 
 ---
 
@@ -945,13 +1026,14 @@ Die adaptive Peak-Erkennung erkennt teure Preisfenster.
 
 Dabei wird nicht nur ein fixer Preis betrachtet, sondern das Preisniveau des Tages.
 
-Der Peak-Faktor bestimmt, ab wann ein Preis als Peak gilt.
+Der Peakpreis-Aufschlag bestimmt, wie viel Prozent ein Preis über dem
+Tagesdurchschnitt liegen muss, damit er als Peak gilt.
 
 Formel:
 
 ```text
 Peak-Schwelle = max(
-  Durchschnittspreis × Peak-Faktor,
+  Durchschnittspreis × (1 + Peakpreis-Aufschlag / 100),
   Durchschnittspreis + 0,03 €
 )
 ```
@@ -959,13 +1041,13 @@ Peak-Schwelle = max(
 Standardwert:
 
 ```text
-1.35
+35 %
 ```
 
-| Peak-Faktor | Wirkung                         |
-| ----------- | ------------------------------- |
-| niedriger   | erkennt mehr Peaks              |
-| höher       | erkennt nur starke Preisspitzen |
+| Peakpreis-Aufschlag | Wirkung                         |
+| ------------------- | ------------------------------- |
+| niedriger           | erkennt mehr Peaks              |
+| höher               | erkennt nur starke Preisspitzen |
 
 ---
 
@@ -978,17 +1060,19 @@ Beispiele:
 ```text
 pv_surplus_charge
 summer_cover_deficit
+charge_commit_active
 price_based_discharge
 adaptive_peak_discharge
 planning_forecast_poor
 learned_charge_window_wait
-offgrid_load_support
 soc_min_resume_block
 cell_voltage_cutoff_block
 ```
 
 > [!TIP]
 > Wenn das System nicht das tut, was erwartet wird, sollte zuerst der Entscheidungsgrund geprüft werden.
+> Wenn dieser sichtbare Wert nicht ausreicht, starte eine kurze Debug-Aufzeichnung.
+> Das JSON-Paket enthält Strategie, technische Freigaben und Gerätebefehl.
 
 ---
 
@@ -1012,7 +1096,41 @@ Die Schwelle kann auch negative Werte annehmen, wenn der Tarif negative Preise l
 
 ---
 
-## 5.5 Netzgeführte Leistungsregelung
+## 5.5 AC-Ladebindung
+
+Eine geplante oder wirtschaftlich gestartete Netzladung erhält eine
+**AC-Ladebindung**. Sie speichert unter anderem:
+
+* Auslöser und Art der Ladung
+* Ziel-SoC
+* angeforderte Ladeleistung
+* Start, Gültigkeit und gegebenenfalls Deadline
+* zulässigen Preisbereich bei Lernplanung
+
+Die Ladebindung verhindert, dass eine sinnvolle Ladung wegen kurzer Änderungen
+von Preis, PV oder Netzleistung sofort wieder abgebrochen wird. Sie kann je nach
+Plan zunächst warten, aktiv laden oder spätestens zum notwendigen Zeitpunkt
+erzwingen, damit die benötigte Energie bis zur Deadline verfügbar ist.
+
+Eine wartende Ladebindung reserviert das System nicht vollständig: PV-Ladung,
+wirtschaftliche Entladung, technische Hauslastdurchleitung und Notladung können
+weiterhin Vorrang erhalten.
+
+Typische Beendigungsgründe sind:
+
+* Ziel-SoC oder maximaler SoC erreicht
+* Planungsdeadline abgelaufen
+* Batterie nimmt nahe dem Ziel länger keine relevante Ladeleistung mehr an
+* wirtschaftlicher Konflikt bei einer Reserve-Ladung
+* Schutz- oder Sensordatenfehler
+* Wechsel in Autarkie oder Manuell
+
+PV-Leistung während einer aktiven Netzladung beendet die Ladebindung nicht. Sie
+reduziert den benötigten Netzanteil und verbessert dadurch den Mischpreis.
+
+---
+
+## 5.6 Netzgeführte Leistungsregelung
 
 Battery SmartFlow AI versucht nicht einfach nur, mit voller Leistung zu laden oder zu entladen.
 
@@ -1024,24 +1142,39 @@ Beispiele:
 * bei Einspeisung kann Ladeleistung erhöht werden
 * bei Lastabfall wird OUTPUT nicht sofort hart beendet
 * bei Wolken wird INPUT nicht sofort hektisch gewechselt
-* kleine Abweichungen innerhalb einer Totzone werden ignoriert
+* kleine Abweichungen innerhalb einer Totzone werden zunächst beruhigt
+* verbleibender Netzbezug wird bei aktiver Entladung fein nachgeregelt
+* PV-Ladung reduziert frühzeitig, bevor unnötiger Netzbezug entsteht
 
-Diese Regelung verhindert unnötiges Flattern.
+Die Regelung verbindet Totzone, Schrittbegrenzung, Netzverlauf und Haltezustände.
+Dadurch kann sie näher am Zielpunkt arbeiten, ohne INPUT/OUTPUT-Flattern zu
+erzeugen.
 
 ---
 
-## 5.6 V4.2-Regelkreis
+## 5.7 Einheitlicher V4.3-Regelpfad
 
-Mit V4.2 wurde eine neue technische Regelkette eingeführt:
+Seit V4.3.0 ist die technische Regelkette für alle Installationen verbindlich:
 
 ```text
-Decision Engine
+AutomaticStrategy-Kontext
+→ Decision Engine
+→ StrategyDecision
+→ sichtbarer Zustand
 → StrategyIntent
 → ModeArbiter
-→ PowerController
+→ RegulationPowerController
 → DeviceCommand
 → Home Assistant / Zendure
 ```
+
+Diese Begriffe beschreiben interne Stufen des Regelwegs. Sie sind keine
+separaten Home-Assistant-Sensoren; ihre Details erscheinen bei Bedarf im
+Debug-Paket.
+
+Die Automatik erzeugt dabei keine zweite Decision Engine. Sie bewertet den
+Kontext und erteilt strategische Freigaben; die Decision Engine sammelt die
+zulässigen Kandidaten und wählt anhand der Priorität die tatsächliche Aktion.
 
 ### Decision Engine
 
@@ -1053,7 +1186,13 @@ Beispiele:
 * Entladen
 * Warten
 * Notladen
-* Off-Grid unterstützen
+* Off-Grid-Kontext berücksichtigen
+
+### StrategyDecision und sichtbarer Zustand
+
+Das strategische Ergebnis erhält einen eindeutigen Zustand, eine Priorität und
+einen ruhigen, nutzerverständlichen sichtbaren Zustand. Der ursprüngliche
+Entscheidungsgrund bleibt separat als Quellgrund erhalten.
 
 ### StrategyIntent
 
@@ -1069,7 +1208,7 @@ peak_discharge
 arbitrage_discharge
 emergency_charge
 manual_charge
-offgrid_load_support
+passthrough
 ```
 
 ### ModeArbiter
@@ -1079,15 +1218,13 @@ Entscheidet, ob der gewünschte Modus jetzt technisch erlaubt ist.
 Er berücksichtigt:
 
 * aktuelle Netz-Historie
-* stabile Importzyklen
-* stabile Exportzyklen
-* Moduswechsel-Cooldowns
+* stabile Import- und Exportzyklen
+* Moduswechsel-Sperrzeiten
 * aktive Haltezustände
-* Off-Grid-Lasten
-* Zusatzakku-Entladung
-* SoC-/Zellschutz
+* Zusatzakku-Ladung oder -Entladung
+* SoC- und Zellschutz
 
-### PowerController
+### RegulationPowerController
 
 Berechnet die konkrete Leistung.
 
@@ -1099,6 +1236,8 @@ Er berücksichtigt:
 * maximale Schrittweite
 * vorherige Leistung
 * Profilgrenzen
+* kurzfristigen und mittleren Netzverlauf
+* wirtschaftliches Ziel für leichten Bezug oder leichte Einspeisung
 
 ### DeviceCommand
 
@@ -1114,7 +1253,7 @@ Er entscheidet:
 
 ---
 
-## 5.7 Wirtschaftlichkeitsberechnung
+## 5.8 Wirtschaftlichkeitsberechnung
 
 Battery SmartFlow AI kann berechnen, ob eine Entladung wirtschaftlich sinnvoll ist.
 
@@ -1134,9 +1273,32 @@ Die Gewinnmarge bestimmt, wie groß der Preisabstand mindestens sein sollte.
 
 ### Wichtig bei PV-Ladung
 
-PV-Ladung wird nicht als teurer Netzbezug gewertet.
+PV-Ladung ist wirtschaftlich nicht automatisch kostenlos. Wenn eine
+Einspeisevergütung konfiguriert ist, entspricht der Ladepreis des PV-Anteils dem
+entgangenen Einspeiseerlös.
 
-Wenn der Akku aus PV geladen wird, soll dadurch nicht künstlich ein hoher Ladepreis entstehen.
+Beispiel:
+
+```text
+Einspeisevergütung: 0,122 €/kWh
+reine PV-Ladung:    0,122 €/kWh Speicherkosten
+```
+
+Bei gleichzeitiger PV- und Netzladung werden beide Anteile mit ihren jeweiligen
+Preisen gewichtet. Negative Netzpreise bleiben dabei erhalten. Die Ladeherkunft
+wird während der realen Ladung zwischengespeichert, sodass auch ein verzögert
+gemeldeter SoC-Anstieg noch der richtigen Kostenbasis zugeordnet werden kann.
+
+Ohne konfigurierte Einspeisevergütung bleibt der PV-Anteil bei `0,00 €/kWh`.
+
+### Wirtschaftlicher Zielpunkt der Regelung
+
+Bei PV-Ladung mit hinterlegter Einspeisevergütung bevorzugt die Regelung eine
+kleine Einspeisung gegenüber unbeabsichtigtem Netzbezug. Bei Entladung ist diese
+leichte Einspeiseausrichtung nur wirtschaftlich zulässig, wenn der Wert der
+gespeicherten Energie einschließlich Sicherheitsabstand unter der
+Einspeisevergütung liegt. Strategische Netz-, Not- und manuelle Ladungen werden
+davon nicht beeinflusst.
 
 ---
 
@@ -1144,16 +1306,15 @@ Wenn der Akku aus PV geladen wird, soll dadurch nicht künstlich ein hoher Ladep
 
 Einige Zustände sind technisch sinnvoll, aber keine wirtschaftliche Entladung.
 
-Beispiele:
+Beispiel:
 
-* Off-Grid-Unterstützung
 * PV-Hauslast-Passthrough
 
 Diese werden nicht als wirtschaftliche Preisentladung gezählt.
 
 ---
 
-## 5.8 Transparenz-Sensoren
+## 5.9 Transparenz-Sensoren
 
 Battery SmartFlow AI stellt viele Sensoren bereit, um Entscheidungen nachvollziehbar zu machen.
 
@@ -1163,12 +1324,18 @@ Besonders hilfreich sind:
 * KI-Status
 * KI-Empfehlung
 * Engine-Status
+* aktuelle Peak- und Valley-Schwelle
 * effektive Entladeschwelle
 * ökonomische Entladeschwelle
 * Lernplanungsstatus
-* Off-Grid-Regelgrund
-* Regelgrund des ModeArbiters
-* final gesetzte Leistung
+* geplanter Ladestart, Deadline und benötigte Nachladeenergie
+* die fünf sparsamen Statuswerte der Debug-Aufzeichnung
+
+Tiefe Strategie-, Ladebindungs-, Off-Grid- und Regelungsdetails werden seit
+V4.4 bewusst nicht mehr als dauerhaft aktive Diagnoseentitäten angelegt. Bei
+Bedarf erfasst eine zeitlich begrenzte Debug-Aufzeichnung diese Informationen in
+einem JSON-Paket. Dadurch bleibt die normale Geräteansicht verständlich und der
+Home-Assistant-Recorder wird nicht mit technischen Detailwerten belastet.
 
 ---
 
@@ -1178,9 +1345,97 @@ Dieses Kapitel erklärt die wichtigsten Sensoren und Bedienelemente.
 
 ---
 
+## Orientierung in der Geräteansicht ab V4.6.0
+
+![Geräteübersicht ab V4.6.0](images/v460_device_overview.png)
+
+Battery SmartFlow AI teilt die Entitäten auf zwei übersichtliche Geräte auf. Es
+handelt sich trotzdem um **eine Integration und eine gemeinsame Steuerung**:
+
+| Gerät | Was befindet sich dort? | Wann öffne ich es? |
+| ----- | ------------------------ | ------------------ |
+| **Battery SmartFlow AI – Steuerung & Planung** | Betriebsmodus, Leistungsregelung, Ladeplanung, Schutzgrenzen und technische Diagnosewerte | Wenn du den Betrieb ändern oder eine Entscheidung nachvollziehen möchtest |
+| **Battery SmartFlow AI – Wirtschaft & Preise** | aktuelle Preise, Preisgrenzen, Energieflüsse, Kosten, Erträge und wirtschaftlicher Wirkungsgrad | Wenn du Preise einstellen oder den wirtschaftlichen Erfolg beurteilen möchtest |
+
+Die zweite Zeile unter dem Namen ist nur eine kurze Gerätebeschreibung. Beim
+Steuerungsgerät zeigt Home Assistant zusätzlich den zugeordneten Bereich an; das
+virtuelle Wirtschaftsgerät besitzt keinen physischen Standort. Die Anzahl der
+Entitäten kann sich je nach Konfiguration und Home-Assistant-Version leicht von
+der Abbildung unterscheiden.
+
+> **Für Einsteiger:** Im Alltag genügt meist das Gerät **Steuerung & Planung**.
+> Öffne **Wirtschaft & Preise**, wenn du wissen möchtest, warum BSFAI einen
+> Preis als günstig oder teuer bewertet und ob sich Laden und Entladen bisher
+> finanziell gelohnt haben.
+
+---
+
 # 6.1 Status- & Wirtschaftssensoren
 
-![Status & Wirtschaft](images/sensors_01_status.png)
+Die Wirtschafts- und Preissensoren sind im virtuellen Gerät **Battery SmartFlow
+AI – Wirtschaft & Preise** zusammengefasst.
+
+![Wirtschafts-, Bilanz- und Energiesensoren](images/v460_economics_sensors_1.png)
+
+![Preis- und Schwellenwerte](images/v460_economics_sensors_2.png)
+
+Die Namen folgen einem einheitlichen Muster: Der Text vor dem Gedankenstrich
+nennt die Gruppe, der Text danach den konkreten Wert.
+
+| Gruppe | Einfache Bedeutung |
+| ------ | ------------------ |
+| **Aktuell** | Werte, die gerade jetzt für die wirtschaftliche Bewertung gelten |
+| **Bilanz heute** | Kosten, Erträge und Nutzen seit Mitternacht |
+| **Bilanz seit Start** | dauerhaft aufsummierte wirtschaftliche Werte seit Beginn der BSFAI-Bilanzierung |
+| **Energie heute** | heute gemessene Energiemengen nach Flussrichtung |
+| **Energie seit Start** | dauerhaft aufsummierte Energiemengen nach Flussrichtung |
+| **Preise** | berechnete Durchschnittspreise und die momentan wirksamen Lade-/Entladegrenzen |
+
+### So liest du die Flussrichtung
+
+Bezeichnungen wie **Netz zu Akku**, **PV zu Akku** oder **Akku zu Haus** werden
+immer von links nach rechts gelesen. Beispiel: **Energie heute – Netz zu Akku**
+ist die Strommenge, die heute aus dem öffentlichen Netz in den Akku geladen
+wurde. **Akku zu Netz** ist dagegen bewusst ins Netz abgegebene Batterieenergie.
+
+### So liest du die Bilanz
+
+* **Netzladekosten** sind die Kosten für Energie, die aus dem Netz in den Akku
+  geladen wurde.
+* **PV-Opportunitätskosten** sind kein Rechnungsbetrag. Sie zeigen den
+  Einspeiseerlös, auf den du verzichtet hast, weil PV-Energie im Akku gespeichert
+  statt verkauft wurde.
+* **Vermiedene Netzbezugskosten** bewerten Energie, die der Akku an das Haus
+  abgegeben und damit einen teureren Netzbezug vermieden hat.
+* **Einspeiseertrag** bewertet die ins Netz eingespeiste Energie mit der
+  hinterlegten Einspeisevergütung.
+* **Batterienutzen** ist der von BSFAI berechnete wirtschaftliche Nutzen der
+  Batterie. Ein einzelner Tageswert kann vorübergehend negativ sein, etwa wenn
+  heute geladen, aber erst später entladen wird. Für die Gesamtbewertung ist
+  deshalb **Bilanz seit Start** aussagekräftiger.
+
+### Preise und Schwellen richtig einordnen
+
+Die angezeigten Schwellen sind **berechnete Entscheidungsgrenzen**, keine
+zusätzlichen Kosten:
+
+* **Aktuelle Peak-Schwelle:** Ab diesem Preis erkennt BSFAI einen teuren
+  dynamischen Preispeak.
+* **Aktuelle Valley-Schwelle:** Unterhalb dieses Werts erkennt BSFAI ein
+  günstiges Preistal.
+* **Effektive Entladeschwelle:** Preisgrenze, die nach allen aktiven Regeln
+  tatsächlich für eine Entladung gilt.
+* **Ökonomische Entladeschwelle:** Mindestpreis, ab dem sich die Entladung unter
+  Berücksichtigung des bewerteten Ladepreises und der Gewinnmarge rechnet.
+* **Ø bisheriger Akku-Ladepreis:** geschätzter Durchschnittswert der aktuell
+  gespeicherten Energie.
+* **Ø Wert der Batterieentladung:** durchschnittlicher wirtschaftlicher Wert der
+  bisher abgegebenen Batterieenergie.
+
+`Unbekannt` direkt nach dem Start ist nicht automatisch ein Fehler. Ein Wert
+kann erst berechnet werden, wenn seine Quelldaten verfügbar sind oder bereits
+genügend Lade- beziehungsweise Entladeenergie erfasst wurde. Bleibt ein wichtiger
+Wert dauerhaft unbekannt, prüfe zuerst die zugeordneten Quellsensoren.
 
 ---
 
@@ -1254,6 +1509,52 @@ Er wird genutzt für:
 * Profitberechnung
 * Preisvergleich
 
+Bei Netzladung fließt der aktuelle Netzpreis ein. Bei PV-Ladung wird eine
+konfigurierte Einspeisevergütung als entgangener Erlös verwendet. Bei gemischter
+Ladung entsteht ein gewichteter Mischpreis. Der Durchschnittswert wird mit dem
+nächsten erkannten Energiezuwachs fortgeschrieben.
+
+---
+
+## Angerechneter Ladepreis
+
+Dieser Sensor zeigt den Preis, mit dem der aktuelle Ladeanteil wirtschaftlich
+bewertet wird. Die intern ermittelte Ladequelle sowie PV-/Netzanteile und ein
+möglicher Mischpreis werden nicht als separate Sensoren angelegt. Bei Bedarf
+stehen sie im Debug-Paket.
+
+Der **angerechnete Ladepreis** kann bereits während der Ladung sichtbar sein.
+Der **Ø Ladepreis Akku** wird dagegen erst mit einem erkannten SoC- bzw.
+Energiezuwachs dauerhaft gewichtet.
+
+---
+
+## Wirtschaftlicher Wirkungsgrad seit Start
+
+Dieser Sensor bewertet nicht den technischen Wirkungsgrad von Akku und
+Wechselrichter. Dafür bleibt der gerätenahe Sensor aus Zendure-HA zuständig.
+
+BSFAI vergleicht stattdessen den wirtschaftlichen Wert der seit Beginn
+abgegebenen Batterieenergie mit dem bewerteten Ladeaufwand:
+
+```text
+Wirtschaftlicher Wirkungsgrad =
+  Wert der Batterieentladung
+  ÷ (Netzladekosten + PV-Opportunitätskosten)
+  × 100
+```
+
+* unter 100 %: Der bewertete Ladeaufwand ist noch nicht vollständig gedeckt.
+* 100 %: Der bewertete Ladeaufwand ist genau gedeckt.
+* über 100 %: Die Batterie hat einen wirtschaftlichen Mehrwert erzielt.
+
+Der Sensor wird erst verfügbar, wenn seit Beginn mindestens 0,1 kWh Ladeenergie
+und 0,1 kWh Entladeenergie erfasst wurden. Ein nicht positiver Ladeaufwand, etwa
+bei ausschließlich kostenloser oder negativ vergüteter Ladeenergie, besitzt
+keinen endlichen Kostendeckungsgrad und wird daher nicht als erfundene
+Prozentzahl dargestellt. Der Wert „seit Start“ ist aussagekräftiger als ein
+Tageswert, weil Lade- und Entladevorgänge über Mitternacht reichen können.
+
 ---
 
 ## Ø Tagespreis
@@ -1320,11 +1621,26 @@ Er zeigt den genauen Grund für die aktuelle Entscheidung.
 Beispiele:
 
 * PV-Überschuss laden
-* Sommer: Hauslast decken
+* Hauslast decken
+* AC-Ladebindung aktiv
 * Preisbasierte Entladung
 * Zusatzakku lädt: Entladung blockiert
-* Inselsteckdose aktiv: Versorgung über Akku/PV
+* Inselsteckdose aktiv: Last beobachtet
 * Zellspannungs-Schutz aktiv
+
+---
+
+## Technische Entscheidungsdetails
+
+Strategiezustand, technische Freigaben, AC-Ladebindung, Ladequellen-Aufteilung
+und der endgültige Gerätebefehl existieren weiterhin als interne Bestandteile
+der Steuerung. Sie sind jedoch **keine Home-Assistant-Sensoren mehr**.
+
+Für den normalen Betrieb genügen **KI-Status**, **KI-Empfehlung** und
+**Entscheidungsgrund**. Wenn sich ein Verhalten damit nicht erklären lässt,
+starte kurz vor der betreffenden Situation den Debug-Modus. Das exportierte
+JSON-Paket enthält den vollständigen Entscheidungsweg für Support und
+Fehleranalyse.
 
 ---
 
@@ -1336,9 +1652,18 @@ Dieser Wert ist bei Support-Anfragen sehr wichtig.
 
 ---
 
-## Erkannter Betriebsmodus
+## Regelungskontext
 
-Zeigt, ob Battery SmartFlow AI intern Sommer-, Winter- oder manuellen Betrieb erkennt.
+Zeigt kurz, welcher weiche Gewichtungskontext gerade gilt:
+
+* **PV** – die aktuelle PV-Lage erhält mehr Gewicht
+* **Preis** – Preisfenster und Reserve erhalten mehr Gewicht
+* **Manuell** – der manuelle Betrieb ist aktiv
+
+> [!NOTE]
+> Der Regelungskontext ist kein auswählbarer Betriebsmodus und keine erkannte
+> Jahreszeit. Auch im Sommer kann bei schwacher PV-Lage **Preis** erscheinen.
+> Die auswählbaren Betriebsmodi bleiben Automatik, Autarkie und Manuell.
 
 ---
 
@@ -1350,9 +1675,9 @@ Zeigt die berechnete Ersparnis bzw. den berechneten Gewinn durch Preisarbitrage.
 
 # 6.3 Lernplanungssensoren
 
-Die Lernplanung erzeugt mehrere Diagnosewerte.
-
-![Diagnosewerte](images/sensors_03_diagnose.png)
+In der normalen Geräteansicht bleiben nur die wichtigsten Ergebnisse der
+Lernplanung sichtbar. Sie zeigen, ob die Planung bereit ist, wann sie laden will
+und wie viel Energie dafür benötigt wird.
 
 ---
 
@@ -1411,120 +1736,31 @@ Zeigt die Länge des geplanten Ladefensters.
 
 ---
 
-## Diagnose: Lernplanung Blockierungsgrund
+## Weitere Lernplanungsdetails
 
-Erklärt, warum Lernplanung noch nicht aktiv ist oder warum gerade keine Ladung geplant wird.
-
-Beispiele:
-
-* Kein Blocker
-* Nicht genügend Historientage
-* Datenqualität zu niedrig
-* Keine Preisdaten verfügbar
-* Keine Nachladung erforderlich
-* Deadline zu nah
+Historientage, Datenabdeckung, erwarteter Verbrauch, verfügbare Akkuenergie,
+Reserve, Prognose-Zuschlag und Blockierungsgrund werden intern weiterhin für die
+Planung berechnet. Sie werden seit V4.4 aber nicht mehr als dauerhafte
+Diagnosesensoren angelegt. Diese Details stehen bei einer gezielten
+Debug-Aufzeichnung im JSON-Paket zur Verfügung.
 
 ---
 
-## Datenabdeckung
+# 6.4 Off-Grid-Quelldaten
 
-Zeigt, wie gut das gelernte Lastprofil bereits mit Daten gefüllt ist.
+Die optional konfigurierten Off-Grid-Entitäten stammen vom Zendure-System und
+werden von BSFAI als **Quelldaten** gelesen. BSFAI legt dafür keine eigenen
+Off-Grid-Status- oder Diagnosesensoren mehr an.
 
-Eine hohe Datenabdeckung verbessert die Planung.
+Im Normalbetrieb erkennst du die Reaktion über **KI-Status** und
+**Entscheidungsgrund**. Für eine genaue Analyse enthält das zeitlich begrenzte
+Debug-Paket unter anderem die gelesene Off-Grid-Leistung, den Modus, eine
+erkannte Last und den internen Regelgrund.
 
----
-
-## Nutzbare Tage
-
-Zeigt, wie viele Tage für das Lernmodell verwendet werden können.
-
----
-
-## Erwarteter Verbrauch
-
-Zeigt den erwarteten Verbrauch bis zur Planungsdeadline.
-
----
-
-## Verfügbare Akkuenergie
-
-Zeigt, wie viel Energie oberhalb des SoC-Minimums verfügbar ist.
-
-Die Berechnung basiert auf:
-
-```text
-Gesamtkapazität × max(0, (aktueller SoC - SoC-Minimum) / 100)
-```
-
----
-
-## Reserve
-
-Zeigt die eingeplante Sicherheitsreserve.
-
----
-
-## Prognose-Zuschlag
-
-Zeigt, wie die PV-Prognose die Ladeplanung beeinflusst.
-
----
-
-# 6.4 Off-Grid-Sensoren
-
----
-
-## Off-Grid-Leistung
-
-Zeigt die gemessene Leistung an der Off-Grid-/Inselsteckdose.
-
-Positive Werte werden als Last interpretiert.
-
----
-
-## Off-Grid-Modus
-
-Zeigt den gelesenen Off-Grid-Modus.
-
-Mögliche normalisierte Werte:
-
-* nicht konfiguriert
-* unbekannt
-* aus
-* normal
-* ökonomisch
-
----
-
-## Off-Grid-Last aktiv
-
-Zeigt, ob eine relevante Last an der Inselsteckdose erkannt wurde.
-
----
-
-## Off-Grid-Quelle aktiv
-
-Diagnosewert für mögliche Off-Grid-Eingangsleistung.
-
-Dieser Bereich ist aktuell vorsichtig zu interpretieren, da nicht alle Geräte die Richtung gleich melden.
-
----
-
-## Regelgrund Off-Grid
-
-Zeigt, was die Off-Grid-Logik aktuell macht.
-
-Mögliche Gründe:
-
-```text
-none
-offgrid_load_observed
-```
-
-| Regelgrund                | Bedeutung                                      |
-| ------------------------- | ---------------------------------------------- |
-| `none`                    | Keine Off-Grid-Last erkannt                    |
-| `offgrid_load_observed`   | Off-Grid-Last erkannt und diagnostisch erfasst |
+> [!NOTE]
+> Battery SmartFlow AI schaltet die Inselsteckdose nicht und verändert deren
+> Modus nicht. Die Integration berücksichtigt die konfigurierten Quelldaten nur
+> bei ihrer eigenen Lade- und Entladeentscheidung.
 
 ---
 
@@ -1558,6 +1794,10 @@ Mögliche Zustände:
 
 Zeigt, ob wegen kritischer Zellspannung eine Notladung aktiv ist.
 
+Die Notladung startet beim Erreichen der Warnschwelle und bleibt bis zur
+konfigurierten Zellspannungs-Wiederfreigabe aktiv. Dadurch führen kurze
+Spannungsanstiege während des Ladens nicht zu wiederholten Ladeimpulsen.
+
 ---
 
 ## Entladung durch Zellspannungs-Schutz blockiert
@@ -1581,15 +1821,36 @@ Beispiele:
 
 # 6.6 Steuerelemente
 
-![Leistungs- & Schutzparameter](images/controls_01_limits.png)
+Die wichtigsten Preis- und Schutzregler befinden sich im Gerätebereich
+**Steuerung**:
 
----
+![Preis- und Schutzregler ab V4.6.0](images/v460_price_controls.png)
+
+Die Prozentwerte sind bewusst als verständliche Auf- und Abschläge dargestellt:
+
+* **Peakpreis-Aufschlag 27 %** bedeutet: Ein Preis muss ungefähr 27 % über dem
+  maßgeblichen Tagesniveau liegen, bevor er als Peak gilt. Ein kleinerer Wert
+  erkennt mehr, ein größerer Wert nur deutlichere Preisspitzen.
+* **Talpreis-Abschlag 15 %** bedeutet: Ein Preis muss ungefähr 15 % unter dem
+  Tagesniveau liegen, bevor er als Tal gilt. Ein kleinerer Wert erkennt mehr,
+  ein größerer Wert nur deutlichere Preistäler.
+
+Für den Einstieg empfiehlt es sich, diese beiden Werte zunächst unverändert zu
+lassen und erst nach mehreren vollständigen Preistagen anzupassen. Die Felder
+**Sehr-billig** und **Sehr-teuer** sind dagegen feste absolute Preisgrenzen in
+der angezeigten Währung pro kWh. **SoC Minimum** schützt die untere Reserve,
+**SoC Maximum** begrenzt das normale Ladeziel. Der PV-Ladestart legt fest, ab
+welcher stabilen Netzeinspeisung eine neue PV-Überschussladung beginnen darf.
 
 ## Max. Entladeleistung
 
 Begrenzt die maximale Entladeleistung.
 
 Dieser Wert wird zusätzlich durch das Geräteprofil begrenzt.
+
+Die Oberfläche erlaubt Werte bis 4000 W, damit auch die neuen Mix-Modelle
+vollständig eingestellt werden können. Kleinere Profile bleiben an ihrem
+jeweiligen `MAX_OUTPUT_W` begrenzt.
 
 ---
 
@@ -1599,11 +1860,17 @@ Begrenzt die maximale Ladeleistung.
 
 Dieser Wert wird zusätzlich durch das Geräteprofil begrenzt.
 
+Die Oberfläche erlaubt Werte bis 4000 W. Das aktive Profil begrenzt den
+tatsächlichen Befehl weiterhin über `MAX_INPUT_W`.
+
 ---
 
 ## Notladeleistung
 
 Leistung, mit der bei Notladung geladen wird.
+
+Auch dieser Wert kann bis 4000 W eingestellt werden und unterliegt dem
+Eingangslimit des aktiven Geräteprofils.
 
 ---
 
@@ -1613,9 +1880,35 @@ SoC-Schwelle, ab der eine Notladung ausgelöst werden kann.
 
 ---
 
-## Peak-Faktor
+## Peakpreis-Aufschlag
 
-Bestimmt, wie empfindlich adaptive Preispeaks erkannt werden.
+Bestimmt in Prozent, wie weit ein Preis über dem Tagesniveau liegen muss, damit
+er als adaptiver Preispeak erkannt wird. Beispiel: Der bisherige Faktor 1,27
+wird in der Oberfläche als 27 % angezeigt.
+
+---
+
+## Talpreis-Abschlag
+
+Bestimmt in Prozent, wie weit ein Preis unter dem Tagesniveau liegen muss, damit
+er als Talpreis bewertet wird. Ein höherer Abschlag verlangt ein deutlicheres
+Preistal. Beispiel: Der bisherige Faktor 0,85 wird als 15 % angezeigt.
+
+---
+
+## PV-Ladestart ab Einspeisung
+
+Mindestwert realer Netzeinspeisung für den Start einer neuen
+PV-Überschussladung. Die aktuelle PV-Leistung allein reicht nicht als
+Startsignal.
+
+---
+
+## Prognose-Grundlast
+
+Annahme für die durchschnittliche Hauslast bei prognosebasierten
+Planungsberechnungen. Der Wert beeinflusst die erwartete verfügbare PV-Energie,
+nicht die aktuelle netzgeführte Leistungsregelung.
 
 ---
 
@@ -1684,165 +1977,60 @@ Im manuellen Modus kann gewählt werden:
 
 ---
 
-# Kapitel 7 – Regelprofil bearbeiten
+# 6.7 Debug-Status
 
-Battery SmartFlow AI besitzt einen Profil-Editor.
+V4.4 führt eine zeitlich begrenzte interne Debug-Aufzeichnung ein. Damit der
+Home-Assistant-Recorder im Normalbetrieb nicht mit umfangreichen
+Diagnoseattributen belastet wird, erscheinen in der Geräteansicht nur wenige
+sparsame Statusentitäten:
 
-Damit können wichtige Regelparameter direkt über Home Assistant angepasst werden.
+![Debug-Status in der Geräteansicht](images/v460_debug_status.png)
 
-![Regelprofil bearbeiten](images/config_05_profil_expert.png)
+* **Debug-Aufzeichnung aktiv** – zeigt `Ja` oder `Nein`
+* **Debug-Aufzeichnung endet um** – geplantes automatisches Ende
+* **Erfasste Debug-Samples** – Anzahl der bisher gespeicherten Messpunkte
+* **Letztes Debug-Paket** – Pfad des zuletzt exportierten JSON-Pakets
+* **Letzter Debug-Fehler** – letzter Fehler beim Aufzeichnen oder Exportieren
 
----
+Die technischen Einzelheiten befinden sich nicht als große Attributblöcke an
+diesen Entitäten, sondern ausschließlich im zeitlich begrenzten JSON-Paket.
+Ist keine Aufzeichnung aktiv, entsteht dadurch praktisch keine zusätzliche
+Recorder-Last.
 
-## 7.1 Bereiche im Profil-Editor
-
-Der Profil-Editor ist in Bereiche aufgeteilt:
-
-| Bereich       | Zweck                                  |
-| ------------- | -------------------------------------- |
-| Allgemein     | gemeinsame Profilwerte                 |
-| Laden         | Regelwerte für INPUT/Ladeleistung      |
-| Entladen      | Regelwerte für OUTPUT/Entladeleistung  |
-| Expertenmodus | Lernplanung, Leistungsregelung, Zellschutz |
-
----
-
-## 7.2 Allgemein
-
-Im Bereich **Allgemein** befinden sich gemeinsame Profilparameter.
-
-Typische Werte:
-
-* installierte PV-Leistung
-* Ziel-Netzbezug
-* Export-Schutz
-* Keepalive Mindestdefizit
-* Keepalive Mindestleistung
-* Entlade-Wiederfreigabe oberhalb SoC-Minimum
+Die Bedienung des Debug-Modus wird in [Kapitel 7.3](#73-debug-modus)
+beschrieben.
 
 ---
 
-### Ziel-Netzbezug
+# Kapitel 7 – Einstellungen bearbeiten
 
-Ein kleiner gewollter Netzbezug kann die Regelung beruhigen.
+Der Einstellungsbereich enthält nur Optionen, die im normalen Betrieb bewusst
+durch den Benutzer geändert werden sollen.
 
-Beispiel:
+Gerätespezifische Werte für Lade- und Entladeregelung werden automatisch durch
+das ausgewählte Geräteprofil verwaltet. Bereits gespeicherte Profilanpassungen
+älterer Versionen bleiben aus Kompatibilitätsgründen erhalten, werden aber nicht
+mehr im Einstellungsdialog angeboten.
 
-```text
-Ziel-Netzbezug: 10 W
-```
+Der Einstellungsdialog ist seit V4.4 in drei Bereiche gegliedert:
 
-Das bedeutet:
+![Einstellungsbereiche mit Debug-Modus](images/config_07_settings_menu.png)
 
-Battery SmartFlow AI versucht nicht exakt 0 W zu treffen, sondern lässt einen kleinen Bezug zu.
-
-Das verhindert unnötige Einspeisung und reduziert Regelzacken.
-
----
-
-### Export-Schutz
-
-Der Export-Schutz ist eine zusätzliche Sicherheitsreserve gegen ungewollte Einspeisung.
-
-Ein höherer Wert macht die Regelung vorsichtiger.
+* **Allgemein** – grundlegende, regelmäßig benötigte Einstellungen
+* **Expertenmodus** – erweiterte Planungs- und Schutzfunktionen
+* **Debug-Modus** – zeitlich begrenzte Aufzeichnung nur für Fehlersuche und Support
 
 ---
 
-### Keepalive Mindestleistung
+## 7.1 Allgemein
 
-Dieser Wert hält eine Entladung ab einer Mindestleistung aktiv.
-
-Zu niedrige Werte können zu Ein-/Aus-Flattern führen.
-
-Zu hohe Werte können unnötigen Bezug oder Export verursachen.
+Im Bereich **Allgemein** kann die installierte theoretische PV-Modulleistung der
+Anlage angepasst werden. Sie dient als Anlagenkontext für PV-bezogene
+Auswertungen.
 
 ---
 
-## 7.3 Laden
-
-Im Bereich **Laden** befinden sich die Regelparameter für INPUT/PV-Ladung.
-
-Wichtige Werte:
-
-* Laden Deadband
-* Laden KP Hochregeln
-* Laden KP Runterregeln
-* Laden Max. Schritt Hochregeln
-* Laden Max. Schritt Runterregeln
-
----
-
-### Laden Deadband
-
-Die Deadband ist ein Toleranzbereich.
-
-Innerhalb dieses Bereichs wird nicht nachgeregelt.
-
-| Einstellung         | Wirkung                                 |
-| ------------------- | --------------------------------------- |
-| höhere Deadband     | ruhiger, weniger kleine Korrekturen     |
-| niedrigere Deadband | genauer, schneller, potenziell nervöser |
-
----
-
-### Laden KP
-
-KP bestimmt, wie stark auf Abweichungen reagiert wird.
-
-| Einstellung    | Wirkung                                      |
-| -------------- | -------------------------------------------- |
-| höherer KP     | schnellere Reaktion, mehr Risiko für Sprünge |
-| niedrigerer KP | ruhigere Reaktion, langsamere Anpassung      |
-
----
-
-### Laden Max. Schritt
-
-Begrenzt, wie stark die Ladeleistung pro Regelzyklus geändert werden darf.
-
-Kleinere Schritte machen die Regelung ruhiger.
-
----
-
-## 7.4 Entladen
-
-Im Bereich **Entladen** befinden sich die Regelparameter für OUTPUT.
-
-Wichtige Werte:
-
-* Entladen Deadband
-* Entladen KP Hochregeln
-* Entladen KP Runterregeln
-* Entladen Max. Schritt Hochregeln
-* Entladen Max. Schritt Runterregeln
-
----
-
-### Entladen Deadband
-
-Toleranzbereich für die Entladung.
-
-Ein höherer Wert kann bei nervösen Systemen helfen.
-
----
-
-### Entladen KP
-
-Bestimmt, wie stark die Entladeleistung angepasst wird.
-
-Wenn die Entladekurve stark zackt, können niedrigere KP-Werte helfen.
-
----
-
-### Entladen Max. Schritt
-
-Begrenzt die Änderung pro Regelzyklus.
-
-Für empfindliche Systeme sind kleinere Schritte oft besser.
-
----
-
-## 7.5 Expertenmodus
+## 7.2 Expertenmodus
 
 Im Expertenmodus können erweiterte Funktionen aktiviert werden:
 
@@ -1850,8 +2038,8 @@ Im Expertenmodus können erweiterte Funktionen aktiviert werden:
 * lernbasierte Ladefenster-Planung
 * Zellspannungs-Schutz
 
-Die verbesserte Leistungsregelung ist ab V4.3.0-Dev8.1 für alle
-Installationen verbindlich aktiv und keine einstellbare Expertenoption mehr.
+Die einheitliche Leistungsregelung ist in V4.3.0 für alle Installationen
+verbindlich aktiv und keine einstellbare Expertenoption.
 
 ---
 
@@ -1877,6 +2065,143 @@ Der Schutz kann Entladung sperren oder Notladung auslösen.
 
 ---
 
+## 7.3 Debug-Modus
+
+Der Debug-Modus ist eine Supportfunktion für Situationen, in denen sich eine
+Lade-, Entlade- oder Planungsentscheidung nicht allein anhand der sichtbaren
+Sensorwerte erklären lässt. Er ist bewusst nicht als dauerhaft präsentes
+Bedienelement in der normalen Geräteansicht ausgeführt.
+
+### Debug-Aufzeichnung starten
+
+Öffne in Home Assistant:
+
+```text
+Einstellungen
+→ Geräte & Dienste
+→ Battery SmartFlow AI
+→ Konfigurieren
+→ Debug-Modus
+```
+
+Anschließend erscheint der Startdialog:
+
+![Debug-Aufzeichnung starten](images/config_08_debug_start.png)
+
+Wähle eine Aufzeichnungsdauer:
+
+* 10 Minuten
+* 30 Minuten
+* 60 Minuten
+* 120 Minuten
+
+Mit **OK** wird die Aufzeichnung unmittelbar gestartet. Ein zusätzlicher
+Startschalter ist nicht erforderlich. Der Start wird durch eine übersetzte
+Bestätigung quittiert.
+
+> [!TIP]
+> Starte die Aufzeichnung möglichst kurz bevor das auffällige Verhalten
+> erwartet wird. Für kurze Regelungsprobleme reichen meist 10 Minuten. Für
+> Ladeplanung, Ladefenster oder wechselnde Preise sind 30 bis 120 Minuten oft
+> aussagekräftiger.
+
+### Aufzeichnung zeitgesteuert starten
+
+Die vorhandenen Home-Assistant-Aktionen
+`battery_smartflow_ai.start_debug_recording` und
+`battery_smartflow_ai.stop_debug_recording` können auch in Automationen
+verwendet werden. Dieses Beispiel startet um 00:30 Uhr automatisch eine
+zweistündige Aufzeichnung:
+
+```yaml
+alias: BSFAI Debug-Aufzeichnung nachts starten
+triggers:
+  - trigger: time
+    at: "00:30:00"
+actions:
+  - action: battery_smartflow_ai.start_debug_recording
+    data:
+      duration_minutes: "120"
+mode: single
+```
+
+Bei nur einem BSFAI-Konfigurationseintrag ist keine `entry_id` erforderlich.
+Bei mehreren Einträgen muss die gewünschte Konfiguration zusätzlich in den
+Aktionsdaten ausgewählt werden. Die Aufzeichnung endet nach der gewählten Dauer
+automatisch; der Stop-Dienst ist nur für ein vorzeitiges Ende nötig.
+
+### Fortschritt beobachten
+
+Während der Aufnahme zeigen die Debug-Statusentitäten in der Geräteansicht:
+
+* ob die Aufzeichnung aktiv ist,
+* wann sie automatisch endet,
+* und wie viele Samples bereits erfasst wurden.
+
+Die Detaildaten werden intern gesammelt und nicht fortlaufend als große
+Sensorattribute in die Home-Assistant-Datenbank geschrieben.
+
+### Automatisches Ende
+
+Nach der gewählten Laufzeit stoppt die Aufzeichnung automatisch. Anschließend
+wird ein JSON-Debug-Paket exportiert und der Pfad über **Letztes Debug-Paket**
+angezeigt.
+
+Die Dateien liegen unter:
+
+```text
+/config/bsfai/debug/
+```
+
+Es werden höchstens zehn BSFAI-Debug-Pakete aufbewahrt. Beim Erreichen dieser
+Grenze werden die ältesten eigenen Pakete automatisch entfernt.
+
+### Aufzeichnung vorzeitig beenden
+
+Rufe während einer aktiven Aufzeichnung erneut **Konfigurieren → Debug-Modus**
+auf. Der Dialog zeigt den aktuellen Fortschritt und das geplante Ende. Mit
+**OK** wird die laufende Aufzeichnung vorzeitig beendet und das bis dahin
+gesammelte Paket exportiert.
+
+### Debug-Paket herunterladen
+
+Das letzte Paket kann über **Diagnosedaten herunterladen** am
+Battery-SmartFlow-AI-Integrations- beziehungsweise Geräteeintrag abgerufen
+werden. Alternativ kann die unter **Letztes Debug-Paket** angezeigte Datei im
+Verzeichnis `/config/bsfai/debug/` geöffnet werden.
+
+Das JSON-Paket enthält unter anderem:
+
+* Integrationsversion, Geräteprofil und Aufnahmezeitraum
+* konfigurierte und verfügbare Datenquellen
+* SoC, PV-Leistung, Hauslast, Netzbezug und Einspeisung
+* Preise, Einspeisevergütung und wirtschaftliche Bewertung
+* Strategie-, Planungs- und Ladebindungszustände
+* PV-/Netz-Aufteilung einer Ladung
+* Regelungswerte und endgültige Gerätebefehle
+* Zusammenfassung und Warnungen
+
+### Datenschutz und Weitergabe
+
+Passwörter, Tokens, API-Schlüssel, Authorization-Header und andere bekannte
+Geheimnisse werden vor dem Export rekursiv gefiltert. Für die technische
+Zuordnung können jedoch konfigurierte Entity-IDs und detaillierte Zustände im
+Paket enthalten sein.
+
+> [!IMPORTANT]
+> Prüfe ein Debug-Paket vor einer öffentlichen Veröffentlichung trotzdem kurz.
+> Teile es bevorzugt gezielt mit dem Support oder hänge es nur dann an ein
+> öffentliches Issue beziehungsweise eine Diskussion an, wenn die enthaltenen
+> Entity-IDs für dich unproblematisch sind.
+
+### Debug-Modus im Normalbetrieb
+
+Der Debug-Modus muss nicht vorsorglich laufen. Verwende ihn nur für konkrete
+Fehlersuche. Ohne aktive Aufnahme werden keine Samples gesammelt und keine
+laufenden Debug-Dateien erzeugt.
+
+---
+
 # Kapitel 8 – Technischer Hintergrund
 
 Dieses Kapitel richtet sich an Power-User.
@@ -1889,18 +2214,20 @@ Battery SmartFlow AI arbeitet mit mehreren Ebenen.
 
 ```text
 Sensoren
-→ Kontext
+→ Mess- und Planungskontext
+→ AutomaticStrategy-Kontext
 → Decision Engine
+→ StrategyDecision / sichtbarer Zustand
 → StrategyIntent
 → ModeArbiter
-→ PowerController
+→ RegulationPowerController
 → DeviceCommand
 → Home Assistant Service Calls
 ```
 
 ---
 
-## Kontext
+## Mess- und Planungskontext
 
 Der Kontext enthält alle aktuellen Eingangsdaten:
 
@@ -1920,9 +2247,32 @@ Der Kontext enthält alle aktuellen Eingangsdaten:
 
 ---
 
+## AutomaticStrategy-Kontext
+
+Dieser Baustein ist ausschließlich in der Automatik aktiv. Er bewertet die
+aktuelle Relevanz von:
+
+* PV und Hauslast
+* Preisniveau
+* verfügbarer Batteriereserve
+* PV-Prognose
+
+Das Ergebnis ist eine Gewichtung und eine Reihe strategischer Freigaben, zum
+Beispiel ob wirtschaftliche Entladung, Tal-Ladung oder Reserve-Ladung überhaupt
+geprüft werden darf. Die interne Sommer-/Wintererkennung ist nur noch ein
+weicher Zusatzkontext und kein Umschalter für getrennte Strategien.
+
+> [!IMPORTANT]
+> AutomaticStrategy entscheidet nicht selbst über Laden oder Entladen. Die
+> endgültige strategische Auswahl bleibt bei der Decision Engine.
+
+---
+
 ## Decision Engine
 
-Die Decision Engine entscheidet strategisch.
+Die Decision Engine erzeugt alle im aktuellen Kontext zulässigen Kandidaten.
+Die Reihenfolge der Regeln ist nur noch der Gleichstandsentscheid; grundsätzlich
+gewinnt der Kandidat mit der höchsten strategischen Priorität.
 
 Sie fragt:
 
@@ -1934,6 +2284,35 @@ Sie fragt:
 * Gibt es eine Notladung?
 * Ist eine Schutzfunktion aktiv?
 * Gibt es eine aktive Off-Grid-Last?
+
+Zu den Kandidaten gehören unter anderem Notladung, manuelle Vorgaben,
+PV-Überschussladung, geplante und gelernte Ladefenster, Preisladung,
+wirtschaftliche Entladung sowie Hauslastdeckung im Autarkiemodus.
+
+Ungültige Pflichtdaten oder richtungsabhängige Konflikte können einen Kandidaten
+verwerfen, ohne automatisch jede andere zulässige Strategie zu blockieren.
+
+---
+
+## StrategyDecision und sichtbarer Zustand
+
+Der ausgewählte Kandidat wird in ein einheitliches strategisches Modell
+überführt. Es enthält:
+
+* Strategiezustand
+* sichtbaren Zustand
+* gewünschten AC-Modus und Leistung
+* strategischen Grund und Quellgrund
+* Priorität
+* Ziel-SoC und Zusatzinformationen
+
+Der sichtbare Zustand ist bewusst nutzerorientiert und stabiler als ein
+kurzlebiger technischer Reglergrund.
+
+> [!NOTE]
+> StrategyDecision, Strategiezustand, sichtbarer Zustand und Quellgrund sind
+> interne Steuerungswerte, keine dauerhaft angelegten Home-Assistant-Sensoren.
+> Für die Fehlersuche werden sie im Debug-Paket aufgezeichnet.
 
 ---
 
@@ -1965,14 +2344,16 @@ Er verhindert unter anderem:
 * zu frühes INPUT bei instabilem Export
 * OUTPUT während SoC-/Zellschutz
 * INPUT während Zusatzakku-Entladung
-* AC-Ladung bei aktiver Off-Grid-Last
 * schnelles Hin und Her nach Lastwechseln
+
+Eine erkannte Off-Grid-Dauerlast wird diagnostisch berücksichtigt, blockiert
+eine ansonsten gültige AC-Ladung aber nicht pauschal.
 
 ---
 
-## PowerController
+## RegulationPowerController
 
-Der PowerController berechnet die konkrete Leistung.
+Der RegulationPowerController berechnet die konkrete Leistung.
 
 Er nutzt:
 
@@ -1983,12 +2364,16 @@ Er nutzt:
 * Schrittbegrenzung
 * Profilgrenzen
 * vorherige Leistung
+* schnelle Lastanstiege und Lastabfälle
+* Near-Zero-Feinregelung bei aktivem OUTPUT
+* wirtschaftliche Exportgewichtung
 
 ---
 
 ## DeviceCommand
 
-DeviceCommand erzeugt den endgültigen Befehl.
+DeviceCommand erzeugt aus strategischer Absicht, technischer Modusfreigabe und
+berechneter Leistung den endgültigen Gerätebefehl.
 
 Er entscheidet:
 
@@ -2002,15 +2387,25 @@ Er entscheidet:
 
 # 8.2 Prioritätenhierarchie
 
-Battery SmartFlow AI arbeitet mit Prioritäten.
+Battery SmartFlow AI sammelt zunächst strategische Kandidaten und bewertet sie
+anschließend nach Priorität. Dadurch beendet nicht mehr die erste passende
+Regel automatisch die gesamte Auswertung.
 
-| Priorität | Beispiele                                                      |
-| --------- | -------------------------------------------------------------- |
-| sehr hoch | Notladung, Zellspannungs-Notladung                             |
-| hoch      | manuelles Laden/Entladen, harte Schutzsperren                  |
-| mittel    | geplante Ladung, Lernplanung, Preisladung                      |
-| mittel    | Peak-Entladung, Hauslastdeckung                                |
-| technisch | Off-Grid-Unterstützung, PV-Hauslast-Passthrough, Haltezustände |
+| Rang        | Beispiele                                                        |
+| ----------- | ---------------------------------------------------------------- |
+| Schutz      | ungültige Sicherheitsgrenzen, SoC-/Zellschutz, Notladung        |
+| Manuell     | manuelles Laden, Entladen, konstante Entladung oder Standby      |
+| gebunden    | bereits aktive AC-Ladebindung                                   |
+| strategisch | PV-Ladung, Planung, Lernplanung, Preis- und Reserve-Ladung       |
+| Entladung   | adaptive Peak- und wirtschaftliche Entladung                    |
+| Versorgung  | Autarkie-Hauslastdeckung und PV-Hauslast-Passthrough             |
+| Leerlauf    | bereit, sicherer Leerlauf oder technischer Haltezustand          |
+
+Richtungsblocker werden differenziert behandelt. Lädt beispielsweise ein
+Zusatzakku, kann eine eigene Entladung unzulässig sein, während ein anderer
+sicherer Kandidat weiterhin gewählt werden darf. Bei ungültigem Netzsensor gilt
+grundsätzlich sicherer Leerlauf; Notladung und ausdrücklich manuelle Aktionen
+bleiben gesondert priorisiert.
 
 > [!IMPORTANT]
 > Schutzfunktionen dürfen nicht von technischen Haltezuständen überstimmt werden.
@@ -2032,7 +2427,31 @@ Es berücksichtigt:
 * Ladeleistung
 * Deadline
 
-Ziel ist nicht immer sofortiges Laden, sondern ein sinnvoller Zeitpunkt.
+Ziel ist nicht immer sofortiges Laden, sondern ein sinnvoller Zeitpunkt. Eine
+strategische Netzladung darf nur in der Automatik entstehen. Autarkie und
+Manuell starten keine normale Preis- oder Planladung.
+
+Wird eine geplante, gelernte, sehr günstige, Tal- oder Reserve-Ladung
+ausgewählt, erzeugt die Steuerung eine persistente AC-Ladebindung. Diese
+übersteht kurze Zustandswechsel und einen Home-Assistant-Neustart. Sie bewahrt
+den ursprünglichen Auslöser, Ziel-SoC, Leistungswunsch und – bei Lernplanung –
+den geplanten Start, spätesten Start, die Deadline und den zulässigen Preis.
+
+Die Laufzeit kennt drei wesentliche Phasen:
+
+| Phase      | Verhalten                                                        |
+| ---------- | ---------------------------------------------------------------- |
+| wartend    | Plan bleibt gültig, Netzladung wartet auf Preis oder Startzeit   |
+| aktiv      | Ladung ist aktuell zulässig und wird technisch geregelt           |
+| erzwungen  | spätester Start ist erreicht; Zielenergie muss bis Deadline bereitstehen |
+
+Abgeschlossen oder abgebrochen wird die Bindung unter anderem bei erreichtem
+Ziel, abgelaufener Deadline, dauerhaft fehlender Ladeannahme nahe dem Ziel,
+einem wirtschaftlichen Konflikt der Reserve-Ladung, Schutzfehlern oder Wechsel
+der Betriebsart.
+
+PV-Überschuss während einer aktiven Bindung wird nicht zum Abbruchgrund. Der
+PV-Anteil reduziert stattdessen den Netzanteil der Gesamtladung.
 
 ---
 
@@ -2051,7 +2470,15 @@ Typische Bereitschaftskriterien:
 * ausreichende Kernzeit-Abdeckung
 * hohe Datenabdeckung
 
-Bis dahin bleibt klassische Planung aktiv.
+Bis dahin bleibt klassische Planung aktiv. Sobald eine gelernte Planung eine
+Ladung anstößt, gelten dieselben Phasen und Abbruchbedingungen der
+AC-Ladebindung wie bei der klassischen Planung.
+
+Ein nach Zielerreichung neu berechneter Bedarf muss mindestens einer sinnvoll
+steuerbaren Energiemenge entsprechen. Als Untergrenze gilt ein SoC-Prozentpunkt
+der Gesamtkapazität, mindestens jedoch 0,05 kWh. Kleinere Abweichungen bleiben
+in der Diagnose sichtbar, erzeugen aber keine neue Ladebindung. Sobald der
+Bedarf diese Schwelle erreicht, plant BSFAI weiterhin normal neu.
 
 ---
 
@@ -2059,17 +2486,50 @@ Bis dahin bleibt klassische Planung aktiv.
 
 Wichtige Stabilitätsmechanismen:
 
-* PV-Lade-Latch
-* Entlade-Latch
-* Passthrough-Latch
-* Mode-Switch-Cooldowns
+* Mindesthaltezeiten für PV-Ladung, Entladung und Passthrough
+* Sperrzeiten zwischen INPUT und OUTPUT
 * stabile Importzyklen
 * stabile Exportzyklen
-* Post-Load-Drop-Hold
-* Post-Output-Overshoot-Hold
+* Haltezustände nach Lastabfall oder OUTPUT-Überschwingen
 * Schrittbegrenzung
-* Deadband
+* getrennte Verstärkung beim Hoch- und Herunterregeln
+* Totzonen mit zusätzlicher Near-Zero-Feinregelung
 * Schreibvermeidung bei unveränderten Befehlen
+* Erkennung, ob ein ausgeführter Befehl am Netzpunkt wirksam war
+
+## Near-Zero-Regelung
+
+Der Regler verwendet nicht nur den aktuellen Netzwert, sondern auch kurze und
+mittlere Mittelwerte sowie die erkannte Änderungsrichtung. Bei aktivem OUTPUT
+kann eine kleine zusätzliche Korrektur verbleibenden, dauerhaft bestätigten
+Netzbezug abbauen. Bei Export oder instabilen Messwerten wird diese
+Feinregelung begrenzt, damit keine Schwingung entsteht.
+
+Bei PV-Ladung wird die Eingangsleistung schneller reduziert, sobald die
+Einspeisereserve schrumpft. Dadurch soll die Ladung nahe am Netznullpunkt bleiben,
+ohne in Netzbezug zu kippen.
+
+## Wirtschaftliche Exportgewichtung
+
+Ein konfigurierter Einspeisetarif kann den technischen Zielpunkt leicht in
+Richtung Einspeisung verschieben:
+
+* bei reiner PV-Überschussladung, um bezahlte Einspeisung nicht durch Netzbezug
+  zu ersetzen
+* bei Entladung nur dann, wenn die gespeicherte Energie zuzüglich Sicherheitsmarge
+  günstiger als die Einspeisevergütung ist
+
+Geplante, manuelle und Notladungen behalten ihren strategischen Leistungswunsch
+und werden nicht durch diese Exportgewichtung verändert.
+
+## Ladepreis-Zwischenspeicher
+
+SoC-Werte werden häufig langsamer aktualisiert als Leistungs- und Netzsensoren.
+Deshalb sammelt V4.3.0 während realer Ladung zeitlich begrenzt gewichtete
+Nachweise zu PV-/Netzanteil und Preis. Ein nachlaufender SoC-Anstieg kann diese
+Kostenbasis noch übernehmen, auch wenn INPUT bereits beendet wurde. Bei
+Entladung oder am Mindest-SoC wird der Zwischenspeicher verworfen; veraltete
+Nachweise werden nicht weiterverwendet.
 
 ---
 
@@ -2084,12 +2544,41 @@ Beispiele:
 * Reaktionsgeschwindigkeit
 * Schrittweiten
 * Cooldowns
-* Off-Grid-Unterstützung
+* Off-Grid-Erkennung und gerätespezifische Grenzwerte
 * INPUT-Keepalive-Sicherheit
 * Fast-Mode-Switch-Fähigkeit
 * Low-SoC-Verhalten
 * Zellschutzverhalten
 * Passthrough-Fähigkeit
+
+Benutzerwerte wie maximale Lade-, Entlade- oder Notladeleistung werden immer
+noch einmal durch `MAX_INPUT_W` und `MAX_OUTPUT_W` des aktiven Profils begrenzt.
+Die in Home Assistant einstellbare Obergrenze von 4000 W hebt daher keine
+Gerätesicherheitsgrenze auf.
+
+Im Code sind folgende Sicherheitsgrenzen hinterlegt:
+
+| Profil                 | AC-Eingang | AC-Ausgang | Off-Grid-Grenze |
+| ---------------------- | ----------:| ----------:| ---------------:|
+| SF800Pro               | 1000 W     | 800 W      | –                |
+| SF800Pro2              | 1000 W     | 800 W      | –                |
+| SF1600AC+              | 1600 W     | 1600 W     | –                |
+| SF2400AC               | 2400 W     | 2400 W     | 2400 W           |
+| SF2400AC+              | 2400 W     | 2400 W     | 2400 W           |
+| SF2400Pro              | 2400 W     | 2400 W     | 2400 W           |
+| SolarFlow 3000 Mix AC+ | 3000 W     | 3000 W     | 3680 W           |
+| SolarFlow 4000 Mix AC+ | 4000 W     | 4000 W     | 3680 W           |
+| SolarFlow 4000 Mix Pro | 4000 W     | 4000 W     | 3680 W           |
+| Hyper 2000             | 1200 W     | 1200 W     | –                |
+| HUB 2000               | 1800 W     | 1200 W     | –                |
+
+Die drei Mix-Profile verwenden bewusst keine Pro-Sonderlogik. Sie erben die
+neutrale AC-gekoppelte Regelbasis des SF2400AC und überschreiben nur die vom
+Nutzer bestätigten AC- und Off-Grid-Grenzen.
+
+Die gemeldete Speicherkapazität wird nicht im Geräteprofil hinterlegt. Sie
+entsteht weiterhin aus Kapazität pro Akkupack und Anzahl der Packs bzw. aus
+einem optionalen Kapazitätssensor.
 
 ---
 
@@ -2109,25 +2598,32 @@ Typische Optimierungen:
 * konservativeres Low-SoC-Verhalten
 
 > [!TIP]
-> Ziel ist nicht immer perfekte 0 W, sondern stabile Regelung.
+> Ziel ist ein möglichst kleiner und stabiler Netzfehler – nicht ein nervös
+> erzwungener Einzelmesswert von exakt 0 W.
 
 ---
 
-# 8.8 SF2400Pro / Low-SoC PV-Hauslast
+# 8.8 Hinweise zu SolarFlow 3000/4000 Mix
 
-Ein gemeldeter Sonderfall betrifft SF2400Pro-Systeme bei niedrigem SoC und schwacher PV.
+Die Profile der neuen Mix-Geräte sind in V4.3.0 vollständig auswählbar und ihre
+bestätigten AC-/Off-Grid-Grenzen werden technisch berücksichtigt. Die
+Datenbereitstellung liegt jedoch außerhalb von Battery SmartFlow AI.
 
-Dabei kann es vorkommen, dass Battery SmartFlow AI wegen SoC-Minimum und Entlade-Wiederfreigabe auf Bereitschaft bleibt, obwohl manuell gesetztes OUTPUT ungefähr in Höhe der PV-Leistung eine Art PV-Hauslast-Bypass ermöglicht.
+Derzeit kann eine Token-Verbindung der Geräte zu Z-HA erfolgreich erscheinen,
+obwohl wegen eines Firmwareproblems keine aktuellen Mess- und Steuerdaten
+geliefert werden. In diesem Fall kann Battery SmartFlow AI trotz korrektem Profil
+nicht arbeiten.
 
-Dieser Fall ist verwandt mit früheren PV-Hauslast-Passthrough-Themen, aber nicht identisch mit Off-Grid.
+Bei einer Support-Anfrage zu diesen Modellen sollten deshalb zuerst geprüft
+werden:
 
-Wenn er mit der aktuellen Version weiterhin reproduzierbar ist, wird er als
-eigener gerätespezifischer Wiederanlauffall untersucht.
+* genaue Modellbezeichnung
+* installierte Firmware-Version
+* ob die Z-HA-Entitäten tatsächlich laufend neue Werte liefern
+* ob SoC, Batterieleistung, AC-Modus sowie Lade- und Entladegrenze verfügbar sind
 
-Wichtig:
-
-> Es soll nicht einfach Entladung trotz SoC-Schutz erlaubt werden.
-> Ein sauberer Fix müsste PV-Leistung zur Hauslast führen, ohne normale Akkuentladung freizugeben.
+MQTT-Entitäten allein gelten nicht als zuverlässiger Nachweis, weil dieser Weg
+von Zendure nicht mehr unterstützt und nicht verlässlich aktualisiert wird.
 
 ---
 
@@ -2141,7 +2637,7 @@ Mögliche Ursachen:
 
 * keine Preisprognose vorhanden
 * aktueller Preis fehlt
-* Peak-Faktor zu hoch
+* Peakpreis-Aufschlag zu hoch
 * Tagespreise sind sehr gleichmäßig
 * Preis liegt nicht weit genug über dem Tagesdurchschnitt
 
@@ -2176,7 +2672,7 @@ Mögliche Ursachen:
 
 * keine reale Entladung erkannt
 * kein gültiger Ladepreis gespeichert
-* Akku wurde überwiegend aus PV geladen
+* PV-Ladung wurde ohne konfigurierte Einspeisevergütung mit 0,00 €/kWh bewertet
 * Preisunterschied zu klein
 * technische Entladung wird nicht als Preisentladung gezählt
 * Batterie-Leistungssensor hat falsches Vorzeichen
@@ -2187,8 +2683,12 @@ Prüfe:
 * aktueller Strompreis
 * Entscheidungsgrund
 * Batterie-Leistung
-* delta_kwh
-* charge_source
+* Angerechneter Ladepreis
+* Einspeisevergütung in der Integrationskonfiguration
+
+Bleibt der Grund unklar, zeichne einen Lade- oder Entladevorgang im Debug-Modus
+auf. Energieänderung und intern erkannte Ladequelle stehen im JSON-Paket, nicht
+als eigene Sensoren.
 
 ---
 
@@ -2198,39 +2698,45 @@ Mögliche Ursachen:
 
 * Netzsensor liefert sprunghafte Werte
 * falsches Geräteprofil
-* zu aggressive Profilwerte
 * parallele Automationen
 * Zendure-App regelt mit
-* P1-Regelung in Zendure-Integration aktiv
-* Deadband zu klein
-* Max-Schritte zu groß
+* Z-HA-Manager regelt parallel, weil sein Betriebsmodus nicht **AUS** ist
 
 Maßnahmen:
 
-* ein passendes Geräteprofil verwenden
 * korrektes Geräteprofil wählen
-* Deadband erhöhen
-* Schrittweiten reduzieren
-* Ziel-Netzbezug leicht erhöhen
 * parallele Automationen deaktivieren
 * Netzsensor prüfen
+* Zendure-App als parallele Steuerung ausschließen
+* im Z-HA-Manager den Betriebsmodus auf **AUS** stellen; die P1-Sensorauswahl
+  aus der Z-HA-Ersteinrichtung darf bestehen bleiben
+* Debug-Paket und Geräteverlauf für eine Support-Anfrage sichern
 
 ---
 
-## 9.5 Netzbezug bleibt dauerhaft bei 30–100 W
+## 9.5 Netzbezug oder Einspeisung bleibt oberhalb des Zielbereichs
 
-Das kann normal sein.
+Kurze Abweichungen bei Lastwechseln sind normal. V4.3.0 regelt im stabilen
+Betrieb jedoch deutlich näher am jeweiligen Zielwert als frühere Versionen.
 
-Battery SmartFlow AI arbeitet oft mit einem kleinen Ziel-Netzbezug.
+Der genaue Zielpunkt hängt vom Geräteprofil und von der Wirtschaftlichkeit ab:
 
-Warum?
+* ein Profil kann einen kleinen Netzbezug vorsehen
+* PV-Ladung mit Einspeisevergütung kann leichte Einspeisung bevorzugen
+* Entladung kann leichte Einspeisung bevorzugen, wenn die gespeicherte Energie
+  günstiger als die Vergütung ist
+* 800-W-Profile arbeiten bewusst konservativer
 
-* weniger ungewollte Einspeisung
-* stabilere Regelung
-* weniger hektische Leistungssprünge
-* weniger Schaltvorgänge
+Bleiben 30–100 W oder mehr dauerhaft stehen, prüfe:
 
-Ein perfekter 0-Wert ist nicht immer das stabilste Ziel.
+* Ziel-Netzbezug und Entladen Ziel-Netzbezug
+* Netzsensor-Aktualisierung und Vorzeichen
+* aktives Geräteprofil
+* parallele Zendure- oder Home-Assistant-Regelungen
+
+Sind diese sichtbaren Punkte unauffällig, zeichne die Situation im Debug-Modus
+auf. Technische Freigaben, Ziel- und Endleistung stehen im JSON-Paket und sind
+keine separaten Sensoren.
 
 ---
 
@@ -2244,8 +2750,7 @@ Mögliche Ursachen:
 * SoC-Maximum erreicht
 * SoC-Limit aktiv
 * Zellschutz aktiv
-* ModeArbiter wartet auf stabile Exportzyklen
-* post-output-hold aktiv
+* die interne Regelung wartet auf stabile Exportzyklen oder eine kurze Haltezeit
 
 Prüfe:
 
@@ -2253,9 +2758,14 @@ Prüfe:
 * Netzeinspeisung
 * PV-Ladestart ab Einspeisung
 * Entscheidungsgrund
-* regulation_mode_arbiter_reason
-* pv_charge_latched
-* additional_battery_discharge_active
+
+Wenn daraus kein Grund hervorgeht, erstelle während des fehlgeschlagenen Starts
+ein Debug-Paket. Interne Halte-, Latch- und Zusatzakkuwerte sind nur dort
+enthalten und keine eigenen Home-Assistant-Sensoren.
+
+Eine neue PV-Ladung startet anhand real gemessener Netzeinspeisung, nicht allein
+aufgrund einer hohen PV-Leistung. Während einer bereits aktiven Ladung wird die
+Leistung dagegen kontinuierlich geregelt.
 
 ---
 
@@ -2268,54 +2778,81 @@ Mögliche Ursachen:
 * Zellspannung blockiert
 * unteres SoC-Limit aktiv
 * Preis nicht hoch genug
-* Sommer/Winter-Logik entscheidet anders
-* ModeArbiter wartet auf stabile Importzyklen
+* Automatik-Kontext erlaubt aktuell keine wirtschaftliche Entladung
+* Autarkiemodus wartet noch auf eine technisch stabile Hauslastdeckung
+* die interne Regelung wartet auf stabile Importzyklen
 * Zusatzakku lädt
 
 Prüfe:
 
 * SoC
 * SoC-Minimum
-* discharge_resume_soc
-* discharge_blocked_by_soc_min
-* cell_voltage_discharge_blocked
-* soc_limit_status
 * Entscheidungsgrund
-* effective_discharge_threshold
-* regulation_mode_arbiter_reason
+* SoC-Limit Status
+* Zellspannungs-Status
+* effektive Entladeschwelle
+
+Bleibt die Ursache unklar, zeichne ein Debug-Paket auf. Wiederfreigabe,
+Entladesperre und technische Modusfreigabe werden dort ausgewiesen, nicht als
+separate Sensoren.
 
 ---
 
-## 9.8 Off-Grid funktioniert nicht wie erwartet
+## 9.8 Off-Grid-Unterstützung funktioniert nicht wie erwartet
 
 Prüfe:
 
 * Off-Grid-Leistung konfiguriert?
 * Off-Grid-Modus konfiguriert?
 * Off-Grid-Modus nicht `off`?
-* Off-Grid-Leistung positiv?
-* Off-Grid-Last aktiv?
-* Off-Grid-Regelgrund?
-* Entscheidung `offgrid_load_support`?
-* set_input_w = 0?
-* set_output_w > 0?
+* melden die konfigurierten **Quellentitäten** plausible aktuelle Werte?
+
+BSFAI legt keine eigenen Off-Grid-Statussensoren mehr an. Starte für eine genaue
+Prüfung eine Debug-Aufzeichnung; das Paket enthält die gelesene Leistung, den
+Modus, die erkannte Last und den internen Regelgrund.
 
 > [!NOTE]
-> Battery SmartFlow AI kann nur das regeln, was Zendure-Firmware und Gerätegrenzen erlauben.
-> Oberhalb der geräte- oder länderspezifischen Off-Grid-Grenzen kann Zendure eigenes Verhalten zeigen.
+> Battery SmartFlow AI liest den Off-Grid-Modus nur und steuert die
+> Inselsteckdose nicht direkt. Die tatsächlich bereitgestellte
+> Off-Grid-Leistung bleibt Aufgabe von Zendure-Firmware und Gerätekonfiguration.
 
 ---
 
 ## 9.9 AC-Ladung bei aktiver Off-Grid-Last
 
-Eine erkannte Off-Grid-Dauerlast wird diagnostisch angezeigt, blockiert eine
-ansonsten gültige automatische AC-Ladung aber nicht mehr pauschal. Schutz,
+Eine erkannte Off-Grid-Dauerlast wird intern berücksichtigt, blockiert eine
+ansonsten gültige automatische AC-Ladung aber nicht pauschal. Schutz,
 Notladung, manuelle Vorgaben und die normale strategische Kandidatenauswahl
 bleiben maßgeblich.
 
 ---
 
-## 9.10 Update von „Zendure SmartFlow AI“
+## 9.10 SolarFlow 3000/4000 Mix liefert keine Daten
+
+Wenn die Token-Verbindung zu Z-HA gelingt, die Entitäten aber keine aktuellen
+Werte liefern, liegt derzeit wahrscheinlich das bekannte Firmwareproblem dieser
+Modelle vor. Das Geräteprofil in Battery SmartFlow AI kann fehlende Quelldaten
+nicht ersetzen.
+
+Prüfe Modell, Firmware-Version und die Zeitstempel bzw. Zustandsänderungen der
+Z-HA-Entitäten. MQTT ist keine zuverlässig unterstützte Ausweichlösung.
+
+---
+
+## 9.11 PV-Ladung wird mit 0,00 €/kWh angerechnet
+
+Prüfe zuerst die **Einspeisevergütung** in der Integrationskonfiguration. Der
+Wert muss in ganzer Währung pro kWh eingegeben werden, beispielsweise `0,122`
+für 12,2 ct/kWh.
+
+Der Sensor **Angerechneter Ladepreis** zeigt den aktuellen Wert bereits während
+der Ladung. Der **Ø Ladepreis Akku** wird erst mit dem nächsten erkannten
+Energie- bzw. SoC-Anstieg gewichtet. Ohne konfigurierte Vergütung ist
+`0,00 €/kWh` das vorgesehene Verhalten.
+
+---
+
+## 9.12 Update von „Zendure SmartFlow AI“
 
 Wenn du von einer alten Version mit altem Namen kommst:
 
@@ -2326,6 +2863,33 @@ Wenn du von einer alten Version mit altem Namen kommst:
 * Konfiguration prüfen
 * Geräteprofil neu wählen
 * optionale neue Sensoren ergänzen
+
+---
+
+## 9.13 Debug-Aufzeichnung startet oder exportiert nicht
+
+Prüfe zuerst die fünf Debug-Statusentitäten in der Geräteansicht:
+
+* Ist **Debug-Aufzeichnung aktiv** auf `Ja` gewechselt?
+* Wird unter **Debug-Aufzeichnung endet um** ein Zeitpunkt angezeigt?
+* Steigt **Erfasste Debug-Samples** während der Aufnahme an?
+* Zeigt **Letzter Debug-Fehler** eine Meldung?
+* Wird nach dem Ende unter **Letztes Debug-Paket** ein Pfad angezeigt?
+
+Wenn eine abgelaufene Aufnahme noch als aktiv erscheint, lade die Integration
+neu oder starte Home Assistant neu und wiederhole eine kurze 10-Minuten-Aufnahme.
+Prüfe außerdem, ob Home Assistant in `/config/bsfai/debug/` schreiben kann.
+
+Wurde ein Paket erzeugt, aber nicht gefunden, suche nicht im Verzeichnis
+`/config/custom_components/`. Die Debug-Dateien liegen bewusst außerhalb des
+Integrationscodes unter:
+
+```text
+/config/bsfai/debug/
+```
+
+Über **Diagnosedaten herunterladen** kann das letzte Paket ohne direkten
+Dateizugriff abgerufen werden.
 
 ---
 
@@ -2341,6 +2905,7 @@ Empfohlen:
 * korrekter Netzsensor
 * Preisverlauf
 * aktueller Strompreis
+* Einspeisevergütung, falls vorhanden
 * PV-Prognose optional
 * Lernplanung aktiviert
 * passendes Geräteprofil
@@ -2365,7 +2930,8 @@ Empfohlen:
 
 Empfohlen:
 
-* Autarkiemodus oder Automatik
+* Autarkiemodus für konsequente PV-/Hauslastpriorität
+* alternativ Automatik, wenn zusätzlich Preisladung und Arbitrage gewünscht sind
 * PV-Leistungssensor
 * Netzsensor
 * PV-Ladestart-Schwelle passend setzen
@@ -2380,40 +2946,41 @@ Empfohlen:
 
 * Automatikmodus
 * Preisverlauf vollständig prüfen
-* Peak-Faktor passend wählen
+* Peakpreis-Aufschlag passend wählen
 * Gewinnmarge nicht zu niedrig setzen
 * sehr-billig-Schwelle nutzen
 * Lernplanung aktivieren
-* Diagnosewerte beobachten
+* sichtbare Statuswerte beobachten und bei Bedarf ein Debug-Paket erstellen
 
 ---
 
 ## 10.5 Stabilität vor Aggressivität
 
-Eine stabile Regelung ist oft besser als ein perfekt ausgeregelter 0-W-Punkt.
+Eine stabile Regelung ist wichtiger als ein einzelner exakt ausgeregelter
+0-W-Messwert. Im eingeschwungenen Betrieb sollte V4.3.0 dennoch nur eine kleine
+Abweichung vom wirtschaftlich gewählten Zielpunkt zeigen.
 
 Bei nervösem Verhalten:
 
-* Deadband erhöhen
-* Max-Schritte reduzieren
-* Ziel-Netzbezug leicht erhöhen
-* Cooldowns verlängern
-* passendes Geräteprofil wählen
-* ein konservatives Geräteprofil verwenden
+* zunächst Geräteprofil und Netzsensor prüfen
+* parallele Steuerungen ausschließen
+* tatsächliche INPUT-/OUTPUT-Grenzen kontrollieren
+* Debug-Paket und Geräteverlauf sichern
+* das Verhalten mit Gerätemodell und Firmware melden
 
 ---
 
 ## 10.6 Kleine 800-W-Systeme
 
-Bei kleineren Systemen wie SF800Pro oder SF800Pro2 können konservativere Werte sinnvoll sein.
+Bei kleineren Systemen wie SF800Pro oder SF800Pro2 verwendet Battery SmartFlow
+AI automatisch konservativere Profilwerte.
 
 Empfohlen:
 
-* etwas Ziel-Netzbezug zulassen
-* kleinere Schrittweiten
-* höhere Deadband
-* längere Haltezeiten
-* keine aggressive 0-W-Jagd
+* das exakte Geräteprofil auswählen
+* Geräte- und Netzsensoren auf laufende Aktualisierung prüfen
+* keine parallele Leistungsregelung aktivieren
+* auffälliges Verhalten mit einem passend aufgezeichneten Debug-Paket melden
 
 ---
 
@@ -2424,9 +2991,21 @@ Empfohlen:
 * Off-Grid-Leistung konfigurieren
 * Off-Grid-Modus konfigurieren
 * ein passendes Geräteprofil verwenden
-* Diagnosewerte prüfen
+* sichtbare Statuswerte prüfen und bei Bedarf ein Debug-Paket erstellen
 * Verhalten mit und ohne AC testen
 * gerätespezifische Grenzen beachten
+
+---
+
+## 10.8 SolarFlow 3000/4000 Mix
+
+Empfohlen:
+
+* exaktes Mix-Profil auswählen
+* Lade-, Entlade- und Notladegrenze passend zur Anlage setzen
+* Z-HA-Entitäten vor dem ersten Regeltest auf laufende Aktualisierung prüfen
+* Firmware-Version bei Support-Anfragen immer mit angeben
+* erst nach bestätigter Datenaktualisierung die Leistungsregelung beurteilen
 
 ---
 
@@ -2435,6 +3014,9 @@ Empfohlen:
 Die folgenden Parameter sind typische Profilwerte.
 
 Nicht jedes Profil verwendet alle Werte gleich.
+
+Diese technischen Werte werden vom ausgewählten Geräteprofil verwaltet und
+sind nicht Bestandteil des normalen Einstellungsdialogs.
 
 ---
 
@@ -2476,6 +3058,23 @@ Nicht jedes Profil verwendet alle Werte gleich.
 
 ---
 
+## Zentrale Near-Zero- und Wirtschaftsparameter
+
+Diese Werte besitzen zentrale Standardwerte und sind keine Einstellungen in der
+Home-Assistant-Oberfläche. Ein Geräteprofil kann sie intern überschreiben.
+
+| Parameter                              | Bedeutung                                           |
+| -------------------------------------- | --------------------------------------------------- |
+| `DISCHARGE_NEAR_ZERO_DEADBAND_W`       | enger Bereich für die OUTPUT-Feinregelung           |
+| `DISCHARGE_NEAR_ZERO_MIN_IMPORT_W`     | bestätigter Mindestbezug für eine Zusatzkorrektur   |
+| `DISCHARGE_NEAR_ZERO_TRIM_STEP_W`      | Schrittweite der Zusatzkorrektur                    |
+| `DISCHARGE_NEAR_ZERO_MAX_TRIM_W`       | maximale zusätzliche OUTPUT-Korrektur               |
+| `ECONOMIC_EXPORT_TARGET_W`             | wirtschaftliches Ziel für eine kleine Einspeisung   |
+| `ECONOMIC_EXPORT_MARGIN_EUR_KWH`       | Preisabstand vor wirtschaftlicher Exportfreigabe    |
+| `ECONOMIC_TARGET_DEADBAND_W`           | enger Toleranzbereich bei aktivem Wirtschaftsziel   |
+
+---
+
 ## Regelparameter der einheitlichen Regelkette
 
 | Parameter                            | Bedeutung                                   |
@@ -2499,19 +3098,42 @@ Nicht jedes Profil verwendet alle Werte gleich.
 | `SUPPORTS_OFFGRID_INPUT`               | Off-Grid kann auch als Eingangs-/Quellpfad betrachtet werden |
 | `OFFGRID_MAX_INTERNAL_SUPPLY_W`        | maximal angenommene interne Versorgung der Off-Grid-Last     |
 | `OFFGRID_LOAD_ACTIVE_W`                | Schwelle für aktive Off-Grid-Last                            |
-| `OFFGRID_LOAD_BLOCKS_AC_CHARGE`        | aktive Off-Grid-Last blockiert automatische AC-Ladung        |
+| `OFFGRID_LOAD_BLOCKS_AC_CHARGE`        | Profilfähigkeit für eine AC-Ladesperre; aktuell deaktiviert  |
 | `OFFGRID_INPUT_AFFECTS_ENERGY_BALANCE` | reservierter Wert für künftige Off-Grid-Quellenbehandlung    |
 
 ---
 
 # Anhang 2 – Wichtige Diagnosewerte für Support
 
-Bei Support-Anfragen sind folgende Werte besonders hilfreich:
+Seit V4.4 sollte bei einem reproduzierbaren Problem bevorzugt eine zeitlich
+begrenzte Debug-Aufzeichnung erstellt und das daraus erzeugte JSON-Paket
+bereitgestellt werden. Dadurch müssen die folgenden Werte nicht mehr einzeln
+als Screenshots oder Sensorattribute zusammengesucht werden.
+
+Empfohlenes Vorgehen:
+
+1. Debug-Modus kurz vor dem erwarteten Problem starten.
+2. Eine zum Vorgang passende Laufzeit wählen.
+3. Problem auftreten lassen oder gezielt reproduzieren.
+4. Automatisches Ende abwarten oder die Aufzeichnung vorzeitig stoppen.
+5. Paket über **Diagnosedaten herunterladen** beziehen.
+6. Paket vor öffentlicher Weitergabe kurz auf persönliche Entity-IDs prüfen.
+
+Das Debug-Paket erfasst insbesondere folgende Werte und Zusammenhänge:
 
 ```text
 device_profile
 ai_mode
 season_mode
+automatic_weighting
+strategy_state
+visible_state
+strategic_reason
+technical_reason
+strategy_priority
+source_reason
+source_action
+source_ac_mode
 soc
 soc_min
 soc_max
@@ -2522,6 +3144,18 @@ deficit
 surplus
 price_now
 avg_charge_price
+charge_source
+charge_price_applied
+charge_grid_part_w
+charge_pv_part_w
+charge_mixed_price_active
+charge_commit_active
+charge_commit_type
+charge_commit_reason
+charge_commit_source_reason
+charge_commit_target_soc
+charge_commit_abort_reason
+charge_commit_requested_power_w
 current_peak_threshold
 economic_discharge_threshold
 effective_discharge_threshold
@@ -2548,17 +3182,32 @@ regulation_raw_target_w
 regulation_limited_target_w
 regulation_final_power_w
 regulation_command_reason
+regulation_target_import_w
+regulation_effective_deadband_w
+regulation_near_zero_active
+regulation_near_zero_reason
+regulation_near_zero_trim_w
+regulation_economic_target_active
+regulation_economic_target_reason
+regulation_economic_effective_target_import_w
 ```
 
 Zusätzlich hilfreich:
 
-* Screenshot des Verlaufs
+* kurze Beschreibung des erwarteten und tatsächlichen Verhaltens
+* genauer Zeitpunkt des Problems
+* Screenshot des Energie- oder Geräteverlaufs
 * verwendetes Geräteprofil
 * Betriebsmodus
 * Version von Battery SmartFlow AI
-* Diagnosewert `regulation_command_path`
+* Status und Auslöser einer eventuell aktiven AC-Ladebindung
 * ob Off-Grid konfiguriert ist
 * ob Zusatzakku-Sensoren konfiguriert sind
+
+> [!NOTE]
+> Die technische Detailtiefe liegt seit V4.4 bewusst im JSON-Paket. Zusätzliche
+> dauerhaft aktive Diagnoseentitäten oder große Recorder-Attribute sollen nicht
+> allein für eine mögliche spätere Supportanfrage aktiviert werden.
 
 ---
 
@@ -2570,14 +3219,14 @@ Die wichtigste Idee bleibt:
 
 > Erst verstehen, dann entscheiden, dann technisch sauber regeln.
 
-Mit V4.2 wurde die technische Grundlage dafür deutlich erweitert:
+Mit V4.3.0 wurde diese technische Grundlage zu einem einheitlichen Gesamtsystem
+weiterentwickelt:
 
-* bessere Regelarchitektur
-* stabilere Modusfreigabe
-* geglättete Leistungssteuerung
-* bessere Diagnose
-* Off-Grid-Unterstützung
-* Lernplanung
-* profilabhängiges Verhalten
+* saisonunabhängige Automatik mit klarer Verantwortung
+* priorisierte Strategieauswahl und persistente AC-Ladebindung
+* präzise Near-Zero-Regelung mit wirtschaftlichem Zielpunkt
+* realistische PV- und Mischkosten
+* getrennte strategische, sichtbare und technische Diagnose
+* profilabhängige Leistungsgrenzen und Stabilitätsmechanismen
 
 Damit ist Battery SmartFlow AI nicht nur eine Preisautomation, sondern eine umfassende Steuerlogik für Zendure-Systeme in Home Assistant.

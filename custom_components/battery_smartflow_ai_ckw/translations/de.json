@@ -1,5 +1,19 @@
 {
+  "device": {
+    "control_and_planning": {
+      "name": "Battery SmartFlow AI – Steuerung & Planung"
+    },
+    "economics_and_prices": {
+      "name": "Battery SmartFlow AI – Wirtschaft & Preise"
+    }
+  },
   "config": {
+    "abort": {
+      "debug_integration_not_loaded": "Battery SmartFlow AI ist derzeit nicht geladen.",
+      "debug_recording_started": "Debug-Aufzeichnung gestartet. Den Fortschritt zeigen die Debug-Statussensoren.",
+      "debug_recording_stopped": "Debug-Aufzeichnung beendet und Export angefordert.",
+      "debug_recording_already_stopped": "Die Debug-Aufzeichnung wurde bereits beendet."
+    },
     "error": {
       "grid_split_missing": "Bei \"Zwei Sensoren\" müssen Netzbezug und Netzeinspeisung beide ausgewählt werden."
     },
@@ -20,13 +34,14 @@
           "capacity_entity": "Kapazitätssensor (optional)",
           "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "pv_entity": "PV-Leistung Sensor",
-		  "feed_in_tariff": "Einspeisevergütung",
+          "native_pv_entity": "Native PV-Leistung des Batteriesystems (optional)",
+          "feed_in_tariff": "Einspeisevergütung",
+          "dynamic_feed_in_price_entity": "Aktueller dynamischer Einspeisepreis (optional)",
           "pv_forecast_today_entity": "PV-Prognose heute (optional)",
           "pv_forecast_tomorrow_entity": "PV-Prognose morgen (optional)",
           "price_now_entity": "Aktueller Strompreis",
           "price_export_entity": "Preisverlauf (z. B. Tibber / EPEX)",
           "ckw_enabled": "CKW Dynamischer Tarif (direkte API)",
-          "currency": "Währung",
           "grid_mode": "Netzmessung",
           "grid_power_entity": "Netzleistung (Single)",
           "grid_import_entity": "Netzbezug (Split)",
@@ -46,15 +61,16 @@
           "offgrid_power_entity": "Optionaler Sensor für die Leistung der Zendure-Off-Grid-/Inselsteckdose. Positive Werte werden als aktive Last an der Inselsteckdose interpretiert.",
           "offgrid_mode_entity": "Optionaler Select-Sensor für den Off-Grid-Modus der Zendure-Off-Grid-/Inselsteckdose. Der Modus wird nur gelesen und niemals von Battery SmartFlow AI gesetzt.",
           "capacity_entity": "Optionaler Sensor mit der automatisch berechneten verfügbaren Batteriekapazität in kWh (z. B. aus der Zendure-Integration). Falls gesetzt, überschreibt er die manuelle Berechnung.",
-          "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird künftig für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
+          "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird für relative PV-Kontextschwellen und weitere PV-bezogene Logik verwendet.",
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt. Wird zur Erkennung von Überschuss verwendet.",
-		  "feed_in_tariff": "Vergütung pro eingespeister kWh in ganzer Währung. Wird als wirtschaftlicher Vergleichswert genutzt: Optionale Netzladungen dürfen vorhandene PV-Ladung nur verdrängen, wenn Netzstrom günstiger ist als diese Einspeisevergütung. Bei PV-Ladung wird sie außerdem als entgangener Erlös in den durchschnittlichen Ladepreis des Akkus eingerechnet. Wenn keine Vergütung eingetragen ist, bleibt der Wert 0,0.",
+          "native_pv_entity": "Optionaler Sensor für die direkt am Batteriesystem angeschlossene PV-Leistung. Bei AC-Ladung erhält diese Leistung innerhalb der maximalen Ladeleistung Vorrang. Hier nicht den Sensor der gesamten Haus-PV auswählen.",
+          "feed_in_tariff": "Vergütung pro eingespeister kWh in ganzer Währung. Sie dient als Rückfallwert, wenn kein gültiger dynamischer Einspeisepreis verfügbar ist.",
+          "dynamic_feed_in_price_entity": "Optionaler numerischer Home-Assistant-Sensor für den aktuellen dynamischen Einspeisepreis. Ein gültiger Sensorwert einschließlich null oder eines negativen Preises hat Vorrang vor der festen Einspeisevergütung.",
           "pv_forecast_today_entity": "Optionaler Sensor mit der PV-Tagesprognose für heute, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
           "pv_forecast_tomorrow_entity": "Optionaler Sensor mit der PV-Tagesprognose für morgen, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
           "price_now_entity": "Sensor mit dem aktuellen Strompreis (z. B. Tibber). Wird für wirtschaftliche Entscheidungen genutzt.",
           "price_export_entity": "Sensor mit Preisprognosedaten (z. B. Tibber / EPEX). Ermöglicht Preis-Vorplanung.",
           "ckw_enabled": "Aktiviert den direkten Abruf stündlicher CKW-Dynamiktarif-Preise via API. Kein separater HA-Sensor nötig. Preise werden automatisch alle 30 Minuten aktualisiert.",
-          "currency": "Wähle CHF für Schweizer Franken (z. B. bei CKW-Tarif) oder EUR für Euro-basierte Tarife.",
           "grid_mode": "Wähle, wie dein Netzverbrauch gemessen wird: ein kombinierter Sensor oder getrennte Sensoren für Bezug und Einspeisung.",
           "grid_power_entity": "Ein einzelner Sensor mit positiver Leistung bei Netzbezug und negativer Leistung bei Einspeisung.",
           "grid_import_entity": "Sensor mit aktueller Netzbezugsleistung (nur positiver Wert).",
@@ -108,13 +124,14 @@
           "capacity_entity": "Kapazitätssensor (optional)",
           "installed_pv_wp": "Installierte PV-Leistung (Wp)",
           "pv_entity": "PV-Leistung Sensor",
-		  "feed_in_tariff": "Einspeisevergütung",
+          "native_pv_entity": "Native PV-Leistung des Batteriesystems (optional)",
+          "feed_in_tariff": "Einspeisevergütung",
+          "dynamic_feed_in_price_entity": "Aktueller dynamischer Einspeisepreis (optional)",
           "pv_forecast_today_entity": "PV-Prognose heute (optional)",
           "pv_forecast_tomorrow_entity": "PV-Prognose morgen (optional)",
           "price_now_entity": "Aktueller Strompreis",
           "price_export_entity": "Preisverlauf (z. B. Tibber / EPEX)",
           "ckw_enabled": "CKW Dynamischer Tarif (direkte API)",
-          "currency": "Währung",
           "grid_mode": "Netzmessung",
           "grid_power_entity": "Netzleistung (Single)",
           "grid_import_entity": "Netzbezug (Split)",
@@ -134,15 +151,16 @@
           "offgrid_power_entity": "Optionaler Sensor für die Leistung der Zendure-Off-Grid-/Inselsteckdose. Positive Werte werden als aktive Last an der Inselsteckdose interpretiert.",
           "offgrid_mode_entity": "Optionaler Select-Sensor für den Off-Grid-Modus der Zendure-Off-Grid-/Inselsteckdose. Der Modus wird nur gelesen und niemals von Battery SmartFlow AI gesetzt.",
           "capacity_entity": "Optionaler Sensor mit der automatisch berechneten verfügbaren Batteriekapazität in kWh (z. B. aus der Zendure-Integration). Falls gesetzt, überschreibt er die manuelle Berechnung.",
-          "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird künftig für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
+          "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird für relative PV-Kontextschwellen und weitere PV-bezogene Logik verwendet.",
           "pv_entity": "Sensor mit der aktuellen PV-Leistung in Watt.",
-		  "feed_in_tariff": "Vergütung pro eingespeister kWh in ganzer Währung. Wird als wirtschaftlicher Vergleichswert genutzt: Optionale Netzladungen dürfen vorhandene PV-Ladung nur verdrängen, wenn Netzstrom günstiger ist als diese Einspeisevergütung. Bei PV-Ladung wird sie außerdem als entgangener Erlös in den durchschnittlichen Ladepreis des Akkus eingerechnet. Wenn keine Vergütung eingetragen ist, bleibt der Wert 0,0.",
+          "native_pv_entity": "Optionaler Sensor für die direkt am Batteriesystem angeschlossene PV-Leistung. Bei AC-Ladung erhält diese Leistung innerhalb der maximalen Ladeleistung Vorrang. Hier nicht den Sensor der gesamten Haus-PV auswählen.",
+          "feed_in_tariff": "Vergütung pro eingespeister kWh in ganzer Währung. Sie dient als Rückfallwert, wenn kein gültiger dynamischer Einspeisepreis verfügbar ist.",
+          "dynamic_feed_in_price_entity": "Optionaler numerischer Home-Assistant-Sensor für den aktuellen dynamischen Einspeisepreis. Ein gültiger Sensorwert einschließlich null oder eines negativen Preises hat Vorrang vor der festen Einspeisevergütung.",
           "pv_forecast_today_entity": "Optionaler Sensor mit der PV-Tagesprognose für heute, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
           "pv_forecast_tomorrow_entity": "Optionaler Sensor mit der PV-Tagesprognose für morgen, z. B. aus Solcast PV Forecast. Die Prognose ist nur ein zusätzlicher Planungs-Input und keine Voraussetzung für die Integration.",
           "price_now_entity": "Aktueller Strompreis. Ermöglicht preisabhängige Entladung.",
           "price_export_entity": "Preisprognosedaten für die nächsten Stunden. Ermöglicht intelligente Ladeplanung.",
           "ckw_enabled": "Aktiviert den direkten Abruf stündlicher CKW-Dynamiktarif-Preise via API. Kein separater HA-Sensor nötig. Preise werden automatisch alle 30 Minuten aktualisiert.",
-          "currency": "Wähle CHF für Schweizer Franken (z. B. bei CKW-Tarif) oder EUR für Euro-basierte Tarife.",
           "grid_mode": "Bestimmt, wie Netzbezug und Einspeisung erfasst werden.",
           "grid_power_entity": "Ein kombinierter Netzsensor (positiv = Bezug, negativ = Einspeisung).",
           "grid_import_entity": "Sensor für Netzbezug (Split-Modus).",
@@ -157,77 +175,48 @@
   "options": {
     "step": {
       "init": {
-        "title": "Regelprofil bearbeiten",
-        "description": "Wähle den Bereich aus, den du bearbeiten möchtest. „Allgemein“ enthält gemeinsame Profilparameter, „Laden“ die Regelwerte für die Ladeleistung, „Entladen“ die Regelwerte für die Entladeleistung und „Expertenmodus“ zusätzliche Schutz- und Diagnosefunktionen.",
+        "title": "Battery SmartFlow AI einstellen",
+        "description": "Wähle den Einstellungsbereich aus. Gerätespezifische Regelwerte werden automatisch durch das ausgewählte Geräteprofil verwaltet.",
         "menu_options": {
           "general": "Allgemein",
-          "charge": "Laden",
-          "discharge": "Entladen",
-          "expert": "Expertenmodus"
+          "expert": "Expertenmodus",
+          "debug": "Debug-Modus"
         }
       },
       "general": {
-        "title": "Regelprofil bearbeiten – Allgemein",
-        "description": "Allgemeine Regelparameter des aktiven Geräteprofils.",
+        "title": "Battery SmartFlow AI einstellen – Allgemein",
+        "description": "Allgemeine Anlageneinstellungen. Gerätespezifische Regelwerte bleiben Bestandteil des ausgewählten Geräteprofils.",
         "data": {
-          "installed_pv_wp": "Installierte PV-Leistung (Wp)",
-          "TARGET_IMPORT_W": "Ziel-Netzbezug",
-          "EXPORT_GUARD_W": "Export-Schutz",
-          "KEEPALIVE_MIN_DEFICIT_W": "Keepalive Mindestdefizit",
-          "KEEPALIVE_MIN_OUTPUT_W": "Keepalive Mindestleistung",
-          "SOC_DISCHARGE_RESUME_MARGIN": "Entlade-Wiederfreigabe oberhalb SoC-Minimum",
-          "PV_HOUSELOAD_PASSTHROUGH_MIN_PV_W": "PV-Durchfluss Mindest-PV",
-          "PV_HOUSELOAD_PASSTHROUGH_MIN_HOUSE_LOAD_W": "PV-Durchfluss Mindest-Hauslast"
+          "installed_pv_wp": "Installierte PV-Leistung (Wp)"
         },
         "data_description": {
-          "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird für relative Sommer-/Winter-Schwellen und weitere PV-bezogene Logik verwendet.",
-          "TARGET_IMPORT_W": "Zielwert für einen kleinen gewollten Netzbezug. Ein höherer Wert reduziert das Risiko ungewollter Einspeisung, erhöht aber den Netzverbrauch leicht.",
-          "EXPORT_GUARD_W": "Zusätzliche Schutzreserve gegen ungewollte Einspeisung. Höhere Werte machen die Regelung vorsichtiger.",
-          "KEEPALIVE_MIN_DEFICIT_W": "Mindestdefizit, ab dem die Entladung aktiv gehalten wird. Hilft gegen Flattern bei sehr kleinen Lasten.",
-          "KEEPALIVE_MIN_OUTPUT_W": "Mindest-Entladeleistung zum stabilen Aktivhalten der Entladung. Verhindert unnötiges Ein- und Ausschalten.",
-          "SOC_DISCHARGE_RESUME_MARGIN": "Zusätzlicher SoC-Abstand oberhalb des eingestellten Mindest-SoC, der erreicht werden muss, bevor die Entladung nach einer SoC-Sperre wieder freigegeben wird. Verhindert Flattern zwischen Laden und Entladen bei knappem Akkustand, besonders morgens bei schwankender PV-Leistung.",
-          "PV_HOUSELOAD_PASSTHROUGH_MIN_PV_W": "Gemessene Mindest-PV-Leistung für den normalen PV-Durchfluss. Die Voll-Akku-Wiederanlaufhilfe arbeitet unabhängig von diesem Messwert.",
-          "PV_HOUSELOAD_PASSTHROUGH_MIN_HOUSE_LOAD_W": "Mindest-Hauslast für den normalen PV-Durchfluss. Niedrigere Werte eignen sich für Haushalte mit kleiner Grundlast."
+          "installed_pv_wp": "Installierte theoretische PV-Modulleistung der Anlage in Wp. Dieser Wert wird für relative PV-Kontextschwellen und weitere PV-bezogene Logik verwendet."
         }
       },
-      "charge": {
-        "title": "Regelprofil bearbeiten – Laden",
-        "description": "Regelparameter für das Ladeverhalten des aktiven Geräteprofils.",
+      "debug_start": {
+        "title": "Debug-Aufzeichnung starten",
+        "description": "Diese Supportfunktion nur zur Fehlersuche verwenden. Technische Zustände und konfigurierte Entity-IDs werden zeitlich begrenzt aufgezeichnet; Passwörter, Tokens und API-Schlüssel werden gefiltert. Den Fortschritt zeigen die Debug-Statussensoren in der Geräteansicht von Battery SmartFlow AI. Unter /config/bsfai/debug/ werden höchstens 10 Pakete aufbewahrt.",
         "data": {
-          "CHARGE_DEADBAND_W": "Laden Deadband",
-          "CHARGE_KP_UP": "Laden KP Hochregeln",
-          "CHARGE_KP_DOWN": "Laden KP Runterregeln",
-          "CHARGE_MAX_STEP_UP": "Laden Max. Schritt Hochregeln",
-          "CHARGE_MAX_STEP_DOWN": "Laden Max. Schritt Runterregeln"
+          "duration_minutes": "Aufzeichnungsdauer"
         },
         "data_description": {
-          "CHARGE_DEADBAND_W": "Toleranzbereich für die Lade-Regelung, in dem nicht nachgeregelt wird. Ein höherer Wert macht das Laden ruhiger, ein niedrigerer Wert reagiert schneller und präziser.",
-          "CHARGE_KP_UP": "Verstärkung beim Hochregeln der Ladeleistung. Höhere Werte erhöhen die Ladeleistung schneller, können aber eher zu unruhigem Verhalten führen.",
-          "CHARGE_KP_DOWN": "Verstärkung beim Runterregeln der Ladeleistung. Höhere Werte reduzieren die Ladeleistung schneller, können aber stärkere Sprünge verursachen.",
-          "CHARGE_MAX_STEP_UP": "Maximaler Leistungsschritt pro Regelzyklus beim Erhöhen der Ladeleistung. Höhere Werte machen die Lade-Regelung schneller, aber potenziell aggressiver.",
-          "CHARGE_MAX_STEP_DOWN": "Maximaler Leistungsschritt pro Regelzyklus beim Reduzieren der Ladeleistung. Höhere Werte bremsen das Laden schneller ab, können aber unruhiger wirken."
+          "duration_minutes": "10, 30, 60 oder 120 Minuten auswählen. Die Aufzeichnung stoppt und exportiert automatisch."
         }
       },
-      "discharge": {
-        "title": "Regelprofil bearbeiten – Entladen",
-        "description": "Regelparameter für das Entladeverhalten des aktiven Geräteprofils.",
-        "data": {
-          "DISCHARGE_DEADBAND_W": "Entladen Deadband",
-          "DISCHARGE_KP_UP": "Entladen KP Hochregeln",
-          "DISCHARGE_KP_DOWN": "Entladen KP Runterregeln",
-          "DISCHARGE_MAX_STEP_UP": "Entladen Max. Schritt Hochregeln",
-          "DISCHARGE_MAX_STEP_DOWN": "Entladen Max. Schritt Runterregeln"
-        },
-        "data_description": {
-          "DISCHARGE_DEADBAND_W": "Toleranzbereich für die Entlade-Regelung, in dem nicht nachgeregelt wird. Ein höherer Wert macht die Entladung ruhiger, ein niedrigerer Wert reagiert schneller und präziser.",
-          "DISCHARGE_KP_UP": "Verstärkung beim Hochregeln der Entladeleistung. Höhere Werte erhöhen die Entladeleistung schneller, können aber eher überschwingen.",
-          "DISCHARGE_KP_DOWN": "Verstärkung beim Runterregeln der Entladeleistung. Höhere Werte reduzieren die Entladeleistung schneller, können aber unruhiger wirken.",
-          "DISCHARGE_MAX_STEP_UP": "Maximaler Leistungsschritt pro Regelzyklus beim Erhöhen der Entladeleistung. Höhere Werte machen die Entlade-Regelung schneller, aber potenziell aggressiver.",
-          "DISCHARGE_MAX_STEP_DOWN": "Maximaler Leistungsschritt pro Regelzyklus beim Reduzieren der Entladeleistung. Höhere Werte bremsen die Entladung schneller ab, können aber stärker springen."
-        }
+      "debug_stop": {
+        "title": "Debug-Aufzeichnung aktiv",
+        "description": "Die Aufzeichnung endet um {recording_end}. Bisher erfasste Samples: {sample_count}. Den aktuellen Fortschritt zeigen auch die Debug-Statussensoren. Mit Bestätigen wird die Aufzeichnung jetzt beendet und das gesammelte Paket exportiert."
+      },
+      "debug_started": {
+        "title": "Debug-Aufzeichnung gestartet",
+        "description": "Die Debug-Aufzeichnung läuft. Den Fortschritt zeigen die Debug-Statussensoren in der Geräteansicht von Battery SmartFlow AI. Mit Bestätigen kehrst du zum Einstellungsmenü zurück."
+      },
+      "debug_stopped": {
+        "title": "Debug-Aufzeichnung beendet",
+        "description": "Die Aufzeichnung wurde beendet und das JSON-Debug-Paket exportiert. Den Speicherort zeigt der Sensor Letztes Debug-Paket. Mit Bestätigen kehrst du zum Einstellungsmenü zurück."
       },
       "expert": {
-        "title": "Regelprofil bearbeiten – Expertenmodus",
+        "title": "Battery SmartFlow AI einstellen – Expertenmodus",
         "description": "Erweiterte Schutz-, Diagnose- und Planungsfunktionen. Die lernbasierte Ladefenster-Planung wird automatisch verwendet, sobald genügend Lerndaten vorhanden sind. Bei Bedarf kann sie hier deaktiviert werden. Für den Zellspannungs-Schutz muss zuerst der Expertenmodus aktiviert werden.",
         "data": {
           "expert_mode_enabled": "Expertenmodus aktivieren",
@@ -271,8 +260,43 @@
           "lowest_cell_voltage_pack_6": "Sensor für die niedrigste Zellspannung des sechsten Akku-Packs. Dieser Wert wird für die globale Schutzbewertung verwendet.",
           "cell_voltage_warning": "Schwellwert für kritische niedrige Zellspannung. Wird genutzt, um frühzeitig Notladung bzw. Schutzmaßnahmen einzuleiten.",
           "cell_voltage_cutoff": "Harte Untergrenze für die Zellspannung. Wird diese erreicht oder unterschritten, wird die Entladung gesperrt.",
-          "cell_voltage_resume": "Wiederfreigabe-Schwelle oberhalb der Entladesperre. Erst ab diesem Spannungswert wird die Entladung nach Zellspannungs-Schutz wieder freigegeben."
+          "cell_voltage_resume": "Wiederfreigabe-Schwelle oberhalb der Warn- und Abschaltgrenze. Eine Zellspannungs-Notladung bleibt bis zu diesem Spannungswert aktiv; anschließend kann auch die Entladung nach Zellspannungs-Schutz wieder freigegeben werden."
         }
+      }
+    }
+  },
+  "services": {
+    "start_debug_recording": {
+      "name": "Debug-Aufzeichnung starten",
+      "description": "Technische Diagnosedaten zeitlich begrenzt erfassen und automatisch als JSON-Paket exportieren.",
+      "fields": {
+        "entry_id": {
+          "name": "Konfiguration",
+          "description": "Bei mehreren Instanzen die passende Battery-SmartFlow-AI-Konfiguration auswaehlen."
+        },
+        "duration_minutes": {
+          "name": "Dauer",
+          "description": "Aufzeichnungsdauer in Minuten."
+        }
+      }
+    },
+    "stop_debug_recording": {
+      "name": "Debug-Aufzeichnung stoppen",
+      "description": "Die aktive Aufzeichnung jetzt beenden und ihr JSON-Paket exportieren.",
+      "fields": {
+        "entry_id": {
+          "name": "Konfiguration",
+          "description": "Bei mehreren Instanzen die passende Battery-SmartFlow-AI-Konfiguration auswaehlen."
+        }
+      }
+    }
+  },
+  "selector": {
+    "grid_mode": {
+      "options": {
+        "none": "Kein Netzsensor",
+        "single": "Ein Sensor (+ / −)",
+        "split": "Zwei Sensoren (Bezug und Einspeisung)"
       }
     }
   },
@@ -328,10 +352,10 @@
         "name": "Gewinnmarge (%)"
       },
       "peak_factor": {
-        "name": "Peak-Faktor"
+        "name": "Peakpreis-Aufschlag"
       },
       "valley_factor": {
-        "name": "Tal-Faktor"
+        "name": "Talpreis-Abschlag"
       },
       "very_cheap_price": {
         "name": "Sehr-billig Schwelle"
@@ -385,10 +409,10 @@
           "valley_opportunity": "Opportunistische Tal-Ladung",
           "valley_opportunity_mixed": "Opportunistische Tal-Ladung bei gemischter Prognose",
           "learned_planning": "Lernbasierte Ladefenster-Planung",
-		  "reserve": "Strategische Peakreserve"
+          "reserve": "Strategische Peakreserve"
         }
       },
-	  "automatic_weighting": {
+      "automatic_weighting": {
         "name": "Automatik-Gewichtung",
         "state": {
           "inactive": "Nicht aktiv",
@@ -513,19 +537,19 @@
         "name": "PV-Prognose nächste 6 Stunden"
       },
       "price_daily_average": {
-        "name": "Ø Tagespreis dynamisch"
+        "name": "Preise – Ø dynamischer Tagespreis"
       },
       "current_peak_threshold": {
-        "name": "Aktuelle Peak-Schwelle"
+        "name": "Preise – Aktuelle Peak-Schwelle"
       },
       "current_valley_threshold": {
-        "name": "Aktuelle Tal-Schwelle"
+        "name": "Preise – Aktuelle Valley-Schwelle"
       },
       "economic_discharge_threshold": {
-        "name": "Ökonomische Entladeschwelle"
+        "name": "Preise – Ökonomische Entladeschwelle"
       },
       "effective_discharge_threshold": {
-        "name": "Effektive Entladeschwelle"
+        "name": "Preise – Effektive Entladeschwelle"
       },
       "offgrid_power_w": {
         "name": "Off-Grid-Leistung"
@@ -553,7 +577,7 @@
           "none": "Kein Off-Grid-Blocker",
           "offgrid_load_observed": "Inselsteckdose aktiv – getrennt berücksichtigt",
           "offgrid_load_active_blocks_ac_charge": "Inselsteckdose aktiv – Netzladung blockiert",
-		  "offgrid_load_support": "Inselsteckdose aktiv – Versorgung über Akku/PV"
+          "offgrid_load_support": "Inselsteckdose aktiv – Versorgung über Akku/PV"
         }
       },
       "offgrid_source_active": {
@@ -609,11 +633,11 @@
         }
       },
       "season_mode": {
-        "name": "Erkannter Betriebsmodus",
+        "name": "Regelungskontext",
         "state": {
-          "winter": "Winterbetrieb",
-          "summer": "Sommerbetrieb",
-          "manual": "Manueller Betrieb"
+          "winter": "Preis",
+          "summer": "PV",
+          "manual": "Manuell"
         }
       },
       "soc_limit_status": {
@@ -625,8 +649,24 @@
           "lower_limit_active": "Unteres SoC-Limit aktiv (Entladen gesperrt)"
         }
       },
-      "price_forecast": {
-        "name": "Preisprognose CKW"
+      "debug_recording_active": {
+        "name": "Debug-Aufzeichnung aktiv",
+        "state": {
+          "no": "Nein",
+          "yes": "Ja"
+        }
+      },
+      "debug_recording_ends_at": {
+        "name": "Debug-Aufzeichnung endet um"
+      },
+      "debug_sample_count": {
+        "name": "Erfasste Debug-Datensätze"
+      },
+      "debug_last_package": {
+        "name": "Letztes Debug-Paket"
+      },
+      "debug_last_error": {
+        "name": "Letzter Debug-Fehler"
       },
       "fault_level_status": {
         "name": "Fehlerstatus",
@@ -712,7 +752,7 @@
           "additional_battery_charging_block": "Zusatzakku lädt: Entladung blockiert",
           "additional_battery_discharging_block": "Zusatzakku entlädt: Laden blockiert",
           "offgrid_load_active_blocks_ac_charge": "Inselsteckdose aktiv: automatische Netzladung blockiert",
-		  "offgrid_load_support": "Inselsteckdose aktiv: Versorgung über Akku/PV",
+          "offgrid_load_support": "Inselsteckdose aktiv: Versorgung über Akku/PV",
           "soc_min_resume_block": "Entladung blockiert (Wiederfreigabe-Schwelle noch nicht erreicht)",
           "cell_voltage_cutoff_block": "Entladung blockiert (Zellspannungs-Schutz aktiv)",
           "cell_voltage_emergency_charge": "Notladung aktiv (Zellspannung kritisch)",
@@ -723,7 +763,7 @@
           "soc_limits_invalid": "Sicherer Leerlauf: konfigurierte SoC-Grenzen ungültig",
           "power_limits_invalid": "Sicherer Leerlauf: konfigurierte Leistungsgrenzen ungültig",
           "cell_voltage_sensor_invalid": "Entladung blockiert: Zellspannungssensor nicht verfügbar",
-		  "summer_peak_reserve_charge": "Automatik: Hochpreisfenster absichern",
+          "summer_peak_reserve_charge": "Automatik: Hochpreisfenster absichern",
           "summer_peak_reserve_hold": "Automatik: Akku-Reserve für spätere Preisspitze halten"
         }
       },
@@ -735,7 +775,7 @@
           "planned_discharge": "Geplante Entladung",
           "charging_active": "Ladevorgang aktiv",
           "discharging_active": "Entladevorgang aktiv",
-		  "discharge_waiting_for_import": "Entladung freigegeben – wartet auf Netzbezug",
+          "discharge_waiting_for_import": "Entladung freigegeben – wartet auf Netzbezug",
           "manual_charge": "Manuelles Laden",
           "manual_discharge": "Manuelle Entladung",
           "manual_constant_discharge": "Konstante Entladung aktiv",
@@ -750,9 +790,15 @@
         "name": "Hauslast"
       },
       "price_now": {
-        "name": "Aktueller Strompreis"
+        "name": "Aktuell – Bezugspreis"
       },
-	  "charge_source": {
+      "price_forecast": {
+        "name": "Preisprognose CKW"
+      },
+      "feed_in_tariff": {
+        "name": "Aktuell – Einspeisevergütung"
+      },
+      "charge_source": {
         "name": "Ladequelle",
         "state": {
           "no_charge_delta": "Keine Ladeänderung",
@@ -777,7 +823,7 @@
         }
       },
       "charge_price_applied": {
-        "name": "Angerechneter Ladepreis"
+        "name": "Aktuell – Angerechneter Akku-Ladepreis"
       },
       "charge_grid_part_w": {
         "name": "Ladeanteil Netz"
@@ -793,10 +839,85 @@
         }
       },
       "avg_charge_price": {
-        "name": "Ø Ladepreis Akku"
+        "name": "Preise – Ø bisheriger Akku-Ladepreis"
       },
       "profit_eur": {
-        "name": "Ersparnis / Gewinn (gesamt)"
+        "name": "Bilanz seit Start – Bisheriger Handelsgewinn"
+      },
+      "economics_daily_grid_charge_cost": {
+        "name": "Bilanz heute – Netzladekosten"
+      },
+      "economics_daily_pv_opportunity_cost": {
+        "name": "Bilanz heute – PV-Opportunitätskosten"
+      },
+      "economics_daily_export_revenue": {
+        "name": "Bilanz heute – Einspeiseertrag"
+      },
+      "economics_daily_avoided_grid_import_cost": {
+        "name": "Bilanz heute – Vermiedene Netzbezugskosten"
+      },
+      "economics_daily_battery_benefit": {
+        "name": "Bilanz heute – Batterienutzen"
+      },
+      "economics_total_grid_charge_cost": {
+        "name": "Bilanz seit Start – Netzladekosten"
+      },
+      "economics_total_pv_opportunity_cost": {
+        "name": "Bilanz seit Start – PV-Opportunitätskosten"
+      },
+      "economics_total_export_revenue": {
+        "name": "Bilanz seit Start – Einspeiseertrag"
+      },
+      "economics_total_avoided_grid_import_cost": {
+        "name": "Bilanz seit Start – Vermiedene Netzbezugskosten"
+      },
+      "economics_total_battery_benefit": {
+        "name": "Bilanz seit Start – Batterienutzen"
+      },
+      "economics_total_economic_efficiency_pct": {
+        "name": "Bilanz seit Start – Wirtschaftlicher Wirkungsgrad"
+      },
+      "economics_daily_grid_to_battery_kwh": {
+        "name": "Energie heute – Netz zu Akku"
+      },
+      "economics_daily_pv_to_battery_kwh": {
+        "name": "Energie heute – PV zu Akku"
+      },
+      "economics_daily_grid_export_kwh": {
+        "name": "Energie heute – Netzeinspeisung"
+      },
+      "economics_daily_battery_to_home_kwh": {
+        "name": "Energie heute – Akku zu Haus"
+      },
+      "economics_daily_battery_to_grid_kwh": {
+        "name": "Energie heute – Akku zu Netz"
+      },
+      "economics_total_grid_to_battery_kwh": {
+        "name": "Energie seit Start – Netz zu Akku"
+      },
+      "economics_total_pv_to_battery_kwh": {
+        "name": "Energie seit Start – PV zu Akku"
+      },
+      "economics_total_grid_export_kwh": {
+        "name": "Energie seit Start – Netzeinspeisung"
+      },
+      "economics_total_battery_to_home_kwh": {
+        "name": "Energie seit Start – Akku zu Haus"
+      },
+      "economics_total_battery_to_grid_kwh": {
+        "name": "Energie seit Start – Akku zu Netz"
+      },
+      "economics_average_grid_charge_price": {
+        "name": "Preise – Ø Netzladepreis"
+      },
+      "economics_average_pv_opportunity_value": {
+        "name": "Preise – Ø PV-Opportunitätswert"
+      },
+      "economics_average_export_price": {
+        "name": "Preise – Ø Einspeisevergütung"
+      },
+      "economics_average_battery_discharge_value": {
+        "name": "Preise – Ø Wert der Batterieentladung"
       },
       "strategy_state": {
         "name": "Strategiezustand",
@@ -892,6 +1013,7 @@
           "pv_house_load_passthrough": "PV-Durchfluss zur Hauslast",
           "offgrid_load_support": "Inselsteckdose versorgen",
           "offgrid_load_active_blocks_ac_charge": "Inselsteckdose blockiert Netzladung",
+          "load_coverage": "Hauslastdeckung",
           "summer_cover_deficit": "Hauslastdefizit decken",
           "adaptive_peak_discharge": "Adaptive Peak-Entladung",
           "very_expensive_force_discharge": "Zwangsentladung bei sehr hohem Preis",
@@ -997,6 +1119,7 @@
           "pv_house_load_passthrough": "PV-Durchfluss zur Hauslast",
           "offgrid_load_support": "Inselsteckdose versorgen",
           "offgrid_load_active_blocks_ac_charge": "Inselsteckdose blockiert Netzladung",
+          "load_coverage": "Hauslastdeckung",
           "summer_cover_deficit": "Hauslastdefizit decken",
           "adaptive_peak_discharge": "Adaptive Peak-Entladung",
           "very_expensive_force_discharge": "Zwangsentladung bei sehr hohem Preis",
@@ -1091,6 +1214,7 @@
           "pv_house_load_passthrough": "PV-Durchfluss zur Hauslast",
           "offgrid_load_support": "Inselsteckdose versorgen",
           "offgrid_load_active_blocks_ac_charge": "Inselsteckdose blockiert Netzladung",
+          "load_coverage": "Hauslastdeckung",
           "summer_cover_deficit": "Hauslastdefizit decken",
           "adaptive_peak_discharge": "Adaptive Peak-Entladung",
           "very_expensive_force_discharge": "Zwangsentladung bei sehr hohem Preis",
@@ -1149,6 +1273,7 @@
           "pv_house_load_passthrough": "PV-Durchfluss zur Hauslast",
           "offgrid_load_support": "Inselsteckdose versorgen",
           "offgrid_load_active_blocks_ac_charge": "Inselsteckdose blockiert Netzladung",
+          "load_coverage": "Hauslastdeckung",
           "summer_cover_deficit": "Hauslastdefizit decken",
           "adaptive_peak_discharge": "Adaptive Peak-Entladung",
           "very_expensive_force_discharge": "Zwangsentladung bei sehr hohem Preis",
@@ -1172,6 +1297,7 @@
           "max_soc_reached": "Maximaler SoC erreicht",
           "target_unreachable_battery_full": "Ladeziel praktisch erreicht: Akku nimmt keine Ladeleistung mehr an",
           "target_nearly_reached_discharge_window": "Ladeziel wirtschaftlich ausreichend erreicht: Entladefenster aktiv",
+          "learned_charge_no_longer_needed": "Lernplanung benötigt keine Netzladung mehr",
           "deadline_passed": "Planungsfrist abgelaufen",
           "battery_full": "Akku voll",
           "price_window_expired": "Preisfenster abgelaufen",
@@ -1199,13 +1325,15 @@
           "yes": "Ja"
         }
       },
-	  "charge_source_allocation": {
+      "charge_source_allocation": {
         "name": "Ladequellen-Aufteilung",
         "state": {
           "no_active_charge_binding": "Keine aktive Ladebindung",
           "no_charge_target": "Kein Ladeziel",
           "pv_blend_disabled": "PV-Beimischung deaktiviert",
           "grid_only_no_pv_surplus": "Nur Netzladung",
+          "native_pv_priority_grid_fills_remainder": "Native PV zuerst, Netz füllt den Rest",
+          "native_pv_covers_total_charge_target": "Native PV deckt das Ladeziel",
           "pv_covers_total_charge_target": "PV deckt das Ladeziel",
           "mixed_charge_grid_limit_reached": "Mischladung mit Netzbegrenzung",
           "mixed_pv_grid_charge": "PV- und Netz-Mischladung"

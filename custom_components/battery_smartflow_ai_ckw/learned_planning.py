@@ -8,8 +8,9 @@ from typing import Literal
 
 from homeassistant.util import dt as dt_util
 
-from .decision_engine import PricePoint
 from .forecast import ForecastSummary
+from .market_price import MarketPrice, MarketPricePoint, planning_price_points
+from .price_math import peak_threshold
 
 
 LEARNED_STATUS_NOT_STARTED = "not_started"
@@ -54,7 +55,10 @@ MIN_CORE_WINDOW_DAYS = 4
 MIN_DATA_COVERAGE = 0.80
 
 DEFAULT_FALLBACK_CHARGE_POWER_W = 1200.0
+DEFAULT_PLANNING_CHARGE_EFFICIENCY = 0.90
 MIN_EFFECTIVE_CHARGE_POWER_W = 100.0
+MIN_ACTIONABLE_CHARGE_ENERGY_KWH = 0.05
+MIN_ACTIONABLE_CHARGE_SOC_PERCENT = 1.0
 
 MIN_LEARNED_CHARGE_POWER_SAMPLE_W = 300.0
 MIN_LEARNED_CHARGE_POWER_SAMPLES = 4
@@ -146,6 +150,7 @@ class LearnedChargePlan:
     forecast_adjustment_kwh: float = 0.0
     raw_required_charge_energy_kwh: float = 0.0
     required_charge_energy_kwh: float = 0.0
+    minimum_actionable_charge_energy_kwh: float = 0.0
     max_chargeable_energy_kwh: float = 0.0
 
     effective_charge_power_w: float = 0.0
@@ -165,7 +170,7 @@ class LearnedChargePlan:
 
     # Maximum price contained in the selected learned charge window.
     # Dev5.6 uses this as the economic continuation boundary before latest start.
-    acceptable_charge_price_eur_kwh: float | None = None
+    acceptable_charge_price_per_kwh: float | None = None
 
     window_score: float | None = None
 
@@ -612,6 +617,38 @@ def compute_required_charge_energy_kwh(
     return float(raw), float(required)
 
 
+def minimum_actionable_charge_energy_kwh(
+    total_battery_capacity_kwh: float,
+) -> float:
+    """Return the smallest learned charge need worth a new binding.
+
+    A learned plan cannot control less than one 100 W / 30 minute effective
+    window reliably, and many battery SoC sensors expose whole percentages.
+    Starting a new binding below both practical resolutions turns a few Wh of
+    recalculated need into a much larger charge pulse.
+    """
+
+    one_soc_step_kwh = max(
+        0.0,
+        float(total_battery_capacity_kwh or 0.0),
+    ) * (MIN_ACTIONABLE_CHARGE_SOC_PERCENT / 100.0)
+    return max(MIN_ACTIONABLE_CHARGE_ENERGY_KWH, one_soc_step_kwh)
+
+
+def actionable_required_charge_energy_kwh(
+    required_charge_energy_kwh: float,
+    total_battery_capacity_kwh: float,
+) -> float:
+    """Suppress a new learned binding below the actionable energy floor."""
+
+    required_kwh = max(0.0, float(required_charge_energy_kwh or 0.0))
+    if required_kwh < minimum_actionable_charge_energy_kwh(
+        total_battery_capacity_kwh,
+    ):
+        return 0.0
+    return required_kwh
+
+
 def learned_typical_charge_power_w(
     samples: list[LearningChargePowerSample],
     now: datetime,
@@ -688,7 +725,14 @@ def effective_charge_power_w(
         candidates.append(DEFAULT_FALLBACK_CHARGE_POWER_W)
 
     power = min(v for v in candidates if v > 0) if any(v > 0 for v in candidates) else 0.0
-    return max(0.0, float(power))
+
+    # Device input power is not fully stored as usable battery energy. Keep the
+    # physical command ceiling unchanged, but schedule against a conservative
+    # net value so inverter and cell losses cannot make the plan finish late.
+    return max(
+        0.0,
+        float(power) * DEFAULT_PLANNING_CHARGE_EFFICIENCY,
+    )
 
 
 def available_charge_power_w(
@@ -759,7 +803,10 @@ def requested_charge_power_w(
     if remaining_hours <= 0.0:
         return available_power
 
-    required_power = (required_kwh / remaining_hours) * 1000.0
+    required_net_power = (required_kwh / remaining_hours) * 1000.0
+    required_power = (
+        required_net_power / DEFAULT_PLANNING_CHARGE_EFFICIENCY
+    )
     return min(
         available_power,
         max(MIN_EFFECTIVE_CHARGE_POWER_W, required_power),
@@ -791,7 +838,7 @@ def compute_window_slots(
 
 def choose_deadline(
     now: datetime,
-    price_points: list[PricePoint],
+    price_points: list[MarketPricePoint],
     forecast: ForecastSummary | None,
 ) -> tuple[datetime, str]:
     """Choose one active planning deadline.
@@ -805,20 +852,51 @@ def choose_deadline(
 
     now_local = _as_local(now)
 
-    future_prices = [
+    remaining_prices = [
         p for p in price_points
-        if _as_local(p.start) > now_local and _as_local(p.end) > now_local
+        if _as_local(p.end) > now_local
     ]
 
-    if future_prices:
-        prices = [float(p.price) for p in future_prices]
-        avg_price = sum(prices) / len(prices)
-        peak_threshold = max(avg_price * 1.35, avg_price + 0.03)
+    if remaining_prices:
+        prices = [float(p.price) for p in remaining_prices]
+        learned_peak_threshold = peak_threshold(prices, 1.35)
 
         peak_candidates = [
-            p for p in future_prices
-            if float(p.price) >= peak_threshold
+            p for p in remaining_prices
+            if float(p.price) >= learned_peak_threshold
         ]
+
+        # RC7: Do not invent a "before peak" deadline inside a peak that is
+        # already active. The former future-only scan discarded the current
+        # slot and repeatedly treated the next equally expensive 15-minute
+        # slot as a new upcoming peak. Near SoC reserve this made learned
+        # planning alternate between expensive grid charging and the correctly
+        # selected economic discharge every few minutes.
+        active_peak = next(
+            (
+                point
+                for point in peak_candidates
+                if _as_local(point.start) <= now_local < _as_local(point.end)
+            ),
+            None,
+        )
+
+        if active_peak is not None:
+            active_peak_end = _as_local(active_peak.end)
+            for point in sorted(
+                peak_candidates,
+                key=lambda item: _as_local(item.start),
+            ):
+                point_start = _as_local(point.start)
+                point_end = _as_local(point.end)
+                if point_start <= active_peak_end and point_end > active_peak_end:
+                    active_peak_end = point_end
+
+            peak_candidates = [
+                point
+                for point in peak_candidates
+                if _as_local(point.start) >= active_peak_end
+            ]
 
         if peak_candidates:
             first_peak = min(peak_candidates, key=lambda p: _as_local(p.start))
@@ -853,7 +931,7 @@ def choose_deadline(
 def optimize_charge_window(
     now: datetime,
     deadline: datetime,
-    price_points: list[PricePoint],
+    price_points: list[MarketPricePoint],
     window_slots: int,
 ) -> tuple[datetime | None, datetime | None, float | None, list[float], list[float], str | None]:
     """Find the best charge window using normalized triangle weights."""
@@ -885,10 +963,7 @@ def optimize_charge_window(
 
     weights = _triangle_weights(window_slots)
 
-    best_start: datetime | None = None
-    best_end: datetime | None = None
-    best_score: float | None = None
-    best_prices: list[float] = []
+    candidates: list[tuple[float, datetime, datetime, list[float]]] = []
 
     for idx in range(0, len(future) - window_slots + 1):
         window = future[idx: idx + window_slots]
@@ -908,20 +983,9 @@ def optimize_charge_window(
         prices = [float(p.price) for p in window]
         score = sum(price * weight for price, weight in zip(prices, weights))
 
-        if best_score is None or score < best_score:
-            best_score = score
-            best_start = start
-            best_end = end
-            best_prices = prices
-        elif best_score is not None and math.isclose(score, best_score, rel_tol=0.0, abs_tol=0.000001):
-            # Tie breaker: later start wins.
-            if best_start is None or start > best_start:
-                best_score = score
-                best_start = start
-                best_end = end
-                best_prices = prices
+        candidates.append((score, start, end, prices))
 
-    if best_start is None or best_end is None:
+    if not candidates:
         return (
             now_local,
             now_local + timedelta(minutes=window_slots * SLOT_MINUTES),
@@ -931,6 +995,37 @@ def optimize_charge_window(
             LEARNED_REASON_DEADLINE_TOO_CLOSE_START_NOW,
         )
 
+    best_score = min(candidate[0] for candidate in candidates)
+    cheapest = [
+        candidate
+        for candidate in candidates
+        if math.isclose(
+            candidate[0],
+            best_score,
+            rel_tol=0.0,
+            abs_tol=0.000001,
+        )
+    ]
+
+    # Keep equal-cost windows stable while time advances. Basing the preferred
+    # start on the midpoint of the *remaining* tie range moved the plan by one
+    # slot whenever an old price slot expired (01:15 -> 01:30 -> 01:45 in the
+    # RC5 field trace). Anchor it to a fixed one-hour reserve before the latest
+    # equal-cost start instead. Real price differences still take precedence.
+    earliest_start = min(candidate[1] for candidate in cheapest)
+    latest_start = max(candidate[1] for candidate in cheapest)
+    preferred_start = max(
+        earliest_start,
+        latest_start - timedelta(hours=1),
+    )
+    _, best_start, best_end, best_prices = min(
+        cheapest,
+        key=lambda candidate: (
+            abs((candidate[1] - preferred_start).total_seconds()),
+            candidate[1],
+        ),
+    )
+
     return best_start, best_end, best_score, weights, best_prices, None
 
 
@@ -938,7 +1033,7 @@ def build_learned_charge_plan(
     model: LearnedSlotModel,
     readiness: LearningReadiness,
     now: datetime,
-    price_points: list[PricePoint],
+    market_price: MarketPrice,
     forecast: ForecastSummary | None,
     total_battery_capacity_kwh: float,
     current_soc: float,
@@ -956,6 +1051,7 @@ def build_learned_charge_plan(
     - In that case, mode stays classic_fallback and the plan must not actively control charging.
     """
 
+    price_points = planning_price_points(market_price)
     diagnostics_only = not readiness.ready
 
     if diagnostics_only and model.history_days <= 0:
@@ -1000,6 +1096,13 @@ def build_learned_charge_plan(
         available_energy_kwh=available_kwh,
         max_chargeable_kwh=chargeable_kwh,
     )
+    minimum_actionable_kwh = minimum_actionable_charge_energy_kwh(
+        total_battery_capacity_kwh,
+    )
+    required_kwh = actionable_required_charge_energy_kwh(
+        required_kwh,
+        total_battery_capacity_kwh,
+    )
 
     eff_power_w = effective_charge_power_w(
         profile_charge_limit_w=profile_charge_limit_w,
@@ -1024,6 +1127,10 @@ def build_learned_charge_plan(
             forecast_adjustment_kwh=round(forecast_kwh, 3),
             raw_required_charge_energy_kwh=round(raw_required_kwh, 3),
             required_charge_energy_kwh=0.0,
+            minimum_actionable_charge_energy_kwh=round(
+                minimum_actionable_kwh,
+                3,
+            ),
             max_chargeable_energy_kwh=round(chargeable_kwh, 3),
             effective_charge_power_w=round(eff_power_w, 1),
             requested_charge_power_w=0.0,
@@ -1052,6 +1159,10 @@ def build_learned_charge_plan(
             forecast_adjustment_kwh=round(forecast_kwh, 3),
             raw_required_charge_energy_kwh=round(raw_required_kwh, 3),
             required_charge_energy_kwh=round(required_kwh, 3),
+            minimum_actionable_charge_energy_kwh=round(
+                minimum_actionable_kwh,
+                3,
+            ),
             max_chargeable_energy_kwh=round(chargeable_kwh, 3),
             effective_charge_power_w=round(eff_power_w, 1),
             requested_charge_power_w=0.0,
@@ -1062,12 +1173,12 @@ def build_learned_charge_plan(
             decision_reason=LEARNED_REASON_NOT_READY,
         )
 
-    # The learned value remains a conservative scheduling estimate. The core
-    # economic window, however, is sized with the actually available limit so
-    # a self-learned low value cannot stretch the cheap window and cap INPUT.
+    # Size the economic window with net storable power. The separate available
+    # power remains the physical command ceiling, so planning losses can make
+    # the window start earlier without reducing the device's permitted INPUT.
     core_window_slots = required_window_slots(
         required_charge_energy_kwh=required_kwh,
-        available_charge_power_w_value=available_power_w,
+        available_charge_power_w_value=eff_power_w,
     )
 
     start, end, score, weights, selected_prices, optimizer_reason = optimize_charge_window(
@@ -1147,6 +1258,10 @@ def build_learned_charge_plan(
         forecast_adjustment_kwh=round(forecast_kwh, 3),
         raw_required_charge_energy_kwh=round(raw_required_kwh, 3),
         required_charge_energy_kwh=round(required_kwh, 3),
+        minimum_actionable_charge_energy_kwh=round(
+            minimum_actionable_kwh,
+            3,
+        ),
         max_chargeable_energy_kwh=round(chargeable_kwh, 3),
         effective_charge_power_w=round(eff_power_w, 1),
         requested_charge_power_w=round(requested_power_w, 1),
@@ -1157,7 +1272,7 @@ def build_learned_charge_plan(
         optimal_charge_start=start,
         optimal_charge_end=end,
         latest_charge_start=latest_start,
-        acceptable_charge_price_eur_kwh=(
+        acceptable_charge_price_per_kwh=(
             round(float(acceptable_charge_price), 6)
             if acceptable_charge_price is not None
             else None

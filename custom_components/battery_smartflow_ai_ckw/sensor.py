@@ -7,29 +7,30 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
+    SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.const import UnitOfPower
+from homeassistant.const import UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
-    INTEGRATION_NAME,
     INTEGRATION_MANUFACTURER,
     INTEGRATION_MODEL,
     INTEGRATION_VERSION,
+    virtual_device_model,
     STATUS_ENUMS,
     AI_STATUS_ENUMS,
     RECO_ENUMS,
     NEXT_ACTION_STATE_ENUMS,
     CELL_VOLTAGE_STATUS_ENUMS,
     CELL_VOLTAGE_SOC_PLAUSIBILITY_ENUMS,
-    CONF_CURRENCY,
-    CURRENCY_CHF,
     FORECAST_STATUS_ENUMS,
     PV_OUTLOOK_ENUMS,
     CHARGE_STRATEGY_ENUMS,
@@ -40,12 +41,13 @@ from .const import (
     SOURCE_AC_MODE_ENUMS,
     STRATEGY_REASON_ENUMS,
     DECISION_REASON_ENUMS,
-    TECHNICAL_REASON_ENUMS,
     CHARGE_COMMIT_TYPE_ENUMS,
     CHARGE_COMMIT_ABORT_REASON_ENUMS,
     AUTOMATIC_WEIGHTING_ENUMS,
 )
 from .device_profiles import DEVICE_PROFILES
+from .diagnostic_values import safe_diagnostic_sensor_value
+from .price_currency import price_input_profile
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,17 +64,45 @@ FAULT_LEVEL_ENUMS = ["normal", "warning", "error"]
 
 DEVICE_PROFILE_ENUMS = list(DEVICE_PROFILES.keys())
 
-_PRICE_PER_KWH_SENSOR_KEYS = frozenset({
-    "price_daily_average",
-    "current_peak_threshold",
-    "current_valley_threshold",
-    "economic_discharge_threshold",
-    "effective_discharge_threshold",
-    "price_now",
-    "avg_charge_price",
-    "price_forecast",
-})
-_PRICE_TOTAL_SENSOR_KEYS = frozenset({"profit_eur"})
+PRICE_SENSOR_KEYS = frozenset(
+    {
+        "price_forecast",
+        "learned_planning_window_score",
+        "price_daily_average",
+        "current_peak_threshold",
+        "current_valley_threshold",
+        "economic_discharge_threshold",
+        "effective_discharge_threshold",
+        "price_now",
+        "charge_price_applied",
+        "avg_charge_price",
+        "feed_in_tariff",
+    }
+)
+
+ECONOMICS_MONETARY_SENSOR_KEYS = frozenset(
+    f"economics_{period}_{value}"
+    for period in ("daily", "total")
+    for value in (
+        "grid_charge_cost",
+        "pv_opportunity_cost",
+        "export_revenue",
+        "avoided_grid_import_cost",
+        "battery_benefit",
+    )
+)
+
+ECONOMICS_PRICE_SENSOR_KEYS = frozenset(
+    {
+        "economics_average_grid_charge_price",
+        "economics_average_pv_opportunity_value",
+        "economics_average_export_price",
+        "economics_average_battery_discharge_value",
+    }
+)
+
+MONETARY_SENSOR_KEYS = frozenset({"profit_eur"}) | ECONOMICS_MONETARY_SENSOR_KEYS
+PRICE_SENSOR_KEYS = PRICE_SENSOR_KEYS | ECONOMICS_PRICE_SENSOR_KEYS
 
 LEARNED_PLANNING_STATUS_ENUMS = [
     "not_started",
@@ -133,6 +163,8 @@ CHARGE_SOURCE_ALLOCATION_REASON_ENUMS = [
     "no_charge_target",
     "pv_blend_disabled",
     "grid_only_no_pv_surplus",
+    "native_pv_priority_grid_fills_remainder",
+    "native_pv_covers_total_charge_target",
     "pv_covers_total_charge_target",
     "mixed_charge_grid_limit_reached",
     "mixed_pv_grid_charge",
@@ -142,9 +174,10 @@ CHARGE_SOURCE_ALLOCATION_REASON_ENUMS = [
 @dataclass(frozen=True, kw_only=True)
 class ZendureSensorEntityDescription(SensorEntityDescription):
     runtime_key: str
+    economics_device: bool = False
 
 
-SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
+_SENSOR_DESCRIPTIONS: tuple[ZendureSensorEntityDescription, ...] = (
     # --------------------------------------------------
     # SYSTEM STATUS
     # --------------------------------------------------
@@ -240,8 +273,6 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         key="technical_reason",
         translation_key="technical_reason",
         runtime_key="technical_reason",
-        device_class=SensorDeviceClass.ENUM,
-        options=TECHNICAL_REASON_ENUMS,
         icon="mdi:cog-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
@@ -609,7 +640,6 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         key="learned_planning_window_score",
         translation_key="learned_planning_window_score",
         runtime_key="learned_planning_window_score",
-        native_unit_of_measurement="€/kWh",
         icon="mdi:chart-bell-curve",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
@@ -653,36 +683,41 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         key="price_daily_average",
         translation_key="price_daily_average",
         runtime_key="price_daily_average",
-        native_unit_of_measurement="€/kWh",
         icon="mdi:chart-line",
+        state_class=SensorStateClass.MEASUREMENT,
+        economics_device=True,
     ),
     ZendureSensorEntityDescription(
         key="current_peak_threshold",
         translation_key="current_peak_threshold",
         runtime_key="current_peak_threshold",
-        native_unit_of_measurement="€/kWh",
         icon="mdi:chart-bell-curve",
+        state_class=SensorStateClass.MEASUREMENT,
+        economics_device=True,
     ),
     ZendureSensorEntityDescription(
         key="current_valley_threshold",
         translation_key="current_valley_threshold",
         runtime_key="current_valley_threshold",
-        native_unit_of_measurement="€/kWh",
         icon="mdi:chart-bell-curve-cumulative",
+        state_class=SensorStateClass.MEASUREMENT,
+        economics_device=True,
     ),
     ZendureSensorEntityDescription(
         key="economic_discharge_threshold",
         translation_key="economic_discharge_threshold",
         runtime_key="economic_discharge_threshold",
-        native_unit_of_measurement="€/kWh",
         icon="mdi:cash-clock",
+        state_class=SensorStateClass.MEASUREMENT,
+        economics_device=True,
     ),
     ZendureSensorEntityDescription(
         key="effective_discharge_threshold",
         translation_key="effective_discharge_threshold",
         runtime_key="effective_discharge_threshold",
-        native_unit_of_measurement="€/kWh",
         icon="mdi:chart-line-variant",
+        state_class=SensorStateClass.MEASUREMENT,
+        economics_device=True,
     ),
     ZendureSensorEntityDescription(
         key="house_load",
@@ -695,8 +730,17 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         key="price_now",
         translation_key="price_now",
         runtime_key="price_now",
-        native_unit_of_measurement="€/kWh",
-        icon="mdi:currency-eur",
+        icon="mdi:cash",
+        state_class=SensorStateClass.MEASUREMENT,
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="feed_in_tariff",
+        translation_key="feed_in_tariff",
+        runtime_key="feed_in_tariff",
+        icon="mdi:transmission-tower-export",
+        state_class=SensorStateClass.MEASUREMENT,
+        economics_device=True,
     ),
 
     # --------------------------------------------------
@@ -759,10 +803,9 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         key="charge_price_applied",
         translation_key="charge_price_applied",
         runtime_key="charge_price_applied",
-        native_unit_of_measurement="€/kWh",
         icon="mdi:cash-clock",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
+        state_class=SensorStateClass.MEASUREMENT,
+        economics_device=True,
     ),
     ZendureSensorEntityDescription(
         key="charge_grid_part_w",
@@ -796,6 +839,238 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
     # --------------------------------------------------
     # ECONOMICS
     # --------------------------------------------------
+    ZendureSensorEntityDescription(
+        key="economics_daily_grid_charge_cost",
+        translation_key="economics_daily_grid_charge_cost",
+        runtime_key="economics_daily_grid_charge_cost",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        icon="mdi:transmission-tower-import",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_daily_pv_opportunity_cost",
+        translation_key="economics_daily_pv_opportunity_cost",
+        runtime_key="economics_daily_pv_opportunity_cost",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        icon="mdi:solar-power-variant",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_daily_export_revenue",
+        translation_key="economics_daily_export_revenue",
+        runtime_key="economics_daily_export_revenue",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        icon="mdi:transmission-tower-export",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_daily_avoided_grid_import_cost",
+        translation_key="economics_daily_avoided_grid_import_cost",
+        runtime_key="economics_daily_avoided_grid_import_cost",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        icon="mdi:home-lightning-bolt-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_daily_battery_benefit",
+        translation_key="economics_daily_battery_benefit",
+        runtime_key="economics_daily_battery_benefit",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        icon="mdi:battery-check-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_total_grid_charge_cost",
+        translation_key="economics_total_grid_charge_cost",
+        runtime_key="economics_total_grid_charge_cost",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        icon="mdi:transmission-tower-import",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_total_pv_opportunity_cost",
+        translation_key="economics_total_pv_opportunity_cost",
+        runtime_key="economics_total_pv_opportunity_cost",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        icon="mdi:solar-power-variant",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_total_export_revenue",
+        translation_key="economics_total_export_revenue",
+        runtime_key="economics_total_export_revenue",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        icon="mdi:transmission-tower-export",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_total_avoided_grid_import_cost",
+        translation_key="economics_total_avoided_grid_import_cost",
+        runtime_key="economics_total_avoided_grid_import_cost",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        icon="mdi:home-lightning-bolt-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_total_battery_benefit",
+        translation_key="economics_total_battery_benefit",
+        runtime_key="economics_total_battery_benefit",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        icon="mdi:battery-check-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_total_economic_efficiency_pct",
+        translation_key="economics_total_economic_efficiency_pct",
+        runtime_key="economics_total_economic_efficiency_pct",
+        native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        icon="mdi:finance",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_daily_grid_to_battery_kwh",
+        translation_key="economics_daily_grid_to_battery_kwh",
+        runtime_key="economics_daily_grid_to_battery_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:battery-arrow-up-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_daily_pv_to_battery_kwh",
+        translation_key="economics_daily_pv_to_battery_kwh",
+        runtime_key="economics_daily_pv_to_battery_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:solar-power-variant",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_daily_grid_export_kwh",
+        translation_key="economics_daily_grid_export_kwh",
+        runtime_key="economics_daily_grid_export_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:transmission-tower-export",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_daily_battery_to_home_kwh",
+        translation_key="economics_daily_battery_to_home_kwh",
+        runtime_key="economics_daily_battery_to_home_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:home-battery-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_daily_battery_to_grid_kwh",
+        translation_key="economics_daily_battery_to_grid_kwh",
+        runtime_key="economics_daily_battery_to_grid_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:battery-arrow-down-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_total_grid_to_battery_kwh",
+        translation_key="economics_total_grid_to_battery_kwh",
+        runtime_key="economics_total_grid_to_battery_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:battery-arrow-up-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_total_pv_to_battery_kwh",
+        translation_key="economics_total_pv_to_battery_kwh",
+        runtime_key="economics_total_pv_to_battery_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:solar-power-variant",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_total_grid_export_kwh",
+        translation_key="economics_total_grid_export_kwh",
+        runtime_key="economics_total_grid_export_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:transmission-tower-export",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_total_battery_to_home_kwh",
+        translation_key="economics_total_battery_to_home_kwh",
+        runtime_key="economics_total_battery_to_home_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:home-battery-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_total_battery_to_grid_kwh",
+        translation_key="economics_total_battery_to_grid_kwh",
+        runtime_key="economics_total_battery_to_grid_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:battery-arrow-down-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_average_grid_charge_price",
+        translation_key="economics_average_grid_charge_price",
+        runtime_key="economics_average_grid_charge_price",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:transmission-tower-import",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_average_pv_opportunity_value",
+        translation_key="economics_average_pv_opportunity_value",
+        runtime_key="economics_average_pv_opportunity_value",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:solar-power-variant",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_average_export_price",
+        translation_key="economics_average_export_price",
+        runtime_key="economics_average_export_price",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:transmission-tower-export",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_average_battery_discharge_value",
+        translation_key="economics_average_battery_discharge_value",
+        runtime_key="economics_average_battery_discharge_value",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:battery-arrow-down-outline",
+        economics_device=True,
+    ),
 
     # --------------------------------------------------
     # ECONOMICS
@@ -804,15 +1079,18 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         key="avg_charge_price",
         translation_key="avg_charge_price",
         runtime_key="avg_charge_price",
-        native_unit_of_measurement="€/kWh",
         icon="mdi:scale-balance",
+        state_class=SensorStateClass.MEASUREMENT,
+        economics_device=True,
     ),
     ZendureSensorEntityDescription(
         key="profit_eur",
         translation_key="profit_eur",
         runtime_key="profit_eur",
-        native_unit_of_measurement="€",
         icon="mdi:cash",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        economics_device=True,
     ),
 
     # --------------------------------------------------
@@ -859,6 +1137,48 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
     ),
 
     # --------------------------------------------------
+    # DEBUG RECORDING (V4.4.0)
+    # --------------------------------------------------
+    ZendureSensorEntityDescription(
+        key="debug_recording_active",
+        translation_key="debug_recording_active",
+        runtime_key="debug_recording_active",
+        device_class=SensorDeviceClass.ENUM,
+        options=BOOLEAN_STATE_ENUMS,
+        icon="mdi:bug-play-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="debug_recording_ends_at",
+        translation_key="debug_recording_ends_at",
+        runtime_key="debug_recording_ends_at",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:timer-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="debug_sample_count",
+        translation_key="debug_sample_count",
+        runtime_key="debug_sample_count",
+        icon="mdi:counter",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="debug_last_package",
+        translation_key="debug_last_package",
+        runtime_key="debug_last_package",
+        icon="mdi:file-code-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="debug_last_error",
+        translation_key="debug_last_error",
+        runtime_key="debug_last_error",
+        icon="mdi:bug-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+
+    # --------------------------------------------------
     # DEVICE / MODE
     # --------------------------------------------------
     ZendureSensorEntityDescription(
@@ -875,7 +1195,7 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         runtime_key="season_mode",
         device_class=SensorDeviceClass.ENUM,
         options=SEASON_MODE_ENUMS,
-        icon="mdi:weather-partly-snowy",
+        icon="mdi:tune-variant",
     ),
     ZendureSensorEntityDescription(
         key="soc_limit_status",
@@ -892,9 +1212,35 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = (
         key="price_forecast",
         translation_key="price_forecast",
         runtime_key="price_forecast",
-        native_unit_of_measurement="€/kWh",
         icon="mdi:chart-timeline-variant",
     ),
+)
+
+
+# V4.4.0: Deep technical diagnostics now live in bounded JSON packages instead
+# of permanent Recorder-facing entities. Keep only the five sparse recording
+# status sensors from the diagnostic category.
+DEBUG_STATUS_SENSOR_KEYS = frozenset(
+    {
+        "debug_recording_active",
+        "debug_recording_ends_at",
+        "debug_sample_count",
+        "debug_last_package",
+        "debug_last_error",
+    }
+)
+
+RETIRED_DIAGNOSTIC_SENSOR_KEYS = frozenset(
+    description.key
+    for description in _SENSOR_DESCRIPTIONS
+    if description.entity_category == EntityCategory.DIAGNOSTIC
+    and description.key not in DEBUG_STATUS_SENSOR_KEYS
+)
+
+SENSORS: tuple[ZendureSensorEntityDescription, ...] = tuple(
+    description
+    for description in _SENSOR_DESCRIPTIONS
+    if description.key not in RETIRED_DIAGNOSTIC_SENSOR_KEYS
 )
 
 
@@ -903,6 +1249,13 @@ async def async_setup_entry(
     entry: ConfigEntry,
     add_entities: AddEntitiesCallback,
 ) -> None:
+    registry = er.async_get(hass)
+    for key in RETIRED_DIAGNOSTIC_SENSOR_KEYS:
+        unique_id = f"{DOMAIN}_{entry.entry_id}_{key}"
+        entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+        if entity_id is not None:
+            registry.async_remove(entity_id)
+
     coordinator = hass.data[DOMAIN][entry.entry_id]
     entities = [ZendureSmartFlowSensor(entry, coordinator, d) for d in SENSORS]
     add_entities(entities)
@@ -916,36 +1269,37 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
         self.entity_description = description
         self._entry = entry
 
+        if description.runtime_key in PRICE_SENSOR_KEYS:
+            self._attr_native_unit_of_measurement = (
+                coordinator.price_currency.price_unit
+            )
+            self._attr_suggested_display_precision = price_input_profile(
+                coordinator.price_currency
+            ).display_precision
+        elif description.runtime_key in MONETARY_SENSOR_KEYS:
+            self._attr_native_unit_of_measurement = (
+                coordinator.price_currency.monetary_unit
+            )
+
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{description.key}"
 
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": INTEGRATION_NAME,
-            "manufacturer": INTEGRATION_MANUFACTURER,
-            "model": INTEGRATION_MODEL,
-            "sw_version": INTEGRATION_VERSION,
-        }
-
-    def _currency_symbol(self) -> str:
-        currency = self._entry.data.get(CONF_CURRENCY, "EUR")
-        return "CHF" if currency == CURRENCY_CHF else "€"
-
-    @property
-    def native_unit_of_measurement(self) -> str | None:
-        key = self.entity_description.key
-        if key in _PRICE_PER_KWH_SENSOR_KEYS:
-            return f"{self._currency_symbol()}/kWh"
-        if key in _PRICE_TOTAL_SENSOR_KEYS:
-            return self._currency_symbol()
-        return self.entity_description.native_unit_of_measurement
-
-    @property
-    def icon(self) -> str | None:
-        key = self.entity_description.key
-        if key in ("price_now", "avg_charge_price", "profit_eur"):
-            if self._entry.data.get(CONF_CURRENCY) == CURRENCY_CHF:
-                return "mdi:cash"
-        return self.entity_description.icon
+        if description.economics_device:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, f"{entry.entry_id}_economics")},
+                translation_key="economics_and_prices",
+                manufacturer=INTEGRATION_MANUFACTURER,
+                model=virtual_device_model(coordinator.hass.config.language),
+                sw_version=INTEGRATION_VERSION,
+                via_device=(DOMAIN, entry.entry_id),
+            )
+        else:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, entry.entry_id)},
+                translation_key="control_and_planning",
+                manufacturer=INTEGRATION_MANUFACTURER,
+                model=INTEGRATION_MODEL,
+                sw_version=INTEGRATION_VERSION,
+            )
 
     @property
     def available(self) -> bool:
@@ -1004,13 +1358,16 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
         if val is None:
             return None
 
+        if key in {"debug_last_package", "debug_last_error"}:
+            return safe_diagnostic_sensor_value(key, val)
+
         if key == "learned_planning_data_coverage":
             try:
                 return round(float(val) * 100.0, 1)
             except Exception:
                 return None
 
-        if self.entity_description.native_unit_of_measurement:
+        if self.native_unit_of_measurement:
             try:
                 return float(val)
             except Exception:
@@ -1018,374 +1375,19 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
 
         return val
         
-    def _build_automatic_weighting_attributes(self) -> dict:
-        """Return diagnostics for the unified automatic strategy context."""
-
-        data = self.coordinator.data or {}
-        details = data.get("details") or {}
-
-        return {
-            "active": details.get(
-                "automatic_strategy_active",
-                data.get("automatic_strategy_active"),
-            ),
-            "season_context": details.get(
-                "automatic_season_context",
-                data.get("automatic_season_context"),
-            ),
-            "pv_weight": details.get(
-                "automatic_pv_weight",
-                data.get("automatic_pv_weight"),
-            ),
-            "price_weight": details.get(
-                "automatic_price_weight",
-                data.get("automatic_price_weight"),
-            ),
-            "reserve_weight": details.get(
-                "automatic_reserve_weight",
-                data.get("automatic_reserve_weight"),
-            ),
-            "forecast_weight": details.get(
-                "automatic_forecast_weight",
-                data.get("automatic_forecast_weight"),
-            ),
-            "reason": details.get(
-                "automatic_strategy_reason",
-                data.get("automatic_strategy_reason"),
-            ),
-            "pv_weight_reason": details.get(
-                "automatic_pv_weight_reason",
-                data.get("automatic_pv_weight_reason"),
-            ),
-            "price_weight_reason": details.get(
-                "automatic_price_weight_reason",
-                data.get("automatic_price_weight_reason"),
-            ),
-            "reserve_weight_reason": details.get(
-                "automatic_reserve_weight_reason",
-                data.get("automatic_reserve_weight_reason"),
-            ),
-            "mode_arbiter_reason": details.get(
-                "regulation_mode_arbiter_reason",
-                data.get("regulation_mode_arbiter_reason"),
-            ),
-            "resolved_mode": details.get(
-                "regulation_resolved_mode",
-                data.get("regulation_resolved_mode"),
-            ),
-            "mode_allowed": details.get(
-                "regulation_mode_allowed",
-                data.get("regulation_mode_allowed"),
-            ),
-            "active_regulation_state": details.get(
-                "regulation_active_state",
-                data.get("regulation_active_state"),
-            ),
-            "active_hold_remaining_s": details.get(
-                "regulation_active_hold_remaining_s",
-                data.get("regulation_active_hold_remaining_s"),
-            ),
-            "forecast_weight_reason": details.get(
-                "automatic_forecast_weight_reason",
-                data.get("automatic_forecast_weight_reason"),
-            ),
-            "discharge_allowed": details.get(
-                "automatic_discharge_allowed",
-                data.get("automatic_discharge_allowed"),
-            ),
-            "discharge_reason": details.get(
-                "automatic_discharge_reason",
-                data.get("automatic_discharge_reason"),
-            ),
-            "discharge_latch_reason": details.get(
-                "automatic_discharge_latch_reason",
-                data.get("automatic_discharge_latch_reason"),
-            ),
-            "peak_reserve_allowed": details.get(
-                "automatic_peak_reserve_allowed",
-                data.get("automatic_peak_reserve_allowed"),
-            ),
-            "peak_reserve_reason": details.get(
-                "automatic_peak_reserve_reason",
-                data.get("automatic_peak_reserve_reason"),
-            ),
-            "pv_handover_policy": details.get(
-                "regulation_pv_handover_policy",
-                data.get("regulation_pv_handover_policy"),
-            ),
-            "load_coverage_priority": details.get(
-                "regulation_load_coverage_priority",
-                data.get("regulation_load_coverage_priority"),
-            ),
-            "valley_charge_allowed": details.get(
-                "automatic_valley_charge_allowed",
-                data.get("automatic_valley_charge_allowed"),
-            ),
-            "valley_charge_reason": details.get(
-                "automatic_valley_charge_reason",
-                data.get("automatic_valley_charge_reason"),
-            ),
-            # V4.3.0-dev5.8:
-            # Near-zero regulation diagnostics.
-            "grid_now_w": details.get(
-                "regulation_grid_now_w"
-            ),
-            "grid_avg_short_w": details.get(
-                "regulation_grid_avg_short_w"
-            ),
-            "grid_avg_medium_w": details.get(
-                "regulation_grid_avg_medium_w"
-            ),
-            "control_grid_w": details.get(
-                "regulation_control_grid_w"
-            ),
-            "target_import_w": details.get(
-                "regulation_target_import_w"
-            ),
-            "effective_deadband_w": details.get(
-                "regulation_effective_deadband_w"
-            ),
-            "error_w": details.get(
-                "regulation_error_w"
-            ),
-            "near_zero_active": details.get(
-                "regulation_near_zero_active"
-            ),
-            "near_zero_reason": details.get(
-                "regulation_near_zero_reason"
-            ),
-            "near_zero_trim_w": details.get(
-                "regulation_near_zero_trim_w"
-            ),
-            "economic_target_active": details.get(
-                "regulation_economic_target_active"
-            ),
-            "economic_target_reason": details.get(
-                "regulation_economic_target_reason"
-            ),
-            "economic_effective_target_import_w": details.get(
-                "regulation_economic_effective_target_import_w"
-            ),
-            "raw_target_w": details.get(
-                "regulation_raw_target_w"
-            ),
-            "limited_target_w": details.get(
-                "regulation_limited_target_w"
-            ),
-            "applied_step_w": details.get(
-                "regulation_applied_step_w"
-            ),
-            "final_power_w": details.get(
-                "regulation_final_power_w"
-            ),
-            "power_reason": details.get(
-                "regulation_power_reason"
-            ),
-            "input_write_requested_w": details.get(
-                "input_write_requested_w"
-            ),
-            "input_write_effective_w": details.get(
-                "input_write_effective_w"
-            ),
-            "input_write_entity_state_w": details.get(
-                "input_write_entity_state_w"
-            ),
-            "input_write_clamped": details.get(
-                "input_write_clamped"
-            ),
-            "input_write_skipped": details.get(
-                "input_write_skipped"
-            ),
-            "input_write_skip_reason": details.get(
-                "input_write_skip_reason"
-            ),
-            "input_write_last_success_w": details.get(
-                "input_write_last_success_w"
-            ),
-
-            "output_write_requested_w": details.get(
-                "output_write_requested_w"
-            ),
-            "output_write_effective_w": details.get(
-                "output_write_effective_w"
-            ),
-            "output_write_entity_state_w": details.get(
-                "output_write_entity_state_w"
-            ),
-            "output_write_clamped": details.get(
-                "output_write_clamped"
-            ),
-            "output_write_skipped": details.get(
-                "output_write_skipped"
-            ),
-            "output_write_skip_reason": details.get(
-                "output_write_skip_reason"
-            ),
-            "output_write_last_success_w": details.get(
-                "output_write_last_success_w"
-            ),
-            "input_live_entity_state_w": details.get(
-                "input_live_entity_state_w"
-            ),
-            "output_live_entity_state_w": details.get(
-                "output_live_entity_state_w"
-            ),
-            "mode_write_requested": details.get(
-                "mode_write_requested"
-            ),
-            "mode_write_entity_state": details.get(
-                "mode_write_entity_state"
-            ),
-            "mode_live_entity_state": details.get(
-                "mode_live_entity_state"
-            ),
-            "mode_write_skipped": details.get(
-                "mode_write_skipped"
-            ),
-            "mode_write_skip_reason": details.get(
-                "mode_write_skip_reason"
-            ),
-            "mode_write_last_success": details.get(
-                "mode_write_last_success"
-            ),
-            "charge_commit_phase_debug": details.get(
-                "charge_commit_phase_debug"
-            ),
-            "charge_commit_optimal_start_debug": details.get(
-                "charge_commit_optimal_start_debug"
-            ),
-            "charge_commit_latest_start_debug": details.get(
-                "charge_commit_latest_start_debug"
-            ),
-            "charge_commit_deadline_debug": details.get(
-                "charge_commit_deadline_debug"
-            ),
-            "charge_commit_acceptable_price_eur_kwh_debug": details.get(
-                "charge_commit_acceptable_price_eur_kwh_debug"
-            ),
-        }
-
-    def _build_charge_source_allocation_attributes(self) -> dict:
-        """Return diagnostic attributes for the charge source allocation."""
-
-        data = self.coordinator.data or {}
-        details = data.get("details") or {}
-
-        return {
-            "active": details.get(
-                "charge_source_allocation_active",
-                data.get("charge_source_allocation_active"),
-            ),
-            "total_target_w": details.get(
-                "charge_total_target_w",
-                data.get("charge_total_target_w"),
-            ),
-            "pv_available_w": details.get(
-                "charge_pv_available_w",
-                data.get("charge_pv_available_w"),
-            ),
-            "pv_allocated_w": details.get(
-                "charge_pv_allocated_w",
-                data.get("charge_pv_allocated_w"),
-            ),
-            "grid_requested_w": details.get(
-                "charge_grid_requested_w",
-                data.get("charge_grid_requested_w"),
-            ),
-            "unfilled_w": details.get(
-                "charge_unfilled_w",
-                data.get("charge_unfilled_w"),
-            ),
-            "pv_share_pct": details.get(
-                "charge_pv_share_pct",
-                data.get("charge_pv_share_pct"),
-            ),
-            "grid_share_pct": details.get(
-                "charge_grid_share_pct",
-                data.get("charge_grid_share_pct"),
-            ),
-            "reason": details.get(
-                "charge_source_allocation_reason",
-                data.get("charge_source_allocation_reason"),
-            ),
-        }
-
-    def _build_device_profile_attributes(self) -> dict:
-        data = self.coordinator.data or {}
-        details = data.get("details") or {}
-
-        base_profile = details.get("device_profile")
-        installed_pv_wp = details.get("installed_pv_wp")
-
-        profile_overrides = self._entry.options.get("profile_overrides", {})
-        if not isinstance(profile_overrides, dict):
-            profile_overrides = {}
-
-        season_thresholds = self.coordinator._persist.get("season_thresholds", {})
-        if not isinstance(season_thresholds, dict):
-            season_thresholds = {}
-
-        attrs = {
-            "base_profile": base_profile,
-            "profile_overrides_active": bool(profile_overrides),
-            "profile_override_count": len(profile_overrides),
-            "installed_pv_wp": installed_pv_wp,
-            "effective_target_import_w": details.get("effective_target_import_w"),
-            "effective_deadband_w": details.get("effective_deadband_w"),
-            "effective_export_guard_w": details.get("effective_export_guard_w"),
-            "effective_kp_up": details.get("effective_kp_up"),
-            "effective_kp_down": details.get("effective_kp_down"),
-            "effective_max_step_up": details.get("effective_max_step_up"),
-            "effective_max_step_down": details.get("effective_max_step_down"),
-            "effective_keepalive_min_deficit_w": details.get("effective_keepalive_min_deficit_w"),
-            "effective_keepalive_min_output_w": details.get("effective_keepalive_min_output_w"),
-            "effective_soc_discharge_resume_margin": details.get("effective_soc_discharge_resume_margin"),
-            "season_summer_pv_threshold": season_thresholds.get("summer_pv_threshold"),
-            "season_summer_export_threshold": season_thresholds.get("summer_export_threshold"),
-            "season_winter_pv_threshold": season_thresholds.get("winter_pv_threshold"),
-            "season_winter_export_threshold": season_thresholds.get("winter_export_threshold"),
-            "season_counter": season_thresholds.get("counter"),
-
-            # V3.5.0 cell voltage transparency
-            "expert_mode_enabled": details.get("expert_mode_enabled"),
-            "cell_voltage_protection_enabled": details.get("cell_voltage_protection_enabled"),
-            "configured_lowest_cell_voltage_sensor_count": details.get(
-                "configured_lowest_cell_voltage_sensor_count"
-            ),
-            "global_lowest_cell_voltage": details.get("global_lowest_cell_voltage"),
-        }
-
-        attrs["profile_overrides"] = profile_overrides
-
-        return attrs
-
     def _handle_coordinator_update(self) -> None:
-        """Update sensor attributes without duplicating the full details block.
+        """Keep recorder-facing entities attribute-free in normal operation."""
 
-        Important for Home Assistant Recorder:
-        The coordinator details dictionary can be large and changes often.
-        Attaching it to every sensor causes massive database growth because
-        every sensor state stores its own copy of the attributes.
-        """
-
-        attrs: dict | None = None
-
-        if self.entity_description.runtime_key == "device_profile":
-            attrs = self._build_device_profile_attributes()
-        elif self.entity_description.runtime_key == "price_forecast":
+        if self.entity_description.runtime_key == "price_forecast":
             data = self.coordinator.data or {}
             forecast = data.get("price_forecast") or []
             self._attr_extra_state_attributes = {
-                "prices": [{"start": p["start"], "price": p["price"]} for p in forecast]
+                "prices": [
+                    {"start": p["start"], "price": p["price"]} for p in forecast
+                ]
             }
             super()._handle_coordinator_update()
             return
 
-        elif self.entity_description.key == "charge_source_allocation":
-            attrs = self._build_charge_source_allocation_attributes()
-
-        elif self.entity_description.key == "automatic_weighting":
-            attrs = self._build_automatic_weighting_attributes()
-
-        self._attr_extra_state_attributes = attrs
+        self._attr_extra_state_attributes = None
         super()._handle_coordinator_update()

@@ -9,12 +9,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     DOMAIN,
-    INTEGRATION_NAME,
     INTEGRATION_MANUFACTURER,
     INTEGRATION_MODEL,
     INTEGRATION_VERSION,
-    CONF_CURRENCY,
-    CURRENCY_CHF,
     SETTING_BATTERY_PACKS,
     DEFAULT_BATTERY_PACKS,
     SETTING_PEAK_FACTOR,
@@ -34,7 +31,6 @@ from .const import (
     DEFAULT_EMERGENCY_CHARGE,
     DEFAULT_EMERGENCY_SOC,
     DEFAULT_PROFIT_MARGIN_PCT,
-    DEFAULT_VERY_EXPENSIVE_THRESHOLD,
     SETTING_VALLEY_FACTOR,
     DEFAULT_VALLEY_FACTOR,
     SETTING_VERY_CHEAP_PRICE,
@@ -44,17 +40,27 @@ from .const import (
     SETTING_FORECAST_BASE_LOAD,
     DEFAULT_FORECAST_BASE_LOAD,
 )
+from .price_currency import price_input_profile
+from .factor_display import (
+    discount_pct_to_valley_factor,
+    markup_pct_to_peak_factor,
+    peak_factor_to_markup_pct,
+    valley_factor_to_discount_pct,
+)
 
 
-_PRICE_PER_KWH_NUMBER_KEYS = frozenset({
-    "very_cheap_price",
-    "very_expensive_threshold",
-})
+PRICE_NUMBER_KEYS = frozenset(
+    {
+        SETTING_VERY_CHEAP_PRICE,
+        SETTING_VERY_EXPENSIVE_THRESHOLD,
+    }
+)
 
 
 @dataclass(frozen=True, kw_only=True)
 class ZendureNumberEntityDescription(NumberEntityDescription):
     runtime_key: str
+    factor_percentage_kind: str | None = None
 
 
 NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
@@ -71,9 +77,11 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         key=SETTING_PEAK_FACTOR,
         translation_key="peak_factor",
         runtime_key=SETTING_PEAK_FACTOR,
-        native_min_value=1.0,
-        native_max_value=2.5,
-        native_step=0.01,
+        factor_percentage_kind="peak_markup",
+        native_min_value=0,
+        native_max_value=150,
+        native_step=1,
+        native_unit_of_measurement="%",
         mode="box",
         icon="mdi:chart-bell-curve",
     ),
@@ -81,9 +89,11 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         key=SETTING_VALLEY_FACTOR,
         translation_key="valley_factor",
         runtime_key=SETTING_VALLEY_FACTOR,
-        native_min_value=0.5,
-        native_max_value=1.0,
-        native_step=0.01,
+        factor_percentage_kind="valley_discount",
+        native_min_value=0,
+        native_max_value=50,
+        native_step=1,
+        native_unit_of_measurement="%",
         mode="box",
         icon="mdi:chart-bell-curve",
     ),
@@ -93,8 +103,7 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         runtime_key=SETTING_VERY_CHEAP_PRICE,
         native_min_value=-1.0,
         native_max_value=1.0,
-        native_step=0.001,
-        native_unit_of_measurement="€/kWh",
+        native_step=0.01,
         icon="mdi:cash",
     ),
     ZendureNumberEntityDescription(
@@ -193,14 +202,18 @@ NUMBERS: tuple[ZendureNumberEntityDescription, ...] = (
         runtime_key=SETTING_VERY_EXPENSIVE_THRESHOLD,
         native_min_value=0,
         native_max_value=2,
-        native_step=0.001,
-        native_unit_of_measurement="€/kWh",
-        icon="mdi:currency-eur",
+        native_step=0.01,
+        icon="mdi:cash",
     ),
 )
 
 
-def _default_for_key(key: str) -> float:
+def _default_for_key(key: str, price_currency=None) -> float:
+    if key == SETTING_VERY_EXPENSIVE_THRESHOLD and price_currency is not None:
+        return price_input_profile(
+            price_currency
+        ).default_very_expensive_threshold
+
     defaults: dict[str, float] = {
         SETTING_BATTERY_PACKS: DEFAULT_BATTERY_PACKS,
         SETTING_PEAK_FACTOR: DEFAULT_PEAK_FACTOR,
@@ -215,7 +228,9 @@ def _default_for_key(key: str) -> float:
         SETTING_EMERGENCY_CHARGE: DEFAULT_EMERGENCY_CHARGE,
         SETTING_EMERGENCY_SOC: DEFAULT_EMERGENCY_SOC,
         SETTING_PROFIT_MARGIN_PCT: DEFAULT_PROFIT_MARGIN_PCT,
-        SETTING_VERY_EXPENSIVE_THRESHOLD: DEFAULT_VERY_EXPENSIVE_THRESHOLD,
+        SETTING_VERY_EXPENSIVE_THRESHOLD: price_input_profile(
+            "EUR"
+        ).default_very_expensive_threshold,
     }
     return float(defaults.get(key, 0.0))
 
@@ -240,7 +255,7 @@ async def async_setup_entry(
         if key not in coordinator.runtime_settings:
             coordinator.runtime_settings[key] = entry.options.get(
                 key,
-                _default_for_key(key),
+                _default_for_key(key, coordinator.price_currency),
             )
 
 
@@ -257,10 +272,20 @@ class ZendureSmartFlowNumber(NumberEntity):
         self.coordinator = coordinator
         self._entry = entry
 
+        if description.runtime_key in PRICE_NUMBER_KEYS:
+            profile = price_input_profile(coordinator.price_currency)
+            self._attr_native_min_value = profile.minimum
+            self._attr_native_max_value = profile.maximum
+            self._attr_native_step = profile.step
+            self._attr_suggested_display_precision = profile.display_precision
+            self._attr_native_unit_of_measurement = (
+                coordinator.price_currency.price_unit
+            )
+
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": INTEGRATION_NAME,
+            "translation_key": "control_and_planning",
             "manufacturer": INTEGRATION_MANUFACTURER,
             "model": INTEGRATION_MODEL,
             "sw_version": INTEGRATION_VERSION,
@@ -269,29 +294,37 @@ class ZendureSmartFlowNumber(NumberEntity):
         if description.runtime_key not in coordinator.runtime_settings:
             coordinator.runtime_settings[description.runtime_key] = entry.options.get(
                 description.runtime_key,
-                _default_for_key(description.runtime_key),
+                _default_for_key(
+                    description.runtime_key,
+                    coordinator.price_currency,
+                ),
             )
-
-    @property
-    def native_unit_of_measurement(self) -> str | None:
-        key = self.entity_description.key
-        if key in _PRICE_PER_KWH_NUMBER_KEYS:
-            currency = self._entry.data.get(CONF_CURRENCY, "EUR")
-            sym = "CHF" if currency == CURRENCY_CHF else "€"
-            return f"{sym}/kWh"
-        return self.entity_description.native_unit_of_measurement
 
     @property
     def native_value(self) -> float:
-        return float(
+        value = float(
             self.coordinator.runtime_settings.get(
                 self.entity_description.runtime_key,
-                _default_for_key(self.entity_description.runtime_key),
+                _default_for_key(
+                    self.entity_description.runtime_key,
+                    self.coordinator.price_currency,
+                ),
             )
         )
 
+        if self.entity_description.factor_percentage_kind == "peak_markup":
+            return peak_factor_to_markup_pct(value)
+        if self.entity_description.factor_percentage_kind == "valley_discount":
+            return valley_factor_to_discount_pct(value)
+        return value
+
     async def async_set_native_value(self, value: float) -> None:
         value = float(value)
+
+        if self.entity_description.factor_percentage_kind == "peak_markup":
+            value = markup_pct_to_peak_factor(value)
+        elif self.entity_description.factor_percentage_kind == "valley_discount":
+            value = discount_pct_to_valley_factor(value)
 
         self.coordinator.runtime_settings[self.entity_description.runtime_key] = value
 
