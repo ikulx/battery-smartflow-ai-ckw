@@ -1,67 +1,95 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.helpers import selector
 
 from .const import (
-    DOMAIN,
-    CONF_SOC_ENTITY,
-    CONF_PV_ENTITY,
-    CONF_NATIVE_PV_ENTITY,
-    CONF_PV_FORECAST_TODAY_ENTITY,
-    CONF_PV_FORECAST_TOMORROW_ENTITY,
-    CONF_BATTERY_AC_POWER_ENTITY,
+    CONF_AC_MODE_ENTITY,
     CONF_ADDITIONAL_BATTERY_CHARGE_ENTITY,
     CONF_ADDITIONAL_BATTERY_DISCHARGE_ENTITY,
-    CONF_OFFGRID_POWER_ENTITY,
-    CONF_OFFGRID_MODE_ENTITY,
-    CONF_PRICE_EXPORT_ENTITY,
-    CONF_PRICE_NOW_ENTITY,
+    CONF_BATTERY_AC_POWER_ENTITY,
+    CONF_CELL_VOLTAGE_PROTECTION_ENABLED,
+    CONF_DEVICE_PROFILE,
     CONF_DYNAMIC_FEED_IN_PRICE_ENTITY,
-    CONF_AC_MODE_ENTITY,
-    CONF_INPUT_LIMIT_ENTITY,
-    CONF_OUTPUT_LIMIT_ENTITY,
+    # V3.5.0
+    CONF_EXPERT_MODE_ENABLED,
+    CONF_FEED_IN_TARIFF,
+    CONF_GRID_EXPORT_ENTITY,
+    CONF_GRID_IMPORT_ENTITY,
     CONF_GRID_MODE,
     CONF_GRID_POWER_ENTITY,
-    CONF_GRID_IMPORT_ENTITY,
-    CONF_GRID_EXPORT_ENTITY,
+    CONF_INPUT_LIMIT_ENTITY,
+    CONF_INSTALLED_PV_WP,
+    CONF_NATIVE_PV_ENTITY,
+    CONF_NATIVE_ZENDURE_APP_TOKEN,
+    CONF_NATIVE_ZENDURE_CONTROL_ENABLED,
+    CONF_NATIVE_ZENDURE_CONTROL_TRANSPORT,
+    CONF_NATIVE_ZENDURE_LOCAL_MQTT_PASSWORD,
+    CONF_NATIVE_ZENDURE_LOCAL_MQTT_PORT,
+    CONF_NATIVE_ZENDURE_LOCAL_MQTT_SERVER,
+    CONF_NATIVE_ZENDURE_LOCAL_MQTT_USERNAME,
+    CONF_NATIVE_ZENDURE_LEGACY_PROVISION,
+    CONF_NATIVE_ZENDURE_LEGACY_WIFI_PASSWORD,
+    CONF_NATIVE_ZENDURE_LEGACY_WIFI_SSID,
+    CONF_NATIVE_ZENDURE_SELECTED_DEVICE,
+    CONF_OFFGRID_MODE_ENTITY,
+    CONF_OFFGRID_POWER_ENTITY,
+    CONF_OUTPUT_LIMIT_ENTITY,
+    CONF_PACK_CAPACITY_KWH,
+    CONF_PRICE_EXPORT_ENTITY,
+    CONF_PRICE_NOW_ENTITY,
+    CONF_PV_ENTITY,
+    CONF_PV_FORECAST_TODAY_ENTITY,
+    CONF_PV_FORECAST_TOMORROW_ENTITY,
+    CONF_PV_FORECAST_CONFIG_ENTRIES,
+    CONF_SOC_ENTITY,
+    CONF_SOC_LIMIT_ENTITY,
+    DEFAULT_BATTERY_PACKS,
+    DEFAULT_CELL_VOLTAGE_CUTOFF,
+    DEFAULT_CELL_VOLTAGE_PROTECTION_ENABLED,
+    DEFAULT_CELL_VOLTAGE_RESUME,
+    DEFAULT_CELL_VOLTAGE_WARNING,
+    DEFAULT_DEVICE_PROFILE,
+    DEFAULT_EXPERT_MODE_ENABLED,
+    DEFAULT_FEED_IN_TARIFF,
+    DEFAULT_INSTALLED_PV_WP,
+    DEFAULT_LEARNED_PLANNING_ENABLED,
+    DEFAULT_FULL_CHARGE_MAINTENANCE_ENABLED,
+    DEFAULT_FULL_CHARGE_MAINTENANCE_INTERVAL_DAYS,
+    DEFAULT_PACK_CAPACITY_KWH,
+    DOMAIN,
     GRID_MODE_NONE,
     GRID_MODE_SINGLE,
     GRID_MODE_SPLIT,
-    CONF_DEVICE_PROFILE,
-    DEFAULT_DEVICE_PROFILE,
-    CONF_SOC_LIMIT_ENTITY,
-    CONF_PACK_CAPACITY_KWH,
-    DEFAULT_PACK_CAPACITY_KWH,
-    CONF_INSTALLED_PV_WP,
-    DEFAULT_INSTALLED_PV_WP,
     CONF_CKW_ENABLED,
-    CONF_FEED_IN_TARIFF,
-    DEFAULT_FEED_IN_TARIFF,
-    # V3.5.0
-    CONF_EXPERT_MODE_ENABLED,
-    CONF_CELL_VOLTAGE_PROTECTION_ENABLED,
     LOWEST_CELL_VOLTAGE_CONFIG_KEYS,
-    DEFAULT_EXPERT_MODE_ENABLED,
-    DEFAULT_CELL_VOLTAGE_PROTECTION_ENABLED,
     SETTING_BATTERY_PACKS,
-    DEFAULT_BATTERY_PACKS,
-    SETTING_CELL_VOLTAGE_WARNING,
     SETTING_CELL_VOLTAGE_CUTOFF,
     SETTING_CELL_VOLTAGE_RESUME,
+    SETTING_CELL_VOLTAGE_WARNING,
     SETTING_LEARNED_PLANNING_ENABLED,
-    DEFAULT_CELL_VOLTAGE_WARNING,
-    DEFAULT_CELL_VOLTAGE_CUTOFF,
-    DEFAULT_CELL_VOLTAGE_RESUME,
-    DEFAULT_LEARNED_PLANNING_ENABLED,
+    SETTING_FULL_CHARGE_MAINTENANCE_ENABLED,
+    SETTING_FULL_CHARGE_MAINTENANCE_INTERVAL_DAYS,
 )
-
+from .core.models import ZendureTransport
 from .device_profiles import DEVICE_PROFILE_MODELS
+from .forecast import async_energy_forecast_sources
+from .native_config_ui import (
+    STORED_APP_TOKEN_MASK,
+    native_device_label,
+    native_device_summary_line,
+    resolve_app_token_input,
+)
 from .price_currency import price_input_profile, resolve_price_currency
+from .hardware.zendure.cloud import ZendureCloudClient, ZendureCloudError
+from .hardware.zendure.device_matrix import preferred_local_transport, resolve_zendure_device
+from .hardware.zendure.legacy import (
+    async_provision_legacy_device,
+    legacy_provisioning_default,
+)
 
 EMPTY_ENTITY_VALUES = {
     "",
@@ -70,6 +98,30 @@ EMPTY_ENTITY_VALUES = {
     "unknown",
     "unavailable",
 }
+
+
+def _native_transport_options(identity) -> tuple[ZendureTransport, ...]:
+    """Expose Cloud plus only the verified local path for one model."""
+
+    local = preferred_local_transport(identity)
+    return (
+        (ZendureTransport.CLOUD_MQTT, local)
+        if local is not None
+        else (ZendureTransport.CLOUD_MQTT,)
+    )
+
+
+def _requested_native_transport(user_input, identity) -> ZendureTransport:
+    """Parse an explicit choice; new setups start safely on Cloud."""
+
+    raw = user_input.get(
+        CONF_NATIVE_ZENDURE_CONTROL_TRANSPORT,
+        ZendureTransport.CLOUD_MQTT.value,
+    )
+    try:
+        return ZendureTransport(str(raw))
+    except ValueError:
+        return ZendureTransport.CLOUD_MQTT
 
 
 OPTIONAL_ENTITY_KEYS = (
@@ -115,6 +167,28 @@ def _cleanup_optional_entities(data: dict[str, Any]) -> None:
             data.pop(key, None)
         else:
             data[key] = value
+
+
+def _normalize_forecast_entries(value: Any) -> list[str]:
+    """Normalize the multi-select value and remove duplicate entry IDs."""
+
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    return list(dict.fromkeys(str(item) for item in value if str(item).strip()))
+
+
+def _apply_forecast_selection(data: dict[str, Any]) -> None:
+    """Prefer Energy forecast entries while retaining untouched legacy data."""
+
+    if CONF_PV_FORECAST_CONFIG_ENTRIES not in data:
+        return
+    selected = _normalize_forecast_entries(data[CONF_PV_FORECAST_CONFIG_ENTRIES])
+    if selected:
+        data[CONF_PV_FORECAST_CONFIG_ENTRIES] = selected
+    else:
+        data.pop(CONF_PV_FORECAST_CONFIG_ENTRIES, None)
+    data.pop(CONF_PV_FORECAST_TODAY_ENTITY, None)
+    data.pop(CONF_PV_FORECAST_TOMORROW_ENTITY, None)
             
             
 def _normalize_optional_float(value: Any, default: float = 0.0) -> float:
@@ -148,16 +222,168 @@ def _validate_feed_in_tariff(value: Any) -> float:
 class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Battery SmartFlow AI."""
 
-    VERSION = 3
+    VERSION = 4
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
+        return self.async_show_menu(step_id="user", menu_options=["native_login", "legacy"])
+
+    async def async_step_legacy(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
             self._user_input = dict(user_input)
             return await self.async_step_grid()
 
         return self.async_show_form(
-            step_id="user",
-            data_schema=self._base_schema(),
+            step_id="legacy",
+            data_schema=self._base_schema(
+                forecast_options=await self._forecast_options()
+            ),
+        )
+
+    async def async_step_native_login(self, user_input=None):
+        """Discover first; native setup never requires entities from another integration."""
+        errors = {}
+        if user_input is not None:
+            token = resolve_app_token_input(user_input.get(CONF_NATIVE_ZENDURE_APP_TOKEN), None)
+            try:
+                from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+                session = async_get_clientsession(self.hass)
+
+                async def post_json(url, **kwargs):
+                    async with session.post(url, **kwargs) as response:
+                        payload = await response.json(content_type=None)
+
+                    class Response:
+                        async def json(self):
+                            return payload
+
+                    return Response()
+
+                self._native_bootstrap = await ZendureCloudClient(post_json).async_discover(token)
+                self._native_options = {CONF_NATIVE_ZENDURE_APP_TOKEN: token}
+                return await self.async_step_native_device()
+            except ZendureCloudError as error:
+                errors["base"] = error.reason
+            except Exception:
+                errors["base"] = "cannot_connect"
+        return self.async_show_form(
+            step_id="native_login", errors=errors,
+            data_schema=vol.Schema({
+                vol.Required(CONF_NATIVE_ZENDURE_APP_TOKEN): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                ),
+            }),
+        )
+
+    async def async_step_native_device(self, user_input=None):
+        devices = self._native_bootstrap.devices
+        errors = {}
+        if user_input is not None:
+            selected = next((item for item in devices if item.candidate.candidate_id ==
+                             user_input.get(CONF_NATIVE_ZENDURE_SELECTED_DEVICE)), None)
+            profile = resolve_zendure_device(selected.candidate.identity) if selected else None
+            if selected is None:
+                errors["base"] = "device_not_found"
+            elif profile is None:
+                errors["base"] = "unsupported_device"
+            else:
+                chosen_transport = _requested_native_transport(
+                    user_input, selected.candidate.identity
+                )
+                if chosen_transport not in _native_transport_options(
+                    selected.candidate.identity
+                ):
+                    errors["base"] = "device_not_found"
+                elif (
+                    chosen_transport is ZendureTransport.LOCAL_MQTT
+                    and not str(user_input.get(
+                        CONF_NATIVE_ZENDURE_LOCAL_MQTT_SERVER, ""
+                    )).strip()
+                ):
+                    errors["base"] = "local_mqtt_required"
+                else:
+                    if (
+                        chosen_transport is ZendureTransport.LOCAL_MQTT
+                        and bool(user_input.get(
+                            CONF_NATIVE_ZENDURE_LEGACY_PROVISION, False
+                        ))
+                    ):
+                        local_port = int(user_input.get(
+                            CONF_NATIVE_ZENDURE_LOCAL_MQTT_PORT, 1883
+                        ))
+                        wifi_ssid = str(user_input.get(
+                            CONF_NATIVE_ZENDURE_LEGACY_WIFI_SSID, ""
+                        )).strip()
+                        wifi_password = str(user_input.get(
+                            CONF_NATIVE_ZENDURE_LEGACY_WIFI_PASSWORD, ""
+                        ))
+                        if local_port != 1883:
+                            errors["base"] = "legacy_port_required"
+                        elif not wifi_ssid or not wifi_password:
+                            errors["base"] = "legacy_wifi_required"
+                        else:
+                            identity = selected.candidate.identity
+                            try:
+                                if not identity.device_id:
+                                    raise ValueError("legacy_device_id_missing")
+                                await async_provision_legacy_device(
+                                    self.hass,
+                                    serial_number=str(
+                                        identity.serial_number or ""
+                                    ),
+                                    display_name=selected.candidate.display_name,
+                                    mqtt_server=str(user_input[
+                                        CONF_NATIVE_ZENDURE_LOCAL_MQTT_SERVER
+                                    ]).strip(),
+                                    wifi_ssid=wifi_ssid,
+                                    wifi_password=wifi_password,
+                                )
+                            except Exception as error:
+                                reason = str(error) or type(error).__name__
+                                errors["base"] = (
+                                    reason
+                                    if reason in {
+                                        "legacy_ble_device_not_found",
+                                        "legacy_device_id_missing",
+                                    }
+                                    else "legacy_provision_failed"
+                                )
+                    if errors:
+                        return self.async_show_form(
+                            step_id="native_device",
+                            errors=errors,
+                            data_schema=ZendureSmartFlowOptionsFlow._native_device_schema(
+                                devices
+                            ),
+                            description_placeholders={
+                                "device_summary": ZendureSmartFlowOptionsFlow._native_device_summary(
+                                    devices
+                                )
+                            },
+                        )
+                    self._native_options.update(user_input)
+                    self._user_input = {
+                        "connection_type": "native",
+                        CONF_DEVICE_PROFILE: profile.profile_key,
+                    }
+                    return await self.async_step_native_external()
+        return self.async_show_form(
+            step_id="native_device", errors=errors,
+            data_schema=ZendureSmartFlowOptionsFlow._native_device_schema(devices),
+            description_placeholders={
+                "device_summary": ZendureSmartFlowOptionsFlow._native_device_summary(devices),
+            },
+        )
+
+    async def async_step_native_external(self, user_input=None):
+        if user_input is not None:
+            self._user_input.update(user_input)
+            return await self.async_step_grid()
+        return self.async_show_form(
+            step_id="native_external",
+            data_schema=self._base_schema(
+                native=True, forecast_options=await self._forecast_options()
+            ),
         )
 
     async def async_step_grid(self, user_input: dict[str, Any] | None = None):
@@ -175,6 +401,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "grid_split_missing"
 
             _cleanup_optional_entities(self._user_input)
+            _apply_forecast_selection(self._user_input)
             
             self._user_input[CONF_FEED_IN_TARIFF] = _normalize_optional_float(
                 self._user_input.get(CONF_FEED_IN_TARIFF),
@@ -192,6 +419,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(
                     title="Battery SmartFlow AI",
                     data=self._user_input,
+                    options=getattr(self, "_native_options", {}),
                 )
 
         return self.async_show_form(
@@ -210,7 +438,9 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=self._base_schema(entry),
+            data_schema=self._base_schema(
+                entry, forecast_options=await self._forecast_options()
+            ),
         )
 
     async def async_step_reconfigure_grid(
@@ -241,6 +471,7 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "grid_split_missing"
 
             _cleanup_optional_entities(cleaned)
+            _apply_forecast_selection(cleaned)
             
             cleaned[CONF_FEED_IN_TARIFF] = _normalize_optional_float(
                 cleaned.get(CONF_FEED_IN_TARIFF),
@@ -267,6 +498,8 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def _base_schema(
         self,
         entry: config_entries.ConfigEntry | None = None,
+        *, native: bool = False,
+        forecast_options: list[dict[str, str]] | None = None,
     ) -> vol.Schema:
         def _val(key: str):
             if not entry:
@@ -405,39 +638,31 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.EntitySelectorConfig(domain="sensor")
             )
 
-        pv_forecast_today_val = _val(CONF_PV_FORECAST_TODAY_ENTITY)
-        if pv_forecast_today_val:
-            schema[
-                vol.Optional(
-                    CONF_PV_FORECAST_TODAY_ENTITY,
-                    default=pv_forecast_today_val,
+        selected_forecasts = _normalize_forecast_entries(
+            _val(CONF_PV_FORECAST_CONFIG_ENTRIES)
+        )
+        available_forecasts = list(forecast_options or [])
+        known_ids = {item["value"] for item in available_forecasts}
+        for entry_id in selected_forecasts:
+            if entry_id not in known_ids:
+                available_forecasts.append(
+                    {"value": entry_id, "label": entry_id}
                 )
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
+        forecast_key = (
+            vol.Optional(
+                CONF_PV_FORECAST_CONFIG_ENTRIES,
+                default=selected_forecasts,
             )
-        else:
-            schema[
-                vol.Optional(CONF_PV_FORECAST_TODAY_ENTITY)
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
+            if selected_forecasts
+            else vol.Optional(CONF_PV_FORECAST_CONFIG_ENTRIES)
+        )
+        schema[forecast_key] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=available_forecasts,
+                multiple=True,
+                mode=selector.SelectSelectorMode.DROPDOWN,
             )
-
-        pv_forecast_tomorrow_val = _val(CONF_PV_FORECAST_TOMORROW_ENTITY)
-        if pv_forecast_tomorrow_val:
-            schema[
-                vol.Optional(
-                    CONF_PV_FORECAST_TOMORROW_ENTITY,
-                    default=pv_forecast_tomorrow_val,
-                )
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
-            )
-        else:
-            schema[
-                vol.Optional(CONF_PV_FORECAST_TOMORROW_ENTITY)
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
-            )
+        )
 
         schema[
             vol.Required(
@@ -591,7 +816,27 @@ class ZendureSmartFlowConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
         )
 
+        if native or (entry and (
+            entry.data.get("connection_type") == "native"
+            or entry.options.get(CONF_NATIVE_ZENDURE_CONTROL_ENABLED, False)
+        )):
+            hardware_keys = {
+                CONF_DEVICE_PROFILE, CONF_SOC_ENTITY, CONF_SOC_LIMIT_ENTITY,
+                CONF_PACK_CAPACITY_KWH, CONF_NATIVE_PV_ENTITY,
+                CONF_BATTERY_AC_POWER_ENTITY, CONF_AC_MODE_ENTITY,
+                CONF_INPUT_LIMIT_ENTITY, CONF_OUTPUT_LIMIT_ENTITY,
+                CONF_OFFGRID_POWER_ENTITY, CONF_OFFGRID_MODE_ENTITY,
+            }
+            schema = {key: value for key, value in schema.items() if key.schema not in hardware_keys}
         return vol.Schema(schema)
+
+    async def _forecast_options(self) -> list[dict[str, str]]:
+        """List the same solar-forecast providers exposed to HA Energy."""
+
+        try:
+            return await async_energy_forecast_sources(self.hass)
+        except Exception:
+            return []
 
     def _grid_schema(
         self,
@@ -650,6 +895,8 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self) -> None:
         self._working_options: dict[str, Any] = {}
+        self._native_bootstrap = None
+        self._native_token: str | None = None
 
     def _get_battery_packs(self) -> int:
         try:
@@ -706,6 +953,15 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
             merged_options[SETTING_LEARNED_PLANNING_ENABLED] = bool(
                 user_input[SETTING_LEARNED_PLANNING_ENABLED]
             )
+
+        if SETTING_FULL_CHARGE_MAINTENANCE_ENABLED in user_input:
+            merged_options[SETTING_FULL_CHARGE_MAINTENANCE_ENABLED] = bool(
+                user_input[SETTING_FULL_CHARGE_MAINTENANCE_ENABLED]
+            )
+        if SETTING_FULL_CHARGE_MAINTENANCE_INTERVAL_DAYS in user_input:
+            merged_options[SETTING_FULL_CHARGE_MAINTENANCE_INTERVAL_DAYS] = int(
+                user_input[SETTING_FULL_CHARGE_MAINTENANCE_INTERVAL_DAYS]
+            )
             
         for key in LOWEST_CELL_VOLTAGE_CONFIG_KEYS:
             if key in user_input:
@@ -733,9 +989,388 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         self._working_options = {}
+        native_configured = bool(
+            self.config_entry.options.get(CONF_NATIVE_ZENDURE_APP_TOKEN)
+            or self.config_entry.data.get("connection_type") == "native"
+        )
         return self.async_show_menu(
             step_id="init",
-            menu_options=["general", "expert", "debug"],
+            menu_options=["general", "expert", "native_zendure", "debug"],
+        )
+
+    async def async_step_native_zendure(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Validate the App Token and discover devices without storing MQTT data."""
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            token = resolve_app_token_input(
+                user_input.get(CONF_NATIVE_ZENDURE_APP_TOKEN),
+                self.config_entry.options.get(CONF_NATIVE_ZENDURE_APP_TOKEN),
+            )
+            try:
+                from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+                session = async_get_clientsession(self.hass)
+
+                async def post_json(url: str, **kwargs: Any):
+                    async with session.post(url, **kwargs) as response:
+                        payload = await response.json(content_type=None)
+
+                    class Response:
+                        async def json(self):
+                            return payload
+
+                    return Response()
+
+                self._native_bootstrap = await ZendureCloudClient(
+                    post_json
+                ).async_discover(token)
+                self._native_token = token
+                return await self.async_step_native_zendure_device()
+            except ZendureCloudError as error:
+                errors["base"] = error.reason
+            except Exception:
+                errors["base"] = "cannot_connect"
+
+        return self.async_show_form(
+            step_id="native_zendure",
+            data_schema=self._native_token_schema(),
+            errors=errors,
+        )
+
+    def _native_token_schema(self) -> vol.Schema:
+        configured = bool(
+            self.config_entry.options.get(CONF_NATIVE_ZENDURE_APP_TOKEN)
+        )
+        token_key = (
+            vol.Optional(
+                CONF_NATIVE_ZENDURE_APP_TOKEN,
+                default=STORED_APP_TOKEN_MASK,
+            )
+            if configured
+            else vol.Required(CONF_NATIVE_ZENDURE_APP_TOKEN)
+        )
+        schema: dict[Any, Any] = {
+            token_key: selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+            )
+        }
+        return vol.Schema(schema)
+
+    async def async_step_native_zendure_device(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Select one test system while retaining all devices for observation."""
+
+        if self._native_bootstrap is None or self._native_token is None:
+            return await self.async_step_native_zendure()
+
+        devices = self._native_bootstrap.devices
+        if user_input is not None:
+            selected = str(user_input[CONF_NATIVE_ZENDURE_SELECTED_DEVICE])
+            valid = {item.candidate.candidate_id for item in devices}
+            if selected not in valid:
+                return self.async_show_form(
+                    step_id="native_zendure_device",
+                    data_schema=self._native_device_schema(
+                        devices,
+                        bool(self.config_entry.options.get(
+                            CONF_NATIVE_ZENDURE_CONTROL_ENABLED, False
+                        )),
+                        self.config_entry.options,
+                    ),
+                    errors={"base": "device_not_found"},
+                    description_placeholders={
+                        "device_summary": self._native_device_summary(devices)
+                    },
+                )
+            options = dict(self.config_entry.options)
+            options[CONF_NATIVE_ZENDURE_APP_TOKEN] = self._native_token
+            options[CONF_NATIVE_ZENDURE_SELECTED_DEVICE] = selected
+            options[CONF_NATIVE_ZENDURE_CONTROL_ENABLED] = True
+            selected_device = next(
+                item for item in devices
+                if item.candidate.candidate_id == selected
+            )
+            chosen_transport = _requested_native_transport(
+                user_input, selected_device.candidate.identity
+            )
+            if chosen_transport not in _native_transport_options(
+                selected_device.candidate.identity
+            ):
+                return self.async_show_form(
+                    step_id="native_zendure_device",
+                    data_schema=self._native_device_schema(devices, True, options),
+                    errors={"base": "device_not_found"},
+                    description_placeholders={
+                        "device_summary": self._native_device_summary(devices)
+                    },
+                )
+            options[CONF_NATIVE_ZENDURE_CONTROL_TRANSPORT] = chosen_transport.value
+            if chosen_transport is ZendureTransport.LOCAL_MQTT:
+                server = str(
+                    user_input.get(CONF_NATIVE_ZENDURE_LOCAL_MQTT_SERVER, "")
+                ).strip()
+                if not server:
+                    return self.async_show_form(
+                        step_id="native_zendure_device",
+                        data_schema=self._native_device_schema(
+                            devices,
+                            bool(user_input.get(
+                                CONF_NATIVE_ZENDURE_CONTROL_ENABLED, False
+                            )),
+                            self.config_entry.options,
+                        ),
+                        errors={"base": "local_mqtt_required"},
+                        description_placeholders={
+                            "device_summary": self._native_device_summary(devices)
+                        },
+                    )
+                options[CONF_NATIVE_ZENDURE_LOCAL_MQTT_SERVER] = server
+                local_port = int(
+                    user_input.get(CONF_NATIVE_ZENDURE_LOCAL_MQTT_PORT, 1883)
+                )
+                options[CONF_NATIVE_ZENDURE_LOCAL_MQTT_PORT] = local_port
+                options[CONF_NATIVE_ZENDURE_LOCAL_MQTT_USERNAME] = str(
+                    user_input.get(CONF_NATIVE_ZENDURE_LOCAL_MQTT_USERNAME, "")
+                ).strip()
+                options[CONF_NATIVE_ZENDURE_LOCAL_MQTT_PASSWORD] = (
+                    resolve_app_token_input(
+                        user_input.get(CONF_NATIVE_ZENDURE_LOCAL_MQTT_PASSWORD),
+                        self.config_entry.options.get(
+                            CONF_NATIVE_ZENDURE_LOCAL_MQTT_PASSWORD
+                        ),
+                    )
+                )
+                wifi_ssid = str(
+                    user_input.get(CONF_NATIVE_ZENDURE_LEGACY_WIFI_SSID, "")
+                ).strip()
+                wifi_password = resolve_app_token_input(
+                    user_input.get(CONF_NATIVE_ZENDURE_LEGACY_WIFI_PASSWORD),
+                    self.config_entry.options.get(
+                        CONF_NATIVE_ZENDURE_LEGACY_WIFI_PASSWORD
+                    ),
+                )
+                if wifi_ssid:
+                    options[CONF_NATIVE_ZENDURE_LEGACY_WIFI_SSID] = wifi_ssid
+                if wifi_password:
+                    options[CONF_NATIVE_ZENDURE_LEGACY_WIFI_PASSWORD] = wifi_password
+                if bool(user_input.get(CONF_NATIVE_ZENDURE_LEGACY_PROVISION, False)):
+                    if local_port != 1883:
+                        return self.async_show_form(
+                            step_id="native_zendure_device",
+                            data_schema=self._native_device_schema(devices, True, options),
+                            errors={"base": "legacy_port_required"},
+                            description_placeholders={
+                                "device_summary": self._native_device_summary(devices)
+                            },
+                        )
+                    if not wifi_ssid or not wifi_password:
+                        return self.async_show_form(
+                            step_id="native_zendure_device",
+                            data_schema=self._native_device_schema(
+                                devices, True, options
+                            ),
+                            errors={"base": "legacy_wifi_required"},
+                            description_placeholders={
+                                "device_summary": self._native_device_summary(devices)
+                            },
+                        )
+                    identity = selected_device.candidate.identity
+                    try:
+                        if not identity.device_id:
+                            raise ValueError("legacy_device_id_missing")
+                        await async_provision_legacy_device(
+                            self.hass,
+                            serial_number=str(identity.serial_number or ""),
+                            display_name=selected_device.candidate.display_name,
+                            mqtt_server=server,
+                            wifi_ssid=wifi_ssid,
+                            wifi_password=wifi_password,
+                        )
+                    except Exception as error:
+                        reason = str(error) or type(error).__name__
+                        allowed = {
+                            "legacy_ble_device_not_found",
+                            "legacy_device_id_missing",
+                        }
+                        return self.async_show_form(
+                            step_id="native_zendure_device",
+                            data_schema=self._native_device_schema(
+                                devices, True, options
+                            ),
+                            errors={
+                                "base": reason if reason in allowed else "legacy_provision_failed"
+                            },
+                            description_placeholders={
+                                "device_summary": self._native_device_summary(devices)
+                            },
+                        )
+            migration = self.config_entry.data.get("v5_migration")
+            if isinstance(migration, Mapping):
+                from .v5_migration import confirm_native_binding
+
+                data = dict(self.config_entry.data)
+                data["v5_migration"] = confirm_native_binding(
+                    migration,
+                    native_candidate_id=selected,
+                )
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data=data,
+                )
+            return self.async_create_entry(title="", data=options)
+
+        return self.async_show_form(
+            step_id="native_zendure_device",
+            data_schema=self._native_device_schema(
+                devices,
+                bool(self.config_entry.options.get(
+                    CONF_NATIVE_ZENDURE_CONTROL_ENABLED, False
+                )),
+                self.config_entry.options,
+            ),
+            description_placeholders={
+                "device_summary": self._native_device_summary(devices)
+            },
+        )
+
+    @staticmethod
+    def _native_device_schema(
+        devices,
+        native_control_enabled: bool = False,
+        stored_options: dict[str, Any] | None = None,
+    ) -> vol.Schema:
+        options = stored_options or {}
+        stored_transport = options.get(CONF_NATIVE_ZENDURE_CONTROL_TRANSPORT)
+        if stored_transport not in {item.value for item in ZendureTransport}:
+            selected_id = options.get(CONF_NATIVE_ZENDURE_SELECTED_DEVICE)
+            selected_item = next(
+                (
+                    item for item in devices
+                    if item.candidate.candidate_id == selected_id
+                ),
+                None,
+            )
+            inherited = (
+                preferred_local_transport(selected_item.candidate.identity)
+                if stored_options is not None and selected_item is not None
+                else None
+            )
+            # Legacy Local MQTT is usable only after the physical device has
+            # accepted its broker configuration and publishes fresh properties
+            # there. Older entries have no explicit choice, so start them on
+            # the reliable Cloud path instead of silently selecting Local.
+            if inherited is ZendureTransport.LOCAL_MQTT:
+                inherited = None
+            stored_transport = (
+                inherited.value
+                if inherited is not None
+                else ZendureTransport.CLOUD_MQTT.value
+            )
+        available_transports = sorted(
+            {
+                transport.value
+                for item in devices
+                for transport in _native_transport_options(item.candidate.identity)
+            },
+            key=lambda value: (
+                value != ZendureTransport.CLOUD_MQTT.value,
+                value,
+            ),
+        )
+        schema = {
+                vol.Required(CONF_NATIVE_ZENDURE_SELECTED_DEVICE):
+                    selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {
+                                    "value": item.candidate.candidate_id,
+                                    "label": native_device_label(
+                                        item.candidate.display_name,
+                                        item.candidate.identity.product_model,
+                                        item.pack_count,
+                                    ),
+                                }
+                                for item in devices
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                vol.Required(
+                    CONF_NATIVE_ZENDURE_CONTROL_TRANSPORT,
+                    default=stored_transport,
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=available_transports,
+                        translation_key="zendure_transport",
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        if any(
+            preferred_local_transport(item.candidate.identity)
+            is ZendureTransport.LOCAL_MQTT
+            for item in devices
+        ):
+            schema.update({
+                vol.Optional(
+                    CONF_NATIVE_ZENDURE_LOCAL_MQTT_SERVER,
+                    default=options.get(CONF_NATIVE_ZENDURE_LOCAL_MQTT_SERVER, ""),
+                ): selector.TextSelector(),
+                vol.Optional(
+                    CONF_NATIVE_ZENDURE_LOCAL_MQTT_PORT,
+                    default=options.get(CONF_NATIVE_ZENDURE_LOCAL_MQTT_PORT, 1883),
+                ): selector.NumberSelector(selector.NumberSelectorConfig(
+                    min=1, max=65535, mode=selector.NumberSelectorMode.BOX,
+                )),
+                vol.Optional(
+                    CONF_NATIVE_ZENDURE_LOCAL_MQTT_USERNAME,
+                    default=options.get(CONF_NATIVE_ZENDURE_LOCAL_MQTT_USERNAME, ""),
+                ): selector.TextSelector(),
+                vol.Optional(
+                    CONF_NATIVE_ZENDURE_LOCAL_MQTT_PASSWORD,
+                    default=(
+                        STORED_APP_TOKEN_MASK
+                        if options.get(CONF_NATIVE_ZENDURE_LOCAL_MQTT_PASSWORD)
+                        else ""
+                    ),
+                ): selector.TextSelector(selector.TextSelectorConfig(
+                    type=selector.TextSelectorType.PASSWORD
+                )),
+                vol.Optional(
+                    CONF_NATIVE_ZENDURE_LEGACY_WIFI_SSID,
+                    default=options.get(CONF_NATIVE_ZENDURE_LEGACY_WIFI_SSID, ""),
+                ): selector.TextSelector(),
+                vol.Optional(
+                    CONF_NATIVE_ZENDURE_LEGACY_WIFI_PASSWORD,
+                    default=(
+                        STORED_APP_TOKEN_MASK
+                        if options.get(CONF_NATIVE_ZENDURE_LEGACY_WIFI_PASSWORD)
+                        else ""
+                    ),
+                ): selector.TextSelector(selector.TextSelectorConfig(
+                    type=selector.TextSelectorType.PASSWORD
+                )),
+                vol.Optional(
+                    CONF_NATIVE_ZENDURE_LEGACY_PROVISION,
+                    default=legacy_provisioning_default(stored_transport),
+                ): selector.BooleanSelector(),
+            })
+        return vol.Schema(schema)
+
+    @staticmethod
+    def _native_device_summary(devices) -> str:
+        return "\n".join(
+            native_device_summary_line(
+                item.candidate.display_name,
+                item.candidate.identity.product_model,
+                item.pack_count,
+                item.online,
+            )
+            for item in devices
         )
 
     def _debug_coordinator(self):
@@ -894,8 +1529,29 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
             {
                 vol.Optional(CONF_EXPERT_MODE_ENABLED): selector.BooleanSelector(),
                 vol.Optional(SETTING_LEARNED_PLANNING_ENABLED): selector.BooleanSelector(),
+                vol.Optional(SETTING_FULL_CHARGE_MAINTENANCE_ENABLED): selector.BooleanSelector(),
+                vol.Optional(SETTING_FULL_CHARGE_MAINTENANCE_INTERVAL_DAYS): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=7,
+                        max=90,
+                        step=1,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
             }
         )
+
+        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+        runtime = getattr(coordinator, "native_zendure", None)
+        if (runtime is not None and hasattr(runtime, "selected_capacity")
+            and runtime.selected_capacity().reason == "unknown_pack_profile"):
+            options_schema = options_schema.extend({
+                vol.Optional("native_capacity_override_kwh", default=preview.get("native_capacity_override_kwh", 0)):
+                    selector.NumberSelector(selector.NumberSelectorConfig(
+                        min=0, step=0.01, mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="kWh",
+                    )),
+            })
 
         suggested_values = {
             CONF_EXPERT_MODE_ENABLED: preview.get(
@@ -905,6 +1561,14 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
             SETTING_LEARNED_PLANNING_ENABLED: preview.get(
                 SETTING_LEARNED_PLANNING_ENABLED,
                 DEFAULT_LEARNED_PLANNING_ENABLED,
+            ),
+            SETTING_FULL_CHARGE_MAINTENANCE_ENABLED: preview.get(
+                SETTING_FULL_CHARGE_MAINTENANCE_ENABLED,
+                DEFAULT_FULL_CHARGE_MAINTENANCE_ENABLED,
+            ),
+            SETTING_FULL_CHARGE_MAINTENANCE_INTERVAL_DAYS: preview.get(
+                SETTING_FULL_CHARGE_MAINTENANCE_INTERVAL_DAYS,
+                DEFAULT_FULL_CHARGE_MAINTENANCE_INTERVAL_DAYS,
             ),
         }
 
@@ -958,6 +1622,9 @@ class ZendureSmartFlowOptionsFlow(config_entries.OptionsFlow):
         user_input: dict[str, Any] | None = None,
     ):
         packs = self._get_battery_packs()
+        if (self.config_entry.data.get("connection_type") == "native"
+            or self.config_entry.options.get(CONF_NATIVE_ZENDURE_CONTROL_ENABLED, False)):
+            packs = 0  # Native pack measurements are inputs, not entity selectors.
         preview = self._merged_preview()
 
         if user_input is not None:

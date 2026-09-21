@@ -1,0 +1,856 @@
+"""Map verified Zendure reports into transport-neutral V5 runtime states."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from enum import StrEnum
+import math
+from typing import Any, Callable, Mapping
+
+from ...core.models import (
+    DeviceOperatingMode,
+    MeasuredValue,
+    NeutralDeviceState,
+    NeutralPackState,
+    ReportedDeviceSetpoints,
+    ValueValidity,
+    ZendureTransport,
+)
+from .cloud import ZendureCloudBootstrap
+from .cloud_mqtt import CloudMqttMessage, is_zendure_state_message
+from .device_matrix import resolve_zendure_device
+from .hems_activity import HemsActivityDiagnostic, HemsActivityTracker
+
+
+# Zendure systems normally report individual property groups close enough for
+# a short visual freshness window.  The Legacy Hyper 2000 and Hub 2000 use a
+# much slower, grouped Cloud cadence: field reports show valid groups arriving
+# only after the generic window has expired.  Keep their *display* values long
+# enough to bridge that cadence.  Native command eligibility remains
+# independently fail-closed at 30 seconds in ``native_zendure_runtime``.
+DEFAULT_STALE_AFTER_SECONDS = 90.0
+LEGACY_GROUPED_REPORT_STALE_AFTER_SECONDS = 180.0
+_LEGACY_GROUPED_REPORT_MODELS = frozenset(
+    {"hyper2000", "hub2000", "solarflowhub2000"}
+)
+
+
+class MappingScope(StrEnum):
+    MAIN = "main"
+    PACK = "pack"
+
+
+@dataclass(frozen=True, slots=True)
+class PropertyMapping:
+    """Auditable raw-to-neutral conversion contract."""
+
+    raw_name: str
+    target: str
+    scope: MappingScope
+    raw_types: tuple[type, ...]
+    raw_unit: str | None
+    target_unit: str | None
+    scale: float = 1.0
+    sign: str = "positive_magnitude"
+    minimum: float | None = None
+    maximum: float | None = None
+    converter: Callable[[Any], Any] | None = None
+
+
+def _mode(value: Any) -> DeviceOperatingMode:
+    return {
+        0: DeviceOperatingMode.IDLE,
+        1: DeviceOperatingMode.CHARGE,
+        2: DeviceOperatingMode.DISCHARGE,
+    }.get(value, DeviceOperatingMode.UNKNOWN)
+
+
+def _binary(value: Any) -> bool:
+    if value in (0, False):
+        return False
+    if value in (1, True):
+        return True
+    raise ValueError("not_binary")
+
+
+def _kelvin_tenths_to_celsius(value: Any) -> float:
+    return round(float(value) / 10.0 - 273.15, 2)
+
+
+def _signed_16_tenths(value: Any) -> float:
+    number = int(value)
+    if number > 32767:
+        number -= 65536
+    return number / 10.0
+
+
+def _mapping(
+    raw_name: str,
+    target: str,
+    scope: MappingScope,
+    raw_types: tuple[type, ...],
+    raw_unit: str | None = None,
+    target_unit: str | None = None,
+    **kwargs: Any,
+) -> PropertyMapping:
+    return PropertyMapping(
+        raw_name,
+        target,
+        scope,
+        raw_types,
+        raw_unit,
+        target_unit,
+        **kwargs,
+    )
+
+
+MAIN_PROPERTY_MAPPINGS = {
+    item.raw_name: item
+    for item in (
+        _mapping(
+            "electricLevel", "soc_pct", MappingScope.MAIN,
+            (int, float), "%", "%", minimum=0, maximum=100,
+        ),
+        _mapping(
+            "outputPackPower", "charge_power_w", MappingScope.MAIN,
+            (int, float), "W", "W", minimum=0,
+        ),
+        _mapping(
+            "packInputPower", "discharge_power_w", MappingScope.MAIN,
+            (int, float), "W", "W", minimum=0,
+        ),
+        _mapping(
+            "gridInputPower", "ac_input_power_w", MappingScope.MAIN,
+            (int, float), "W", "W", minimum=0,
+        ),
+        _mapping(
+            "outputHomePower", "ac_output_power_w", MappingScope.MAIN,
+            (int, float), "W", "W", minimum=0,
+        ),
+        _mapping(
+            "solarInputPower", "pv_power_w", MappingScope.MAIN,
+            (int, float), "W", "W", minimum=0,
+        ),
+        _mapping(
+            "gridOffPower", "offgrid_power_w", MappingScope.MAIN,
+            (int, float), "W", "W", minimum=0,
+        ),
+        _mapping("acMode", "mode", MappingScope.MAIN, (int,), converter=_mode),
+        _mapping(
+            "inputLimit", "input_limit_w", MappingScope.MAIN,
+            (int, float), "W", "W", minimum=0,
+        ),
+        _mapping(
+            "outputLimit", "output_limit_w", MappingScope.MAIN,
+            (int, float), "W", "W", minimum=0,
+        ),
+        _mapping(
+            "chargeMaxLimit", "configured_charge_limit_w", MappingScope.MAIN,
+            (int, float), "W", "W", minimum=0,
+        ),
+        _mapping(
+            "inverseMaxPower", "configured_discharge_limit_w",
+            MappingScope.MAIN, (int, float), "W", "W", minimum=0,
+        ),
+        _mapping(
+            "minSoc", "min_soc_pct", MappingScope.MAIN,
+            (int, float), "0.1 %", "%", scale=0.1, minimum=0, maximum=100,
+        ),
+        _mapping(
+            "socSet", "max_soc_pct", MappingScope.MAIN,
+            (int, float), "0.1 %", "%", scale=0.1, minimum=0, maximum=100,
+        ),
+        _mapping(
+            "hemsState", "hems_active", MappingScope.MAIN,
+            (bool, int), converter=_binary,
+        ),
+        _mapping("faultLevel", "fault_code", MappingScope.MAIN, (int,)),
+        _mapping(
+            "heatState", "heating_active", MappingScope.MAIN,
+            (bool, int), converter=_binary,
+        ),
+        _mapping(
+            "hyperTmp", "temperature_c", MappingScope.MAIN,
+            (int, float), "0.1 K", "°C",
+            converter=_kelvin_tenths_to_celsius,
+        ),
+        _mapping(
+            "BatVolt", "battery_voltage_v", MappingScope.MAIN,
+            (int, float), "0.01 V", "V", scale=0.01, minimum=0,
+        ),
+        _mapping(
+            "masterSoftVersion", "firmware", MappingScope.MAIN,
+            (str, int), converter=str,
+        ),
+        _mapping(
+            "softVersion", "firmware", MappingScope.MAIN,
+            (str, int), converter=str,
+        ),
+    )
+}
+
+
+PACK_PROPERTY_MAPPINGS = {
+    item.raw_name: item
+    for item in (
+        _mapping(
+            "packType", "pack_type", MappingScope.PACK,
+            (str, int), converter=str,
+        ),
+        _mapping(
+            "softVersion", "firmware", MappingScope.PACK,
+            (str, int), converter=str,
+        ),
+        _mapping(
+            "socLevel", "soc_pct", MappingScope.PACK,
+            (int, float), "%", "%", minimum=0, maximum=100,
+        ),
+        _mapping(
+            "totalVol", "voltage_v", MappingScope.PACK,
+            (int, float), "0.01 V", "V", scale=0.01, minimum=0,
+        ),
+        _mapping(
+            "batcur", "current_a", MappingScope.PACK,
+            (int,), "0.1 A signed16", "A", sign="signed",
+            converter=_signed_16_tenths,
+        ),
+        _mapping(
+            "minVol", "cell_min_v", MappingScope.PACK,
+            (int, float), "0.01 V", "V", scale=0.01, minimum=0,
+        ),
+        _mapping(
+            "maxVol", "cell_max_v", MappingScope.PACK,
+            (int, float), "0.01 V", "V", scale=0.01, minimum=0,
+        ),
+        _mapping(
+            "maxTemp", "temperature_c", MappingScope.PACK,
+            (int, float), "0.1 K", "°C",
+            converter=_kelvin_tenths_to_celsius,
+        ),
+        _mapping("state", "state_code", MappingScope.PACK, (int,)),
+        _mapping("faultLevel", "fault_code", MappingScope.PACK, (int,)),
+        _mapping(
+            "heatState", "heating_active", MappingScope.PACK,
+            (bool, int), converter=_binary,
+        ),
+    )
+}
+
+# Keep unverified vendor status codes as raw diagnostics, not control decisions.
+RAW_MAIN_DIAGNOSTICS = (
+    "acStatus", "aiState", "batCalTime", "bindstate", "dataReady", "dcStatus",
+    "factoryModeState", "gridStandard", "gridState", "IOTState", "is_error",
+    "LCNState", "localAPIEnable", "net", "OldMode", "OTAState", "phaseSwitch",
+    "pvStatus", "rssi", "smartMode", "socStatus", "socCompSwitch", "writeRsp",
+    "packNum", "solarPower1", "solarPower2", "solarPower3", "solarPower4",
+    "solarPower5", "solarPower6", "PowerCycle",
+)
+for _raw in RAW_MAIN_DIAGNOSTICS:
+    MAIN_PROPERTY_MAPPINGS[_raw] = _mapping(
+        _raw, _raw, MappingScope.MAIN, (bool, int, float),
+        converter=(float if _raw in {"rssi", "solarPower1", "solarPower2", "solarPower3", "solarPower4", "solarPower5", "solarPower6"} else int),
+    )
+MAIN_PROPERTY_MAPPINGS["PowerCycle"] = _mapping(
+    "PowerCycle", "switching_count", MappingScope.MAIN, (int, float), minimum=0,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizationResult:
+    state: NeutralDeviceState
+    unknown_main_properties: tuple[str, ...]
+    unknown_pack_properties: tuple[str, ...]
+
+
+@dataclass(slots=True)
+class _Observed:
+    value: Any
+    validity: ValueValidity
+    observed_at: datetime
+
+
+@dataclass(slots=True)
+class _PackAccumulator:
+    values: dict[str, _Observed]
+    serial_number: str | None = None
+    last_message_at: datetime | None = None
+
+
+class ZendureCloudNormalizer:
+    """Incrementally normalize Cloud reports without strategy decisions."""
+
+    def __init__(
+        self,
+        bootstrap: ZendureCloudBootstrap,
+        *,
+        stale_after_seconds: float = DEFAULT_STALE_AFTER_SECONDS,
+        supported_device_targets: Mapping[str, frozenset[str]] | None = None,
+        supported_pack_targets: Mapping[str, frozenset[str]] | None = None,
+    ) -> None:
+        if stale_after_seconds <= 0:
+            raise ValueError("stale_after_seconds must be positive")
+        self._stale_after = stale_after_seconds
+        self._models = {
+            item.candidate.candidate_id: item.candidate.identity.product_model
+            for item in bootstrap.devices
+        }
+        self._online = {
+            item.candidate.candidate_id: item.online
+            for item in bootstrap.devices
+        }
+        self._device_values: dict[str, dict[str, _Observed]] = {
+            candidate_id: {} for candidate_id in self._models
+        }
+        self._pack_values: dict[str, dict[str, _PackAccumulator]] = {
+            candidate_id: {} for candidate_id in self._models
+        }
+        self._last_message: dict[str, datetime | None] = {
+            candidate_id: None for candidate_id in self._models
+        }
+        self._hems_activity = {
+            candidate_id: HemsActivityTracker() for candidate_id in self._models
+        }
+        self._observed_transport: dict[str, ZendureTransport] = {
+            candidate_id: ZendureTransport.CLOUD_MQTT
+            for candidate_id in self._models
+        }
+        self._unknown_main = {
+            candidate_id: set() for candidate_id in self._models
+        }
+        self._unknown_pack = {
+            candidate_id: set() for candidate_id in self._models
+        }
+        matrix_device_targets: dict[str, frozenset[str]] = {}
+        matrix_pack_targets: dict[str, frozenset[str]] = {}
+        for item in bootstrap.devices:
+            entry = resolve_zendure_device(item.candidate.identity)
+            candidate_id = item.candidate.candidate_id
+            matrix_device_targets[candidate_id] = (
+                entry.neutral_device_targets if entry is not None else frozenset()
+            )
+            if entry is not None:
+                matrix_pack_targets[candidate_id] = entry.neutral_pack_targets
+        self._supported_device_targets = (
+            dict(supported_device_targets)
+            if supported_device_targets is not None
+            else matrix_device_targets
+        )
+        self._supported_pack_targets = (
+            dict(supported_pack_targets)
+            if supported_pack_targets is not None
+            else matrix_pack_targets
+        )
+
+    def apply(
+        self,
+        message: CloudMqttMessage,
+        *,
+        now: datetime | None = None,
+    ) -> NormalizationResult | None:
+        if not is_zendure_state_message(message):
+            return None
+        system_id = message.device_candidate_id
+        if system_id is None or system_id not in self._models:
+            return None
+        observed_at = message.received_at
+        self._last_message[system_id] = observed_at
+        self._observed_transport[system_id] = (
+            ZendureTransport.ZENSDK
+            if message.transport == "zensdk"
+            else (
+                ZendureTransport.LOCAL_MQTT
+                if message.transport == "local_mqtt"
+                else ZendureTransport.CLOUD_MQTT
+            )
+        )
+        payload = message.parsed_payload
+        if isinstance(payload, Mapping):
+            self._apply_error_event(
+                self._device_values[system_id],
+                message.topic,
+                payload,
+                observed_at,
+            )
+            self._refresh_confirmed_cloud_error_state(
+                self._device_values[system_id],
+                message,
+            )
+            properties = payload.get("properties")
+            if isinstance(properties, Mapping):
+                self._apply_properties(
+                    self._device_values[system_id],
+                    properties,
+                    MAIN_PROPERTY_MAPPINGS,
+                    self._unknown_main[system_id],
+                    observed_at,
+                )
+                self._invalidate_legacy_zero_battery_voltage(
+                    system_id,
+                    properties,
+                    observed_at,
+                )
+            self._apply_packs(system_id, payload.get("packData"), observed_at)
+        if (
+            message.topic.endswith("/properties/energy")
+            and not message.retained
+        ):
+            self._hems_activity[system_id].observe_energy(observed_at=observed_at)
+        return self.snapshot(system_id, now=now or observed_at)
+
+    @staticmethod
+    def _apply_error_event(
+        values: dict[str, _Observed],
+        topic: str,
+        payload: Mapping[str, Any],
+        observed_at: datetime,
+    ) -> None:
+        """Translate the Cloud error snapshot into the explicit error flag.
+
+        ZenSDK-class devices may report a non-zero ``faultLevel`` during
+        healthy operation.  Cloud MQTT supplies the authoritative current
+        error state separately through ``event/error``: an empty data list
+        with ``offData=0`` means that no error is active.
+        """
+
+        if not topic.endswith("/event/error"):
+            return
+        data = payload.get("data")
+        off_data = payload.get("offData")
+        if not isinstance(data, list) or isinstance(off_data, bool):
+            return
+        if not isinstance(off_data, (int, float)):
+            return
+        values["is_error"] = _Observed(
+            int(bool(data) or float(off_data) != 0),
+            ValueValidity.VALID,
+            observed_at,
+        )
+
+    @staticmethod
+    def _refresh_confirmed_cloud_error_state(
+        values: dict[str, _Observed],
+        message: CloudMqttMessage,
+    ) -> None:
+        """Keep a confirmed Cloud error snapshot fresh with device reports.
+
+        Zendure sends ``event/error`` as a state snapshot, not with every
+        report.  A subsequent inbound properties report confirms that the
+        device is still communicating on the same Cloud session, so the last
+        explicit error state remains current.  Outbound ``getAll`` requests
+        and retained data deliberately do not extend this safety window.
+        """
+
+        if (
+            message.transport != "cloud_mqtt"
+            or message.retained
+            or not message.topic.endswith("/properties/report")
+        ):
+            return
+        confirmed = values.get("is_error")
+        if confirmed is None or confirmed.validity is not ValueValidity.VALID:
+            return
+        confirmed.observed_at = message.received_at
+
+    def set_hems_monitoring(
+        self,
+        system_id: str,
+        available: bool,
+        *,
+        observed_at: datetime,
+    ) -> None:
+        """Tell the tracker whether a native observation path is healthy."""
+
+        if system_id not in self._models:
+            raise KeyError(system_id)
+        self._hems_activity[system_id].set_monitoring(
+            available,
+            observed_at=observed_at,
+        )
+
+    def hems_diagnostics(
+        self,
+        system_id: str,
+        *,
+        now: datetime,
+    ) -> HemsActivityDiagnostic:
+        if system_id not in self._models:
+            raise KeyError(system_id)
+        return self._hems_activity[system_id].diagnostics(now=now)
+
+    def set_online(self, system_id: str, online: bool | None) -> None:
+        if system_id not in self._models:
+            raise KeyError(system_id)
+        self._online[system_id] = online
+
+    def snapshot(
+        self,
+        system_id: str,
+        *,
+        now: datetime | None = None,
+    ) -> NormalizationResult:
+        if system_id not in self._models:
+            raise KeyError(system_id)
+        current = now or datetime.now(timezone.utc)
+        online = self._online[system_id]
+        values = self._device_values[system_id]
+        supported = self._supported_device_targets.get(system_id, frozenset())
+
+        def device_value(target: str) -> MeasuredValue[Any]:
+            return self._value(
+                values, target, supported, online, current, system_id
+            )
+
+        direct_hems = device_value("hems_active")
+        hems_active = (
+            direct_hems
+            if direct_hems.validity
+            not in {ValueValidity.NEVER_RECEIVED, ValueValidity.MISSING}
+            else self._hems_activity[system_id].measurement(now=current)
+        )
+
+        packs = tuple(
+            self._pack_snapshot(system_id, pack_id, accumulator, current, online)
+            for pack_id, accumulator in sorted(
+                self._pack_values[system_id].items()
+            )
+        )
+        state = NeutralDeviceState(
+            system_id=system_id,
+            observed_transport=self._observed_transport[system_id],
+            model=self._models[system_id],
+            firmware=device_value("firmware"),
+            online=MeasuredValue(
+                value=online,
+                validity=(
+                    ValueValidity.UNKNOWN
+                    if online is None
+                    else ValueValidity.VALID
+                ),
+                observed_at=self._last_message[system_id],
+            ),
+            soc_pct=device_value("soc_pct"),
+            charge_power_w=device_value("charge_power_w"),
+            discharge_power_w=device_value("discharge_power_w"),
+            ac_input_power_w=device_value("ac_input_power_w"),
+            ac_output_power_w=device_value("ac_output_power_w"),
+            pv_power_w=device_value("pv_power_w"),
+            mode=device_value("mode"),
+            setpoints=ReportedDeviceSetpoints(
+                input_limit_w=device_value("input_limit_w"),
+                output_limit_w=device_value("output_limit_w"),
+                configured_charge_limit_w=device_value(
+                    "configured_charge_limit_w"
+                ),
+                configured_discharge_limit_w=device_value(
+                    "configured_discharge_limit_w"
+                ),
+                min_soc_pct=device_value("min_soc_pct"),
+                max_soc_pct=device_value("max_soc_pct"),
+            ),
+            hems_active=hems_active,
+            fault_code=device_value("fault_code"),
+            protection_active=_device_protection_state(
+                fault_code=device_value("fault_code"),
+                is_error=self._value(
+                    values,
+                    "is_error",
+                    frozenset({"is_error"}),
+                    online,
+                    current,
+                    system_id,
+                ),
+            ),
+            heating_active=device_value("heating_active"),
+            temperature_c=device_value("temperature_c"),
+            battery_voltage_v=device_value("battery_voltage_v"),
+            last_message_at=self._last_message[system_id],
+            packs=packs,
+            offgrid_power_w=device_value("offgrid_power_w"),
+            diagnostics={
+                key: self._value(
+                    values,
+                    key,
+                    frozenset(RAW_MAIN_DIAGNOSTICS),
+                    online,
+                    current,
+                    system_id,
+                )
+                for key in RAW_MAIN_DIAGNOSTICS
+                if key in values
+            },
+        )
+        return NormalizationResult(
+            state,
+            tuple(sorted(self._unknown_main[system_id])),
+            tuple(sorted(self._unknown_pack[system_id])),
+        )
+
+    def _apply_properties(
+        self,
+        destination: dict[str, _Observed],
+        properties: Mapping[str, Any],
+        mappings: Mapping[str, PropertyMapping],
+        unknown: set[str],
+        observed_at: datetime,
+    ) -> None:
+        for raw_name, raw_value in properties.items():
+            mapping = mappings.get(str(raw_name))
+            if mapping is None:
+                unknown.add(str(raw_name))
+                continue
+            destination[mapping.target] = _normalize(
+                mapping, raw_value, observed_at
+            )
+
+    def _invalidate_legacy_zero_battery_voltage(
+        self,
+        system_id: str,
+        properties: Mapping[str, Any],
+        observed_at: datetime,
+    ) -> None:
+        """Do not present the Hyper's zero sentinel as a physical voltage.
+
+        Hyper 2000 Cloud reports use ``BatVolt: 0`` while the device is online
+        and otherwise reporting healthy measurements.  A battery voltage of
+        zero is not a usable measurement in that state, so it must remain
+        unavailable rather than be displayed as ``0.00 V``.
+        """
+
+        raw_voltage = properties.get("BatVolt")
+        model_key = "".join(
+            character
+            for character in str(self._models.get(system_id, "")).casefold()
+            if character.isalnum()
+        )
+        if (
+            model_key not in _LEGACY_GROUPED_REPORT_MODELS
+            or isinstance(raw_voltage, bool)
+            or not isinstance(raw_voltage, (int, float))
+            or float(raw_voltage) != 0.0
+        ):
+            return
+        self._device_values[system_id]["battery_voltage_v"] = _Observed(
+            None,
+            ValueValidity.UNAVAILABLE,
+            observed_at,
+        )
+
+    def _apply_packs(
+        self,
+        system_id: str,
+        raw_packs: Any,
+        observed_at: datetime,
+    ) -> None:
+        if not isinstance(raw_packs, list):
+            return
+        for raw_pack in raw_packs:
+            if not isinstance(raw_pack, Mapping):
+                continue
+            pack_id = _pack_id(raw_pack)
+            if pack_id is None:
+                self._unknown_pack[system_id].add("pack_without_identity")
+                continue
+            accumulator = self._pack_values[system_id].setdefault(
+                pack_id, _PackAccumulator({})
+            )
+            serial_number = raw_pack.get("sn")
+            if isinstance(serial_number, (str, int)) and not isinstance(
+                serial_number, bool
+            ):
+                serial_text = str(serial_number).strip()
+                if serial_text:
+                    accumulator.serial_number = serial_text
+            accumulator.last_message_at = observed_at
+            self._apply_properties(
+                accumulator.values,
+                {
+                    key: value
+                    for key, value in raw_pack.items()
+                    if key not in {"sn", "packId", "packKey", "power"}
+                },
+                PACK_PROPERTY_MAPPINGS,
+                self._unknown_pack[system_id],
+                observed_at,
+            )
+            self._apply_pack_power(accumulator, raw_pack, observed_at)
+
+    def _apply_pack_power(
+        self,
+        accumulator: _PackAccumulator,
+        raw_pack: Mapping[str, Any],
+        observed_at: datetime,
+    ) -> None:
+        power = raw_pack.get("power")
+        state = raw_pack.get("state")
+        if _is_number(power) and state in (0, 1, 2):
+            accumulator.values["charge_power_w"] = _Observed(
+                float(power) if state == 1 else 0.0,
+                ValueValidity.VALID,
+                observed_at,
+            )
+            accumulator.values["discharge_power_w"] = _Observed(
+                float(power) if state == 2 else 0.0,
+                ValueValidity.VALID,
+                observed_at,
+            )
+        elif power is not None:
+            for target in ("charge_power_w", "discharge_power_w"):
+                accumulator.values[target] = _Observed(
+                    None, ValueValidity.INVALID, observed_at
+                )
+
+    def _pack_snapshot(
+        self,
+        system_id: str,
+        pack_id: str,
+        accumulator: _PackAccumulator,
+        now: datetime,
+        online: bool | None,
+    ) -> NeutralPackState:
+        supported = self._supported_pack_targets.get(system_id, frozenset())
+
+        def value(target: str) -> MeasuredValue[Any]:
+            return self._value(
+                accumulator.values, target, supported, online, now, system_id
+            )
+
+        return NeutralPackState(
+            pack_id=pack_id,
+            parent_system_id=system_id,
+            serial_number=accumulator.serial_number,
+            pack_type=value("pack_type"),
+            firmware=value("firmware"),
+            soc_pct=value("soc_pct"),
+            charge_power_w=value("charge_power_w"),
+            discharge_power_w=value("discharge_power_w"),
+            voltage_v=value("voltage_v"),
+            current_a=value("current_a"),
+            cell_min_v=value("cell_min_v"),
+            cell_max_v=value("cell_max_v"),
+            temperature_c=value("temperature_c"),
+            state_code=value("state_code"),
+            fault_code=value("fault_code"),
+            protection_active=_fault_block(value("fault_code")),
+            heating_active=value("heating_active"),
+            last_message_at=accumulator.last_message_at,
+        )
+
+    def _value(
+        self,
+        values: Mapping[str, _Observed],
+        target: str,
+        supported: frozenset[str],
+        online: bool | None,
+        now: datetime,
+        system_id: str,
+    ) -> MeasuredValue[Any]:
+        if target not in supported:
+            return MeasuredValue.absent(ValueValidity.UNSUPPORTED)
+        observed = values.get(target)
+        if observed is None:
+            validity = (
+                ValueValidity.OFFLINE
+                if online is False
+                else ValueValidity.NEVER_RECEIVED
+            )
+            return MeasuredValue.absent(validity)
+        validity = observed.validity
+        if online is False:
+            validity = ValueValidity.OFFLINE
+        elif (
+            validity is ValueValidity.VALID
+            and (now - observed.observed_at).total_seconds()
+            > self._stale_after_for(system_id)
+        ):
+            validity = ValueValidity.STALE
+        return MeasuredValue(observed.value, validity, observed.observed_at)
+
+    def _stale_after_for(self, system_id: str) -> float:
+        """Return the presentation freshness window for one model family."""
+
+        model_key = "".join(
+            character
+            for character in str(self._models.get(system_id, "")).casefold()
+            if character.isalnum()
+        )
+        if model_key in _LEGACY_GROUPED_REPORT_MODELS:
+            return max(
+                self._stale_after,
+                LEGACY_GROUPED_REPORT_STALE_AFTER_SECONDS,
+            )
+        return self._stale_after
+
+
+def _fault_block(*values):
+    """Fail closed on missing evidence; heating is not a fault indicator."""
+    available = [value for value in values if value.valid]
+    if not available:
+        return MeasuredValue.absent(ValueValidity.UNAVAILABLE)
+    return MeasuredValue.available(
+        any(float(value.value) != 0 for value in available),
+        observed_at=min((value.observed_at for value in available if value.observed_at), default=None),
+    )
+
+
+def _device_protection_state(*, fault_code, is_error):
+    """Use the explicit error flag before interpreting model-specific fault levels.
+
+    ZenSDK devices can report a non-zero ``faultLevel`` during normal operation
+    (the SF2400AC has been observed with ``faultLevel=2`` and ``is_error=0``).
+    When the explicit flag is available it is therefore authoritative. The raw
+    fault level remains a conservative fallback for devices that do not expose
+    ``is_error`` at all.
+    """
+    if is_error.valid:
+        return MeasuredValue.available(
+            float(is_error.value) != 0,
+            observed_at=is_error.observed_at,
+        )
+    return _fault_block(fault_code)
+
+
+def _normalize(
+    mapping: PropertyMapping,
+    raw_value: Any,
+    observed_at: datetime,
+) -> _Observed:
+    if isinstance(raw_value, bool) and bool not in mapping.raw_types:
+        return _Observed(None, ValueValidity.INVALID, observed_at)
+    if not isinstance(raw_value, mapping.raw_types):
+        return _Observed(None, ValueValidity.INVALID, observed_at)
+    try:
+        if mapping.converter is not None:
+            value = mapping.converter(raw_value)
+        else:
+            value = round(float(raw_value) * mapping.scale, 9)
+            if mapping.raw_types == (int,) and mapping.scale == 1:
+                value = int(raw_value)
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("non_finite")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if mapping.minimum is not None and value < mapping.minimum:
+                raise ValueError("below_range")
+            if mapping.maximum is not None and value > mapping.maximum:
+                raise ValueError("above_range")
+    except (TypeError, ValueError, OverflowError):
+        return _Observed(None, ValueValidity.INVALID, observed_at)
+    return _Observed(value, ValueValidity.VALID, observed_at)
+
+
+def _pack_id(raw_pack: Mapping[str, Any]) -> str | None:
+    for key in ("sn", "packId", "packKey"):
+        value = raw_pack.get(key)
+        if isinstance(value, (str, int)) and not isinstance(value, bool):
+            text = str(value).strip()
+            if text:
+                return text
+    return None
+
+
+def _is_number(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )

@@ -216,8 +216,9 @@ uses a `packData` list. Commands in the reference add `deviceId`, `messageId`,
 and Unix `timestamp` around a property mapping.
 
 The existence of a publish call or broker acknowledgement is not proof that a
-device accepted or applied a command. Issue #334 must define verification using
-reply/readback and, where possible, physical effect.
+device accepted or applied a command. Issues #334 and #335 therefore correlate
+each typed Cloud write with a fresh property readback and, where meaningful,
+later physical effect verification.
 
 ### Initial synchronization
 
@@ -567,6 +568,7 @@ initial read model.
 
 ### Issue #320: secrets and privacy
 
+- Binding model: `zendure-secrets-privacy-v5.0.0.md`.
 - secure token/MQTT credential storage and reauth;
 - salted diagnostic identity fingerprints;
 - signing implementation isolation;
@@ -574,6 +576,7 @@ initial read model.
 
 ### Issue #321: identity
 
+- Binding model: `zendure-device-identity-v5.0.0.md`.
 - prove `deviceKey` stability;
 - exact device/pack identity schema;
 - duplicate/moved pack behaviour;

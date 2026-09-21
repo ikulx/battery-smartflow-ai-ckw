@@ -11,7 +11,9 @@
       "debug_integration_not_loaded": "Battery SmartFlow AI n’est pas chargé actuellement."
     },
     "error": {
-      "grid_split_missing": "Avec deux capteurs, l’importation et l’exportation réseau doivent être sélectionnées."
+      "grid_split_missing": "Avec deux capteurs, l’importation et l’exportation réseau doivent être sélectionnées.",
+      "unsupported_device": "Unsupported device model.",
+      "invalid_token": "Le format du jeton d’application est invalide.", "invalid_or_expired_token": "Le jeton d’application est invalide ou expiré.", "cannot_connect": "Impossible de se connecter à Zendure Cloud.", "timeout": "Zendure Cloud n’a pas répondu à temps.", "invalid_response": "Zendure Cloud a renvoyé une réponse inattendue.", "no_devices": "Aucun appareil Zendure n’a été trouvé.", "no_mqtt_credentials": "Zendure n’a fourni aucun accès Cloud MQTT.", "duplicate_device_id": "Zendure a renvoyé des identités en double.", "incomplete_device": "Zendure a renvoyé un appareil incomplet.", "device_not_found": "L’appareil sélectionné n’est plus disponible.", "local_mqtt_required": "Cet appareil Legacy nécessite les paramètres du broker MQTT local.", "legacy_wifi_required": "Saisissez le SSID Wi-Fi et le mot de passe avant de configurer l’appareil Legacy.", "legacy_port_required": "Les appareils Zendure Legacy nécessitent le port local 1883.", "legacy_ble_device_not_found": "L’appareil Legacy sélectionné n’est pas accessible via Bluetooth.", "legacy_device_id_missing": "Zendure n’a fourni aucune identité pour l’appareil Legacy.", "legacy_provision_failed": "Impossible de configurer l’appareil Legacy. Vérifiez Bluetooth, le Wi-Fi et le broker."
     },
     "step": {
       "reconfigure": {
@@ -31,6 +33,7 @@
           "native_pv_entity": "Puissance PV native du système de batterie (facultatif)",
           "pv_forecast_today_entity": "Prévision PV aujourd’hui (optionnel)",
           "pv_forecast_tomorrow_entity": "Prévision PV demain (optionnel)",
+          "pv_forecast_config_entries": "Sources de prévision solaire (optionnel)",
           "price_now_entity": "Prix actuel de l’électricité",
           "price_export_entity": "Prévision de prix (p. ex. Tibber / EPEX)",
           "grid_mode": "Mesure réseau",
@@ -59,6 +62,7 @@
           "native_pv_entity": "Capteur facultatif de la puissance PV raccordée directement au système de batterie. Pendant la charge CA, cette puissance est prioritaire dans la limite de charge maximale. Ne sélectionnez pas ici le capteur PV total de la maison.",
           "pv_forecast_today_entity": "Capteur optionnel avec la prévision journalière PV pour aujourd’hui, par exemple Solcast PV Forecast. La prévision n’est qu’une entrée de planification supplémentaire et n’est pas obligatoire.",
           "pv_forecast_tomorrow_entity": "Capteur optionnel avec la prévision journalière PV pour demain, par exemple Solcast PV Forecast. La prévision n’est qu’une entrée de planification supplémentaire et n’est pas obligatoire.",
+          "pv_forecast_config_entries": "Sélectionnez une ou plusieurs intégrations de prévision solaire également disponibles dans le tableau de bord Énergie de Home Assistant. Plusieurs sources sont combinées.",
           "price_now_entity": "Capteur avec le prix actuel de l’électricité, par exemple Tibber. Utilisé pour les décisions économiques.",
           "price_export_entity": "Capteur avec données de prévision de prix, par exemple Tibber / EPEX. Permet la planification des prix.",
           "grid_mode": "Choisissez comment votre consommation réseau est mesurée : un capteur combiné ou des capteurs séparés pour l’import et l’export.",
@@ -104,6 +108,80 @@
       },
       "user": {
         "title": "Configurer Battery SmartFlow AI",
+        "menu_options": {
+          "native_login": "Connect Zendure directly",
+          "legacy": "Use existing HA entities"
+        }
+      },
+      "native_login": {
+        "title": "Sign in to Zendure",
+        "description": "The App Token is stored privately. The local transport is selected automatically for the device model.",
+        "data": {
+          "native_zendure_app_token": "App Token"
+        }
+      },
+      "native_device": {
+        "title": "Sélectionner le système Zendure",
+        "description": "Zendure a signalé ces appareils :\n\n{device_summary}\n\nSélectionnez exactement un système. Battery SmartFlow AI utilise automatiquement le transport local pris en charge par son modèle. Le contrôle natif n’est activé que par l’interrupteur séparé ci-dessous.",
+        "data": {
+          "native_zendure_selected_device": "Système Zendure",
+          "native_zendure_control_transport": "Mode de communication",
+          "native_zendure_control_enabled": "Activer le contrôle Zendure natif",
+          "native_zendure_local_mqtt_server": "Serveur MQTT local",
+          "native_zendure_local_mqtt_port": "Port MQTT local",
+          "native_zendure_local_mqtt_username": "Nom d’utilisateur MQTT local",
+          "native_zendure_local_mqtt_password": "Mot de passe MQTT local"
+        },
+        "data_description": {
+          "native_zendure_selected_device": "Un seul système principal est sélectionné ; les packs ne peuvent pas être contrôlés séparément. BSFAI détermine ZenSDK ou Local MQTT à partir de la famille de modèles vérifiée.",
+          "native_zendure_control_transport": "Le Cloud fonctionne après la détection du compte. La connexion locale recommandée n’est utilisée qu’après réception de données valides.",
+          "native_zendure_control_enabled": "Transfère explicitement les commandes BSFAI des entités Z-HA vers le transport local du modèle.",
+          "native_zendure_local_mqtt_server": "Affiché uniquement pour une famille Legacy vérifiée. L’appareil doit déjà publier vers ce broker.",
+          "native_zendure_local_mqtt_port": "Généralement 1883 pour un broker local non chiffré.",
+          "native_zendure_local_mqtt_username": "Compte privé du broker utilisé par BSFAI.",
+          "native_zendure_local_mqtt_password": "Conservez le masque à points pour réutiliser le mot de passe enregistré."
+        }
+      },
+      "native_external": {
+        "title": "Configurer Battery SmartFlow AI",
+        "description": "Select external measurements and price sources. Hardware data and pack capacities are detected automatically.",
+        "data": {
+          "additional_battery_charge_entity": "Puissance de charge batterie supplémentaire (optionnel)",
+          "additional_battery_discharge_entity": "Puissance de décharge batterie supplémentaire (optionnel)",
+          "installed_pv_wp": "Puissance PV installée (Wp)",
+          "pv_entity": "Capteur de puissance PV",
+          "pv_forecast_today_entity": "Prévision PV aujourd’hui (optionnel)",
+          "pv_forecast_tomorrow_entity": "Prévision PV demain (optionnel)",
+          "pv_forecast_config_entries": "Sources de prévision solaire (optionnel)",
+          "price_now_entity": "Prix actuel de l’électricité",
+          "price_export_entity": "Prévision de prix (p. ex. Tibber / EPEX)",
+          "grid_mode": "Mesure réseau",
+          "grid_power_entity": "Puissance réseau (simple)",
+          "grid_import_entity": "Import réseau (séparé)",
+          "grid_export_entity": "Export réseau (séparé)",
+          "feed_in_tariff": "Rémunération de l’injection",
+          "dynamic_feed_in_price_entity": "Prix d’injection dynamique actuel (facultatif)"
+        },
+        "data_description": {
+          "additional_battery_charge_entity": "Capteur optionnel d’un second système de batterie. Si ce capteur indique une puissance de charge positive, Battery SmartFlow AI bloque la décharge.",
+          "additional_battery_discharge_entity": "Capteur optionnel d’un second système de batterie. Si ce capteur indique une puissance de décharge positive, Battery SmartFlow AI bloque la charge afin d’éviter une charge batterie-à-batterie.",
+          "installed_pv_wp": "Puissance théorique des modules PV installés en Wp. Cette valeur est utilisée pour les seuils relatifs du contexte PV et d’autres logiques liées au PV.",
+          "pv_entity": "Capteur de puissance PV actuelle en watts.",
+          "pv_forecast_today_entity": "Capteur optionnel avec la prévision journalière PV pour aujourd’hui, par exemple Solcast PV Forecast. La prévision n’est qu’une entrée de planification supplémentaire et n’est pas obligatoire.",
+          "pv_forecast_tomorrow_entity": "Capteur optionnel avec la prévision journalière PV pour demain, par exemple Solcast PV Forecast. La prévision n’est qu’une entrée de planification supplémentaire et n’est pas obligatoire.",
+          "pv_forecast_config_entries": "Sélectionnez une ou plusieurs intégrations de prévision solaire également disponibles dans le tableau de bord Énergie de Home Assistant. Plusieurs sources sont combinées.",
+          "price_now_entity": "Prix actuel de l’électricité. Permet la décharge dépendante du prix.",
+          "price_export_entity": "Données de prévision de prix pour les prochaines heures. Permet une planification de charge intelligente.",
+          "grid_mode": "Détermine comment l’import et l’export réseau sont enregistrés.",
+          "grid_power_entity": "Un capteur unique avec puissance positive en import et négative en export.",
+          "grid_import_entity": "Capteur de puissance d’import réseau actuelle en watts.",
+          "grid_export_entity": "Capteur de puissance d’export réseau actuelle en watts.",
+          "feed_in_tariff": "Rémunération par kWh injecté dans la même unité monétaire que les prix de l’électricité. Elle sert de valeur de repli lorsqu’aucun prix d’injection dynamique valide n’est disponible.",
+          "dynamic_feed_in_price_entity": "Capteur numérique Home Assistant facultatif pour le prix d’injection dynamique actuel. Une valeur valide, y compris zéro ou un prix négatif, est prioritaire sur la rémunération fixe."
+        }
+      },
+      "legacy": {
+        "title": "Configurer Battery SmartFlow AI",
         "description": "Sélectionnez les capteurs nécessaires",
         "data": {
           "device_profile": "Profil d’appareil",
@@ -119,6 +197,7 @@
           "native_pv_entity": "Puissance PV native du système de batterie (facultatif)",
           "pv_forecast_today_entity": "Prévision PV aujourd’hui (optionnel)",
           "pv_forecast_tomorrow_entity": "Prévision PV demain (optionnel)",
+          "pv_forecast_config_entries": "Sources de prévision solaire (optionnel)",
           "price_now_entity": "Prix actuel de l’électricité",
           "price_export_entity": "Prévision de prix (p. ex. Tibber / EPEX)",
           "grid_mode": "Mesure réseau",
@@ -147,6 +226,7 @@
           "native_pv_entity": "Capteur facultatif de la puissance PV raccordée directement au système de batterie. Pendant la charge CA, cette puissance est prioritaire dans la limite de charge maximale. Ne sélectionnez pas ici le capteur PV total de la maison.",
           "pv_forecast_today_entity": "Capteur optionnel avec la prévision journalière PV pour aujourd’hui, par exemple Solcast PV Forecast. La prévision n’est qu’une entrée de planification supplémentaire et n’est pas obligatoire.",
           "pv_forecast_tomorrow_entity": "Capteur optionnel avec la prévision journalière PV pour demain, par exemple Solcast PV Forecast. La prévision n’est qu’une entrée de planification supplémentaire et n’est pas obligatoire.",
+          "pv_forecast_config_entries": "Sélectionnez une ou plusieurs intégrations de prévision solaire également disponibles dans le tableau de bord Énergie de Home Assistant. Plusieurs sources sont combinées.",
           "price_now_entity": "Prix actuel de l’électricité. Permet la décharge dépendante du prix.",
           "price_export_entity": "Données de prévision de prix pour les prochaines heures. Permet une planification de charge intelligente.",
           "grid_mode": "Détermine comment l’import et l’export réseau sont enregistrés.",
@@ -172,9 +252,12 @@
         "menu_options": {
           "general": "Général",
           "expert": "Mode expert",
+          "native_zendure": "Test Zendure natif",
           "debug": "Mode débogage"
         }
       },
+      "native_zendure": {"title": "Connexion Zendure native", "description": "Saisissez le jeton d’application Home Assistant créé dans l’application Zendure. Un masque fixe de points indique qu’un jeton est enregistré ; il ne représente ni le jeton ni sa longueur. La sélection d’un appareil n’active pas le contrôle ; l’interrupteur séparé à l’étape suivante est requis.", "data": {"native_zendure_app_token": "Jeton d’application Zendure", "disable_native_zendure_test": "Désactiver et supprimer le test Zendure natif"}, "data_description": {"native_zendure_app_token": "Conservez le masque inchangé pour réutiliser le jeton enregistré, ou remplacez-le par un nouveau jeton Home Assistant complet.", "disable_native_zendure_test": "Arrête la connexion et supprime le jeton. Z-HA n’est pas modifié."}},
+      "native_zendure_device": {"title": "Sélectionner le système Zendure", "description": "Zendure a signalé ces appareils :\n\n{device_summary}\n\nSélectionnez exactement un système. BSFAI choisit automatiquement le transport local et peut configurer les appareils Legacy via Bluetooth.", "data": {"native_zendure_selected_device": "Système Zendure", "native_zendure_control_transport": "Mode de communication", "native_zendure_control_enabled": "Activer le contrôle Zendure natif", "native_zendure_local_mqtt_server": "Serveur MQTT local", "native_zendure_local_mqtt_port": "Port MQTT local", "native_zendure_local_mqtt_username": "Nom d’utilisateur MQTT local", "native_zendure_local_mqtt_password": "Mot de passe MQTT local", "native_zendure_legacy_wifi_ssid": "SSID Wi-Fi de l’appareil Legacy", "native_zendure_legacy_wifi_password": "Mot de passe Wi-Fi de l’appareil Legacy", "native_zendure_legacy_provision": "Configurer maintenant l’appareil Legacy sélectionné"}, "data_description": {"native_zendure_selected_device": "Un seul système principal est sélectionné ; les packs ne peuvent pas être contrôlés séparément. BSFAI détermine ZenSDK ou Local MQTT à partir de la famille de modèles vérifiée.", "native_zendure_control_transport": "Le Cloud fonctionne après la détection du compte. La connexion locale recommandée sera utilisée uniquement après réception de données valides.", "native_zendure_control_enabled": "Transfère les commandes BSFAI vers le transport local du modèle.", "native_zendure_local_mqtt_server": "Adresse transmise à l’appareil Legacy via Bluetooth et utilisée par BSFAI.", "native_zendure_local_mqtt_port": "Les appareils Legacy utilisent le port standard 1883.", "native_zendure_local_mqtt_username": "Compte du broker utilisé uniquement par BSFAI.", "native_zendure_local_mqtt_password": "Conservez le masque à points pour réutiliser le mot de passe enregistré.", "native_zendure_legacy_wifi_ssid": "Requis uniquement pour la configuration Bluetooth.", "native_zendure_legacy_wifi_password": "Requis uniquement pour la configuration Bluetooth.", "native_zendure_legacy_provision": "Crée le compte du broker de l’appareil et transmet les paramètres via Bluetooth. L’appareil redémarre."}},
       "general": {
         "title": "Paramètres de Battery SmartFlow AI – Général",
         "description": "Paramètres généraux de l’installation. Les valeurs de régulation propres à l’appareil restent intégrées au profil sélectionné.",
@@ -208,11 +291,17 @@
         "description": "Fonctions avancées de protection, de diagnostic et de planification. La planification apprise des fenêtres de charge est utilisée automatiquement dès que suffisamment de données sont disponibles. Elle peut être désactivée ici si nécessaire. La protection par tension de cellule nécessite d’abord l’activation du mode expert.",
         "data": {
           "expert_mode_enabled": "Activer le mode expert",
-          "learned_planning_enabled": "Utiliser la planification apprise des fenêtres de charge"
+          "full_charge_maintenance_enabled": "Utiliser l’entretien par charge complète",
+          "full_charge_maintenance_interval_days": "Intervalle recommandé de charge complète",
+          "learned_planning_enabled": "Utiliser la planification apprise des fenêtres de charge",
+          "native_capacity_override_kwh": "Total capacity for an unknown pack profile (kWh)"
         },
         "data_description": {
           "expert_mode_enabled": "Active la zone expert avancée pour des fonctions supplémentaires de protection et de diagnostic.",
-          "learned_planning_enabled": "Si activé, Battery SmartFlow AI utilise automatiquement la planification apprise des fenêtres de charge dès que suffisamment de données sont disponibles. Jusque-là, la planification classique reste active. Si désactivé, la planification classique est toujours utilisée."
+          "full_charge_maintenance_enabled": "Autorise BSFAI à planifier une charge complète protectrice à un moment favorable. Il ne s’agit pas d’une commande d’étalonnage du BMS.",
+          "full_charge_maintenance_interval_days": "Jours entre les charges complètes confirmées recommandées (7–90).",
+          "learned_planning_enabled": "Si activé, Battery SmartFlow AI utilise automatiquement la planification apprise des fenêtres de charge dès que suffisamment de données sont disponibles. Jusque-là, la planification classique reste active. Si désactivé, la planification classique est toujours utilisée.",
+          "native_capacity_override_kwh": "Unknown packs only: verified total capacity of all packs in this system. 0 disables the override. Missing measurements still block control."
         }
       },
       "expert_cell_voltage": {
@@ -271,6 +360,7 @@
     }
   },
   "selector": {
+    "zendure_transport": {"options": {"cloud_mqtt": "Cloud (recommandé pour Legacy)", "local_mqtt": "MQTT local (avancé)", "zensdk": "ZenSDK (recommandé)"}},
     "grid_mode": {
       "options": {
         "none": "Aucun capteur réseau",
@@ -344,6 +434,25 @@
       }
     },
     "sensor": {
+      "native_zendure_status": {"name": "État du test Zendure natif", "state": {"disabled": "Non configuré", "discovering": "Recherche des appareils", "connecting": "Connexion", "capturing": "Collecte initiale", "observing": "Observation active", "error": "Erreur"}}, "native_zendure_control": {"name": "Contrôle Zendure natif", "state": {"disabled_zha_active": "Désactivé", "native_transport_not_ready": "Aucune donnée", "native_local_handover_cloud_active": "Cloud", "native_cloud_mqtt_active": "Cloud", "native_zensdk_active": "ZenSDK", "native_local_mqtt_active": "Local", "native_local_unsupported": "Non pris en charge"}}, "native_zendure_device_count": {"name": "Appareils Zendure natifs trouvés"}, "native_zendure_message_count": {"name": "Messages Zendure natifs reçus"}, "native_zendure_last_message": {"name": "Dernier message Zendure natif"}, "native_zendure_last_capture": {"name": "Paquet de synchronisation Zendure"}, "native_zendure_error": {"name": "Erreur Zendure native"},
+      "native_hardware_pack_count": {"name":"Battery count"},
+      "native_hardware_capacity_kwh": {"name":"Nominal capacity"},
+      "native_hardware_power_w": {"name":"Battery power"},
+      "native_hardware_offgrid_power_w": {"name":"Off-grid power"},
+      "native_hardware_cell_delta_v": {"name":"Cell voltage difference"},
+      "native_hardware_pack_status": {"name":"Status","state":{"idle":"Idle","charge":"Charging","discharge":"Discharging"}},
+      "native_hardware_rssi": {"name": "Wi-Fi signal strength"},
+      "native_hardware_available_energy": {"name": "Available energy"},
+      "native_hardware_roundtrip_efficiency": {"name": "Rendement aller-retour"},
+      "native_hardware_charged_energy": {"name": "Énergie totale chargée"},
+      "native_hardware_discharged_energy": {"name": "Énergie totale déchargée"},
+      "native_hardware_pv_energy": {"name": "Énergie PV totale"},
+      "native_hardware_switching_count": {"name": "Cycles de commutation"},
+      "native_hardware_soc_min": {"name":"Hardware minimum SoC"},
+      "native_hardware_soc_max": {"name":"Hardware maximum SoC"},
+      "native_hardware_heating": {"name":"Battery heating","state":{"on":"On","off":"Off"}},
+      "native_hardware_setpoint_storage": {"name": "Stockage des consignes", "state": {"persistent_storage": "Stockage permanent", "temporary_control": "Commande temporaire", "unknown": "Inconnu"}},
+      "native_hardware_online": {"name": "État en ligne", "state": {"online": "En ligne", "offline": "Hors ligne"}}, "native_hardware_soc_pct": {"name": "État de charge"}, "native_hardware_charge_power_w": {"name": "Puissance de charge"}, "native_hardware_discharge_power_w": {"name": "Puissance de décharge"}, "native_hardware_ac_input_power_w": {"name": "Puissance d’entrée CA"}, "native_hardware_ac_output_power_w": {"name": "Puissance de sortie CA"}, "native_hardware_pv_power_w": {"name": "Puissance PV"}, "native_hardware_mode": {"name": "Mode de fonctionnement", "state": {"idle": "Veille", "charge": "Charge", "discharge": "Décharge", "unknown": "Inconnu"}}, "native_hardware_temperature_c": {"name": "Température"}, "native_hardware_battery_voltage_v": {"name": "Tension de la batterie"}, "native_hardware_voltage_v": {"name": "Tension"}, "native_hardware_current_a": {"name": "Courant"}, "native_hardware_cell_min_v": {"name": "Tension de cellule minimale"}, "native_hardware_cell_max_v": {"name": "Tension de cellule maximale"}, "native_hardware_state_code": {"name": "Code d’état"}, "native_hardware_pack_type": {"name": "Type de batterie"}, "native_hardware_fault_code": {"name": "Code d’erreur"}, "native_hardware_protection_active": {"name": "Protection active"}, "native_hardware_firmware": {"name": "Micrologiciel"}, "native_hardware_product_id": {"name": "ID du produit"}, "native_hardware_profile": {"name": "Profil de l’appareil"}, "native_hardware_transport": {"name": "Voie de communication", "state": {"home_assistant": "Home Assistant / Z-HA", "cloud_mqtt": "Cloud", "local_mqtt": "Local", "zensdk": "ZenSDK"}}, "native_hardware_control_state": {"name": "État du contrôle", "state": {"observation": "Observation", "eligible": "Éligible", "enabled": "Activé", "active": "Contrôle actif", "hems_blocked": "Bloqué par HEMS", "unsupported": "Non pris en charge", "offline": "Hors ligne"}}, "native_hardware_hems": {"name": "Zendure HEMS", "state": {"active": "Actif", "inactive": "Inactif", "unknown": "Inconnu", "stale": "Obsolète", "invalid": "Invalide", "unsupported": "Non pris en charge"}}, "native_hardware_last_message": {"name": "Dernières données reçues"},
       "device_profile": {
         "name": "Profil d’appareil actif"
       },
@@ -401,6 +510,12 @@
           "reserve_oriented": "Orientée réserve"
         }
       },
+      "full_charge_maintenance_state": {"name": "Entretien par charge complète", "state": {"unknown": "Inconnu", "not_due": "Non requis", "due_soon": "Bientôt requis", "due": "Requis", "waiting_for_favorable_window": "En attente d’une fenêtre favorable", "charging_to_full": "Charge complète en cours", "confirming_full": "Confirmation de la charge complète", "completed": "Terminé", "blocked": "Bloqué"}},
+      "full_charge_maintenance_active": {"name": "Entretien par charge complète actif", "state": {"yes": "Oui", "no": "Non"}},
+      "full_charge_maintenance_next_recommended": {"name": "Prochaine charge complète recommandée"},
+      "full_charge_maintenance_last_confirmed": {"name": "Diagnostic : dernière charge complète confirmée"},
+      "full_charge_maintenance_window": {"name": "Diagnostic : fenêtre de charge d’entretien", "state": {"none": "Aucune", "pv_surplus": "Surplus photovoltaïque", "low_price": "Prix bas", "existing_strategic_charge": "Charge stratégique existante", "overdue_deadline": "Échéance dépassée"}},
+      "full_charge_maintenance_block_reason": {"name": "Diagnostic : blocage de l’entretien", "state": {"none": "Aucun blocage", "not_enabled": "Non activé", "hems_active": "Zendure HEMS actif", "device_not_ready": "Appareil non prêt", "transport_unavailable": "Connexion indisponible", "soc_invalid_or_stale": "SoC invalide ou obsolète", "protection_active": "Protection de batterie active", "pack_data_conflict": "Conflit des données des batteries", "manual_mode": "Mode manuel actif"}},
       "learned_planning_status": {
         "name": "Planification de charge : état d’apprentissage",
         "state": {
@@ -504,16 +619,28 @@
         "name": "Diagnostic : puissance moyenne du slot actuel planification apprise"
       },
       "forecast_remaining_today_kwh": {
-        "name": "Prévision PV aujourd’hui"
+        "name": "Prévision PV utilisable restante aujourd’hui"
       },
       "forecast_tomorrow_kwh": {
-        "name": "Prévision PV demain"
+        "name": "Prévision PV utilisable demain"
       },
       "forecast_next_3h_kwh": {
-        "name": "Prévision PV prochaines 3 heures"
+        "name": "Prévision PV utilisable prochaines 3 heures"
       },
       "forecast_next_6h_kwh": {
-        "name": "Prévision PV prochaines 6 heures"
+        "name": "Prévision PV utilisable prochaines 6 heures"
+      },
+      "forecast_gross_remaining_today_kwh": {
+        "name": "Prévision PV brute restante aujourd’hui"
+      },
+      "forecast_gross_tomorrow_kwh": {
+        "name": "Prévision PV brute demain"
+      },
+      "forecast_gross_next_3h_kwh": {
+        "name": "Prévision PV brute prochaines 3 heures"
+      },
+      "forecast_gross_next_6h_kwh": {
+        "name": "Prévision PV brute prochaines 6 heures"
       },
       "price_daily_average": {
         "name": "Prix – Moyenne journalière dynamique"
@@ -725,6 +852,7 @@
           "pv_charge_blocked_by_discharge_protection": "Charge PV bloquée car la décharge est encore bloquée par la protection SoC/cellule",
           "learned_charge_window_deadline_too_close_start_now": "Planification apprise : deadline trop proche, démarrer maintenant",
           "soc_invalid": "Veille sûre : SoC de la batterie invalide",
+          "native_capacity_unavailable": "Veille sûre : capacité native de la batterie indisponible",
           "grid_sensor_invalid": "Veille sûre : données du capteur réseau indisponibles",
           "soc_limits_invalid": "Veille sûre : limites SoC configurées invalides",
           "power_limits_invalid": "Veille sûre : limites de puissance configurées invalides",
@@ -814,26 +942,31 @@
       "economics_daily_export_revenue": {"name": "Bilan aujourd’hui – Revenu d’injection"},
       "economics_daily_avoided_grid_import_cost": {"name": "Bilan aujourd’hui – Coût d’import évité"},
       "economics_daily_battery_benefit": {"name": "Bilan aujourd’hui – Bénéfice de la batterie"},
+      "economics_daily_native_pv_self_consumption_value": {"name": "Bilan aujourd’hui – Valeur de l’autoconsommation PV native"},
       "economics_total_grid_charge_cost": {"name": "Bilan depuis le début – Coût de charge réseau"},
       "economics_total_pv_opportunity_cost": {"name": "Bilan depuis le début – Coût d’opportunité PV"},
       "economics_total_export_revenue": {"name": "Bilan depuis le début – Revenu d’injection"},
       "economics_total_avoided_grid_import_cost": {"name": "Bilan depuis le début – Coût d’import évité"},
       "economics_total_battery_benefit": {"name": "Bilan depuis le début – Bénéfice de la batterie"},
+      "economics_total_native_pv_self_consumption_value": {"name": "Bilan depuis le début – Valeur de l’autoconsommation PV native"},
       "economics_total_economic_efficiency_pct": {"name": "Bilan depuis le début – Rendement économique"},
       "economics_daily_grid_to_battery_kwh": {"name": "Énergie aujourd’hui – Réseau vers batterie"},
       "economics_daily_pv_to_battery_kwh": {"name": "Énergie aujourd’hui – PV vers batterie"},
       "economics_daily_grid_export_kwh": {"name": "Énergie aujourd’hui – Injection réseau"},
       "economics_daily_battery_to_home_kwh": {"name": "Énergie aujourd’hui – Batterie vers maison"},
       "economics_daily_battery_to_grid_kwh": {"name": "Énergie aujourd’hui – Batterie vers réseau"},
+      "economics_daily_native_pv_to_home_kwh": {"name": "Énergie aujourd’hui – PV natif vers maison"},
       "economics_total_grid_to_battery_kwh": {"name": "Énergie depuis le début – Réseau vers batterie"},
       "economics_total_pv_to_battery_kwh": {"name": "Énergie depuis le début – PV vers batterie"},
       "economics_total_grid_export_kwh": {"name": "Énergie depuis le début – Injection réseau"},
       "economics_total_battery_to_home_kwh": {"name": "Énergie depuis le début – Batterie vers maison"},
       "economics_total_battery_to_grid_kwh": {"name": "Énergie depuis le début – Batterie vers réseau"},
+      "economics_total_native_pv_to_home_kwh": {"name": "Énergie depuis le début – PV natif vers maison"},
       "economics_average_grid_charge_price": {"name": "Prix – Prix moyen de charge réseau"},
       "economics_average_pv_opportunity_value": {"name": "Prix – Valeur d’opportunité PV moyenne"},
       "economics_average_export_price": {"name": "Prix – Tarif d’injection moyen"},
       "economics_average_battery_discharge_value": {"name": "Prix – Valeur moyenne de décharge batterie"},
+      "economics_average_native_pv_to_home_return": {"name": "Prix – Valeur moyenne du PV natif vers la maison"},
       "strategy_state": {
         "name": "État de la stratégie",
         "state": {
@@ -886,6 +1019,7 @@
           "no_strategy_needed": "Aucune stratégie requise",
           "sensor_invalid": "Sensor invalid",
           "soc_invalid": "Veille sûre : SoC de la batterie invalide",
+          "native_capacity_unavailable": "Veille sûre : capacité native de la batterie indisponible",
           "grid_sensor_invalid": "Veille sûre : données du capteur réseau indisponibles",
           "soc_limits_invalid": "Veille sûre : limites SoC configurées invalides",
           "power_limits_invalid": "Veille sûre : limites de puissance configurées invalides",

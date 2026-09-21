@@ -2,7 +2,18 @@ from __future__ import annotations
 
 import logging
 
-from .const import DOMAIN, PLATFORMS
+from .const import (
+    CONF_NATIVE_ZENDURE_APP_TOKEN,
+    CONF_NATIVE_ZENDURE_SELECTED_DEVICE,
+    CONF_NATIVE_ZENDURE_CONTROL_ENABLED,
+    CONF_NATIVE_ZENDURE_CONTROL_TRANSPORT,
+    CONF_NATIVE_ZENDURE_LOCAL_MQTT_PASSWORD,
+    CONF_NATIVE_ZENDURE_LOCAL_MQTT_PORT,
+    CONF_NATIVE_ZENDURE_LOCAL_MQTT_SERVER,
+    CONF_NATIVE_ZENDURE_LOCAL_MQTT_USERNAME,
+    DOMAIN,
+    PLATFORMS,
+)
 
 try:
     import homeassistant.helpers.config_validation as cv
@@ -29,6 +40,27 @@ _LOGGER = logging.getLogger(__name__)
 
 SERVICE_START_DEBUG_RECORDING = "start_debug_recording"
 SERVICE_STOP_DEBUG_RECORDING = "stop_debug_recording"
+SERVICE_VERIFY_NATIVE_WRITE = "verify_native_write"
+
+
+class _DisabledNativeRuntime:
+    """No-op used only by standalone compatibility tests without HA."""
+
+    def start(self) -> None:
+        return None
+
+    async def async_stop(self) -> None:
+        return None
+
+    async def async_run_first_write_test(self):
+        raise ValueError("native_device_not_ready")
+
+    @property
+    def control_enabled(self) -> bool:
+        return False
+
+    def hardware_overview(self) -> tuple:
+        return ()
 
 
 def _coordinator_for_call(hass: HomeAssistant, call: ServiceCall) -> ZendureSmartFlowCoordinator:
@@ -84,6 +116,22 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             async_stop_debug_recording,
             schema=vol.Schema({vol.Optional("entry_id"): str}),
         )
+    if not hass.services.has_service(DOMAIN, SERVICE_VERIFY_NATIVE_WRITE):
+        async def async_verify_native_write(call: ServiceCall) -> None:
+            coordinator = _coordinator_for_call(hass, call)
+            await coordinator.native_zendure.async_run_first_write_test()
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_VERIFY_NATIVE_WRITE,
+            async_verify_native_write,
+            schema=vol.Schema(
+                {
+                    vol.Optional("entry_id"): str,
+                    vol.Required("confirm"): vol.In({True}),
+                }
+            ),
+        )
     return True
 
 
@@ -91,10 +139,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     coordinator = ZendureSmartFlowCoordinator(hass, entry)
+    if cv is None:
+        coordinator.native_zendure = _DisabledNativeRuntime()
+    else:
+        from .native_zendure_runtime import NativeZendureRuntime
+
+        migration = entry.data.get("v5_migration", {})
+        migration_bound_device = (
+            migration.get("native_candidate_id")
+            if isinstance(migration, dict)
+            and migration.get("binding_state") == "confirmed"
+            else None
+        )
+        coordinator.native_zendure = NativeZendureRuntime(
+            hass,
+            app_token=entry.options.get(CONF_NATIVE_ZENDURE_APP_TOKEN),
+            selected_device=entry.options.get(CONF_NATIVE_ZENDURE_SELECTED_DEVICE),
+            migration_bound_device=migration_bound_device,
+            control_enabled=bool(
+                entry.options.get(CONF_NATIVE_ZENDURE_CONTROL_ENABLED, False)
+            ),
+            control_transport=entry.options.get(
+                CONF_NATIVE_ZENDURE_CONTROL_TRANSPORT
+            ),
+            local_mqtt_server=entry.options.get(
+                CONF_NATIVE_ZENDURE_LOCAL_MQTT_SERVER
+            ),
+            local_mqtt_port=entry.options.get(
+                CONF_NATIVE_ZENDURE_LOCAL_MQTT_PORT, 1883
+            ),
+            local_mqtt_username=entry.options.get(
+                CONF_NATIVE_ZENDURE_LOCAL_MQTT_USERNAME, ""
+            ),
+            local_mqtt_password=entry.options.get(
+                CONF_NATIVE_ZENDURE_LOCAL_MQTT_PASSWORD, ""
+            ),
+            notify=coordinator.async_update_listeners,
+        )
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     await coordinator.async_config_entry_first_refresh()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    coordinator.native_zendure.start()
+    if hasattr(entry, "async_on_unload") and hasattr(entry, "add_update_listener"):
+        entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True
 
 
@@ -103,8 +191,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         coordinator = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
         if coordinator:
-            await coordinator.async_shutdown()
+            await coordinator.native_zendure.async_stop()
+            shutdown = getattr(coordinator, "async_shutdown", None)
+            if shutdown is not None:
+                await shutdown()
     return unload_ok
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload after options changes, including native discovery setup."""
+
+    await hass.config_entries.async_reload(entry.entry_id)
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entries to new version."""
@@ -125,6 +222,17 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # existing installations.
         new_options.pop("regulation_v42_enabled", None)
         new_version = 3
+
+    if new_version == 3:
+        from .v5_migration import initial_v5_migration_state
+
+        # Retain every V4.7 setting and the authoritative Z-HA path. Native
+        # discovery and identity migration are not native-write consent.
+        new_data.setdefault(
+            "v5_migration",
+            dict(initial_v5_migration_state(entry.entry_id).as_dict()),
+        )
+        new_version = 4
 
     if (
         new_version != entry.version

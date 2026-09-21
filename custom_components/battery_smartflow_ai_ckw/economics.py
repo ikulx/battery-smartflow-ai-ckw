@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time, tzinfo
 from math import isfinite
 from typing import Any, Mapping
 
@@ -20,6 +20,7 @@ class EconomicEnergyFlows:
     grid_export_kwh: float = 0.0
     battery_to_home_kwh: float = 0.0
     battery_to_grid_kwh: float = 0.0
+    native_pv_to_home_kwh: float = 0.0
 
     def __post_init__(self) -> None:
         for field in fields(self):
@@ -83,6 +84,9 @@ def priceable_energy_flows(
             battery_to_grid_kwh=(
                 flows.battery_to_grid_kwh if export_available else 0.0
             ),
+            native_pv_to_home_kwh=(
+                flows.native_pv_to_home_kwh if import_available else 0.0
+            ),
         ),
         status=status,
     )
@@ -97,6 +101,7 @@ class EconomicPowerFlows:
     grid_export_w: float = 0.0
     battery_to_home_w: float = 0.0
     battery_to_grid_w: float = 0.0
+    native_pv_to_home_w: float = 0.0
 
     def __post_init__(self) -> None:
         for field in fields(self):
@@ -115,7 +120,26 @@ class EconomicPowerFlows:
             grid_export_kwh=self.grid_export_w * factor,
             battery_to_home_kwh=self.battery_to_home_w * factor,
             battery_to_grid_kwh=self.battery_to_grid_w * factor,
+            native_pv_to_home_kwh=self.native_pv_to_home_w * factor,
         )
+
+
+def direct_native_pv_to_home_power(
+    *,
+    native_pv_w: float,
+    native_pv_to_battery_w: float,
+    ac_output_w: float,
+    battery_discharge_w: float,
+) -> float:
+    """Return native MPPT power delivered directly to the home AC output."""
+
+    pv_after_battery = max(
+        0.0, float(native_pv_w) - float(native_pv_to_battery_w)
+    )
+    output_after_battery = max(
+        0.0, float(ac_output_w) - float(battery_discharge_w)
+    )
+    return min(pv_after_battery, output_after_battery)
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,11 +167,17 @@ class EnergyAccumulator:
 
     STATE_VERSION = 1
 
-    def __init__(self, *, max_interval_seconds: float = 300.0) -> None:
+    def __init__(
+        self,
+        *,
+        max_interval_seconds: float = 300.0,
+        day_timezone: tzinfo = UTC,
+    ) -> None:
         maximum = float(max_interval_seconds)
         if not isfinite(maximum) or maximum <= 0.0:
             raise ValueError("max_interval_seconds must be finite and positive")
         self._max_interval_seconds = maximum
+        self._day_timezone = day_timezone
         self._last_sample_at: datetime | None = None
         self._day: date | None = None
         self._daily = EconomicEnergyFlows()
@@ -166,7 +196,7 @@ class EnergyAccumulator:
 
         if self._last_sample_at is None:
             self._last_sample_at = sampled_at
-            self._ensure_day(sampled_at.date())
+            self._ensure_day(sampled_at.astimezone(self._day_timezone).date())
             return self._result(status="baseline")
 
         elapsed = (sampled_at - self._last_sample_at).total_seconds()
@@ -182,27 +212,36 @@ class EnergyAccumulator:
         # the lifetime value keeps the full interval while the new daily bucket
         # receives only the part after midnight. A limited long gap is assigned
         # only to the current day and never backfilled across downtime.
-        if previous.date() != sampled_at.date() and accounted == elapsed:
+        previous_local = previous.astimezone(self._day_timezone)
+        sampled_local = sampled_at.astimezone(self._day_timezone)
+        crossed_local_midnight = previous_local.date() != sampled_local.date()
+        if crossed_local_midnight and accounted == elapsed:
             midnight = datetime.combine(
-                sampled_at.date(), time.min, tzinfo=sampled_at.tzinfo
+                sampled_local.date(), time.min, tzinfo=self._day_timezone
             )
             previous_day_seconds = max(
-                0.0, (midnight - previous).total_seconds()
+                0.0,
+                (
+                    midnight.astimezone(UTC) - previous.astimezone(UTC)
+                ).total_seconds(),
             )
             current_day_seconds = max(
-                0.0, (sampled_at - midnight).total_seconds()
+                0.0,
+                (
+                    sampled_at.astimezone(UTC) - midnight.astimezone(UTC)
+                ).total_seconds(),
             )
             previous_energy = power.to_energy(previous_day_seconds)
             current_energy = power.to_energy(current_day_seconds)
-            self._ensure_day(previous.date())
+            self._ensure_day(previous_local.date())
             self._daily = self._add_flows(self._daily, previous_energy)
             self._total = self._add_flows(self._total, previous_energy)
-            self._ensure_day(sampled_at.date())
+            self._ensure_day(sampled_local.date())
             self._daily = self._add_flows(self._daily, current_energy)
             self._total = self._add_flows(self._total, current_energy)
             energy = self._add_flows(previous_energy, current_energy)
         else:
-            self._ensure_day(sampled_at.date())
+            self._ensure_day(sampled_local.date())
             energy = power.to_energy(accounted)
             self._daily = self._add_flows(self._daily, energy)
             self._total = self._add_flows(self._total, energy)
@@ -211,7 +250,7 @@ class EnergyAccumulator:
             energy=energy,
             daily_energy=(
                 current_energy
-                if previous.date() != sampled_at.date() and accounted == elapsed
+                if crossed_local_midnight and accounted == elapsed
                 else energy
             ),
             elapsed_seconds=elapsed,
@@ -248,10 +287,14 @@ class EnergyAccumulator:
         raw: Mapping[str, Any] | None,
         *,
         max_interval_seconds: float = 300.0,
+        day_timezone: tzinfo = UTC,
     ) -> EnergyAccumulator:
         """Restore totals but require a fresh post-restart time baseline."""
 
-        accumulator = cls(max_interval_seconds=max_interval_seconds)
+        accumulator = cls(
+            max_interval_seconds=max_interval_seconds,
+            day_timezone=day_timezone,
+        )
         if not isinstance(raw, Mapping) or raw.get("version") != cls.STATE_VERSION:
             return accumulator
         try:
@@ -260,7 +303,10 @@ class EnergyAccumulator:
             accumulator._daily = cls._flows_from_state(raw.get("daily"))
             accumulator._total = cls._flows_from_state(raw.get("total"))
         except (TypeError, ValueError):
-            return cls(max_interval_seconds=max_interval_seconds)
+            return cls(
+                max_interval_seconds=max_interval_seconds,
+                day_timezone=day_timezone,
+            )
 
         # Deliberately ignore persisted last_sample_at. Accounting the gap from
         # shutdown until the first new reading would invent energy after restart.
@@ -320,10 +366,12 @@ class EconomicsSnapshot:
     export_revenue: float
     avoided_grid_import_cost: float
     battery_benefit: float
+    native_pv_self_consumption_value: float
     average_grid_charge_price: float | None
     average_pv_opportunity_value: float | None
     average_export_price: float | None
     average_battery_discharge_value: float | None
+    average_native_pv_to_home_return: float | None
 
     def as_dict(self) -> dict[str, Any]:
         """Return stable result data without adding calculation logic to sensors."""
@@ -343,6 +391,8 @@ class _EconomicsTotals:
     battery_discharge_value: float = 0.0
     avoided_grid_import_cost: float = 0.0
     battery_benefit: float = 0.0
+    native_pv_to_home_kwh: float = 0.0
+    native_pv_self_consumption_value: float = 0.0
 
 
 class EconomicsEngine:
@@ -378,7 +428,9 @@ class EconomicsEngine:
             import_price,
             MarketPriceDirection.IMPORT,
             required=bool(
-                flows.grid_to_battery_kwh or flows.battery_to_home_kwh
+                flows.grid_to_battery_kwh
+                or flows.battery_to_home_kwh
+                or flows.native_pv_to_home_kwh
             ),
         )
         export_value = self._price(
@@ -415,6 +467,10 @@ class EconomicsEngine:
             totals.battery_discharge_value += battery_discharge_value
             totals.avoided_grid_import_cost += avoided_cost
             totals.battery_benefit += battery_benefit
+            totals.native_pv_to_home_kwh += flows.native_pv_to_home_kwh
+            totals.native_pv_self_consumption_value += (
+                flows.native_pv_to_home_kwh * import_value
+            )
 
     def record_grid_flows(
         self,
@@ -527,6 +583,19 @@ class EconomicsEngine:
 
         self._daily = _EconomicsTotals()
 
+    def seed_native_pv_to_home_energy(
+        self,
+        *,
+        daily_kwh: float,
+        total_kwh: float,
+    ) -> None:
+        """Seed the priceable native-PV energy for a persisted-state migration."""
+
+        if daily_kwh < 0.0 or total_kwh < 0.0:
+            raise ValueError("native PV-to-home energy must not be negative")
+        self._daily.native_pv_to_home_kwh = daily_kwh
+        self._total.native_pv_to_home_kwh = total_kwh
+
     def _price(
         self,
         price: MarketPrice,
@@ -557,6 +626,9 @@ class EconomicsEngine:
             export_revenue=totals.export_revenue,
             avoided_grid_import_cost=totals.avoided_grid_import_cost,
             battery_benefit=totals.battery_benefit,
+            native_pv_self_consumption_value=(
+                totals.native_pv_self_consumption_value
+            ),
             average_grid_charge_price=self._average(
                 totals.grid_charge_cost, totals.grid_charge_kwh
             ),
@@ -568,6 +640,10 @@ class EconomicsEngine:
             ),
             average_battery_discharge_value=self._average(
                 totals.battery_discharge_value, totals.battery_discharge_kwh
+            ),
+            average_native_pv_to_home_return=self._average(
+                totals.native_pv_self_consumption_value,
+                totals.native_pv_to_home_kwh,
             ),
         )
 
@@ -587,7 +663,9 @@ class EconomicsEngine:
             import_price,
             MarketPriceDirection.IMPORT,
             required=bool(
-                flows.grid_to_battery_kwh or flows.battery_to_home_kwh
+                flows.grid_to_battery_kwh
+                or flows.battery_to_home_kwh
+                or flows.native_pv_to_home_kwh
             ),
         )
         export_value = self._price(
@@ -603,6 +681,10 @@ class EconomicsEngine:
         avoided_cost = flows.battery_to_home_kwh * import_value
         totals.battery_discharge_value += avoided_cost
         totals.avoided_grid_import_cost += avoided_cost
+        totals.native_pv_to_home_kwh += flows.native_pv_to_home_kwh
+        totals.native_pv_self_consumption_value += (
+            flows.native_pv_to_home_kwh * import_value
+        )
 
     def _record_battery_value_totals(
         self,
