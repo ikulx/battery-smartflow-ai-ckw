@@ -19,6 +19,7 @@ except ModuleNotFoundError as err:
 # Integration meta
 # ==================================================
 DOMAIN = "battery_smartflow_ai_ckw"
+CONF_HEMS_DASHBOARD_ENABLED = "hems_dashboard_enabled"
 
 INTEGRATION_NAME = "Battery SmartFlow AI"
 
@@ -38,7 +39,7 @@ def virtual_device_model(language: str | None) -> str:
 
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "5.0.1"
+INTEGRATION_VERSION = "5.1.16"
 
 # V5 native Zendure discovery is observation-only in the first development
 # build. The App Token is account discovery material and must never be copied
@@ -101,6 +102,10 @@ CONF_GRID_MODE = "grid_mode"
 CONF_GRID_POWER_ENTITY = "grid_power_entity"      # +import / -export
 CONF_GRID_IMPORT_ENTITY = "grid_import_entity"    # import W
 CONF_GRID_EXPORT_ENTITY = "grid_export_entity"    # export W
+CONF_SHELLY_PRO_3EM_HOST = "shelly_pro_3em_host"
+CONF_SHELLY_PRO_3EM_PASSWORD = "shelly_pro_3em_password"
+CONF_SHELLY_3EM_HOST = "shelly_3em_host"
+CONF_SHELLY_3EM_PASSWORD = "shelly_3em_password"
 
 # --- Config entry keys ---
 CONF_PACK_CAPACITY_KWH = "pack_capacity_kwh"
@@ -194,6 +199,7 @@ CONF_DEVICE_PROFILE = "device_profile"
 
 DEVICE_PROFILE_SF2400AC = "SF2400AC"
 DEVICE_PROFILE_SF2400PRO = "SF2400Pro"
+DEVICE_PROFILE_SF800 = "SF800"
 DEVICE_PROFILE_SF800PRO = "SF800Pro"
 DEVICE_PROFILE_SF1600AC = "SF1600AC"
 DEVICE_PROFILE_SF3000MIXACPLUS = "SF3000MixAC+"
@@ -207,6 +213,8 @@ DEFAULT_DEVICE_PROFILE = DEVICE_PROFILE_SF2400AC
 GRID_MODE_NONE = "none"
 GRID_MODE_SINGLE = "single"
 GRID_MODE_SPLIT = "split"
+GRID_MODE_SHELLY_PRO_3EM = "shelly_pro_3em"
+GRID_MODE_SHELLY_3EM = "shelly_3em"
 
 # ==================================================
 # Runtime select modes (internal values remain EN)
@@ -233,12 +241,14 @@ def normalize_ai_mode(mode: str | None) -> str:
 
 MANUAL_STANDBY = "standby"
 MANUAL_CHARGE = "charge"
+MANUAL_PV_SURPLUS = "pv_surplus"
 MANUAL_DISCHARGE = "discharge"
 MANUAL_CONST_DISCHARGE = "constant_discharge"
 
 MANUAL_ACTIONS = [
     MANUAL_STANDBY,
     MANUAL_CHARGE,
+    MANUAL_PV_SURPLUS,
     MANUAL_DISCHARGE,
     MANUAL_CONST_DISCHARGE,
 ]

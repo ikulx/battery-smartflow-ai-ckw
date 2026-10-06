@@ -11,6 +11,7 @@
       "debug_integration_not_loaded": "Battery SmartFlow AI n’est pas chargé actuellement."
     },
     "error": {
+      "invalid_shelly_host": "Saisissez uniquement un nom d’hôte ou une adresse IP, sans schéma, port ni chemin.",
       "grid_split_missing": "Avec deux capteurs, l’importation et l’exportation réseau doivent être sélectionnées.",
       "unsupported_device": "Unsupported device model.",
       "invalid_token": "Le format du jeton d’application est invalide.", "invalid_or_expired_token": "Le jeton d’application est invalide ou expiré.", "cannot_connect": "Impossible de se connecter à Zendure Cloud.", "timeout": "Zendure Cloud n’a pas répondu à temps.", "invalid_response": "Zendure Cloud a renvoyé une réponse inattendue.", "no_devices": "Aucun appareil Zendure n’a été trouvé.", "no_mqtt_credentials": "Zendure n’a fourni aucun accès Cloud MQTT.", "duplicate_device_id": "Zendure a renvoyé des identités en double.", "incomplete_device": "Zendure a renvoyé un appareil incomplet.", "device_not_found": "L’appareil sélectionné n’est plus disponible.", "local_mqtt_required": "Cet appareil Legacy nécessite les paramètres du broker MQTT local.", "legacy_wifi_required": "Saisissez le SSID Wi-Fi et le mot de passe avant de configurer l’appareil Legacy.", "legacy_port_required": "Les appareils Zendure Legacy nécessitent le port local 1883.", "legacy_ble_device_not_found": "L’appareil Legacy sélectionné n’est pas accessible via Bluetooth.", "legacy_device_id_missing": "Zendure n’a fourni aucune identité pour l’appareil Legacy.", "legacy_provision_failed": "Impossible de configurer l’appareil Legacy. Vérifiez Bluetooth, le Wi-Fi et le broker."
@@ -73,7 +74,7 @@
           "input_limit_entity": "Entité number pour définir la puissance de charge en watts.",
           "output_limit_entity": "Entité number pour définir la puissance de décharge en watts.",
 		  "offgrid_power_entity": "Capteur optionnel pour la puissance de la prise hors réseau / prise îlot Zendure. Les valeurs positives sont interprétées comme une charge active sur la prise îlot.",
-          "offgrid_mode_entity": "Capteur de sélection optionnel pour le mode hors réseau / prise îlot Zendure. Le mode est uniquement lu et n’est jamais modifié par Battery SmartFlow AI.",
+          "offgrid_mode_entity": "Sélecteur Home Assistant facultatif pour le mode hors réseau Zendure. S’il est configuré, BSFAI ajoute une commande dédiée et transmet les choix manuels à ce sélecteur. Le mode n’est jamais modifié automatiquement.",
 		  "feed_in_tariff": "Rémunération par kWh injecté dans la même unité monétaire que les prix de l’électricité. Elle sert de valeur de repli lorsqu’aucun prix d’injection dynamique valide n’est disponible.",
           "dynamic_feed_in_price_entity": "Capteur numérique Home Assistant facultatif pour le prix d’injection dynamique actuel. Une valeur valide, y compris zéro ou un prix négatif, est prioritaire sur la rémunération fixe."
         }
@@ -84,12 +85,20 @@
         "data": {
           "grid_power_entity": "Puissance réseau (simple)",
           "grid_import_entity": "Import réseau (séparé)",
-          "grid_export_entity": "Export réseau (séparé)"
+          "grid_export_entity": "Export réseau (séparé)",
+          "shelly_pro_3em_host": "Nom d’hôte ou adresse IP du Shelly Pro 3EM Gen2",
+          "shelly_pro_3em_password": "Mot de passe Shelly Pro 3EM (facultatif)",
+          "shelly_3em_host": "Nom d’hôte ou adresse IP du Shelly 3EM Gen1",
+          "shelly_3em_password": "Mot de passe Shelly 3EM (facultatif)"
         },
         "data_description": {
           "grid_power_entity": "Un capteur unique avec puissance positive en import et négative en export.",
           "grid_import_entity": "Capteur de puissance d’import réseau actuelle en watts.",
-          "grid_export_entity": "Capteur de puissance d’export réseau actuelle en watts."
+          "grid_export_entity": "Capteur de puissance d’export réseau actuelle en watts.",
+          "shelly_pro_3em_host": "Nom d’hôte ou adresse IP locale du Shelly Pro 3EM Gen2. Utilisez une adresse réservée ou statique.",
+          "shelly_pro_3em_password": "Mot de passe de l’appareil facultatif. Shelly utilise une authentification locale par digest SHA-256.",
+          "shelly_3em_host": "Nom d’hôte ou adresse IP locale du Shelly 3EM classique. Utilisez une adresse réservée ou statique.",
+          "shelly_3em_password": "Mot de passe facultatif. Gen1 utilise l’authentification HTTP Basic sans chiffrement ; utilisez-le uniquement sur un réseau local de confiance."
         }
       },
       "grid": {
@@ -98,12 +107,20 @@
         "data": {
           "grid_power_entity": "Puissance réseau (simple)",
           "grid_import_entity": "Import réseau (séparé)",
-          "grid_export_entity": "Export réseau (séparé)"
+          "grid_export_entity": "Export réseau (séparé)",
+          "shelly_pro_3em_host": "Nom d’hôte ou adresse IP du Shelly Pro 3EM Gen2",
+          "shelly_pro_3em_password": "Mot de passe Shelly Pro 3EM (facultatif)",
+          "shelly_3em_host": "Nom d’hôte ou adresse IP du Shelly 3EM Gen1",
+          "shelly_3em_password": "Mot de passe Shelly 3EM (facultatif)"
         },
         "data_description": {
           "grid_power_entity": "Un capteur unique avec puissance positive en import et négative en export.",
           "grid_import_entity": "Capteur de puissance d’import réseau actuelle en watts.",
-          "grid_export_entity": "Capteur de puissance d’export réseau actuelle en watts."
+          "grid_export_entity": "Capteur de puissance d’export réseau actuelle en watts.",
+          "shelly_pro_3em_host": "Nom d’hôte ou adresse IP locale du Shelly Pro 3EM Gen2. Utilisez une adresse réservée ou statique.",
+          "shelly_pro_3em_password": "Mot de passe de l’appareil facultatif. Shelly utilise une authentification locale par digest SHA-256.",
+          "shelly_3em_host": "Nom d’hôte ou adresse IP locale du Shelly 3EM classique. Utilisez une adresse réservée ou statique.",
+          "shelly_3em_password": "Mot de passe facultatif. Gen1 utilise l’authentification HTTP Basic sans chiffrement ; utilisez-le uniquement sur un réseau local de confiance."
         }
       },
       "user": {
@@ -237,7 +254,7 @@
           "input_limit_entity": "Puissance de charge réglable en watts.",
           "output_limit_entity": "Puissance de décharge réglable en watts.",
 		  "offgrid_power_entity": "Capteur optionnel pour la puissance de la prise hors réseau / prise îlot Zendure. Les valeurs positives sont interprétées comme une charge active sur la prise îlot.",
-          "offgrid_mode_entity": "Capteur de sélection optionnel pour le mode hors réseau / prise îlot Zendure. Le mode est uniquement lu et n’est jamais modifié par Battery SmartFlow AI.",
+          "offgrid_mode_entity": "Sélecteur Home Assistant facultatif pour le mode hors réseau Zendure. S’il est configuré, BSFAI ajoute une commande dédiée et transmet les choix manuels à ce sélecteur. Le mode n’est jamais modifié automatiquement.",
 		  "feed_in_tariff": "Rémunération par kWh injecté dans la même unité monétaire que les prix de l’électricité. Elle sert de valeur de repli lorsqu’aucun prix d’injection dynamique valide n’est disponible.",
           "dynamic_feed_in_price_entity": "Capteur numérique Home Assistant facultatif pour le prix d’injection dynamique actuel. Une valeur valide, y compris zéro ou un prix négatif, est prioritaire sur la rémunération fixe."
         }
@@ -251,6 +268,7 @@
         "description": "Sélectionnez la zone de paramètres à modifier. Les valeurs de régulation propres à l’appareil sont gérées automatiquement par le profil sélectionné.",
         "menu_options": {
           "general": "Général",
+          "dashboard": "Tableau de bord HEMS",
           "expert": "Mode expert",
           "native_zendure": "Test Zendure natif",
           "debug": "Mode débogage"
@@ -258,6 +276,11 @@
       },
       "native_zendure": {"title": "Connexion Zendure native", "description": "Saisissez le jeton d’application Home Assistant créé dans l’application Zendure. Un masque fixe de points indique qu’un jeton est enregistré ; il ne représente ni le jeton ni sa longueur. La sélection d’un appareil n’active pas le contrôle ; l’interrupteur séparé à l’étape suivante est requis.", "data": {"native_zendure_app_token": "Jeton d’application Zendure", "disable_native_zendure_test": "Désactiver et supprimer le test Zendure natif"}, "data_description": {"native_zendure_app_token": "Conservez le masque inchangé pour réutiliser le jeton enregistré, ou remplacez-le par un nouveau jeton Home Assistant complet.", "disable_native_zendure_test": "Arrête la connexion et supprime le jeton. Z-HA n’est pas modifié."}},
       "native_zendure_device": {"title": "Sélectionner le système Zendure", "description": "Zendure a signalé ces appareils :\n\n{device_summary}\n\nSélectionnez exactement un système. BSFAI choisit automatiquement le transport local et peut configurer les appareils Legacy via Bluetooth.", "data": {"native_zendure_selected_device": "Système Zendure", "native_zendure_control_transport": "Mode de communication", "native_zendure_control_enabled": "Activer le contrôle Zendure natif", "native_zendure_local_mqtt_server": "Serveur MQTT local", "native_zendure_local_mqtt_port": "Port MQTT local", "native_zendure_local_mqtt_username": "Nom d’utilisateur MQTT local", "native_zendure_local_mqtt_password": "Mot de passe MQTT local", "native_zendure_legacy_wifi_ssid": "SSID Wi-Fi de l’appareil Legacy", "native_zendure_legacy_wifi_password": "Mot de passe Wi-Fi de l’appareil Legacy", "native_zendure_legacy_provision": "Configurer maintenant l’appareil Legacy sélectionné"}, "data_description": {"native_zendure_selected_device": "Un seul système principal est sélectionné ; les packs ne peuvent pas être contrôlés séparément. BSFAI détermine ZenSDK ou Local MQTT à partir de la famille de modèles vérifiée.", "native_zendure_control_transport": "Le Cloud fonctionne après la détection du compte. La connexion locale recommandée sera utilisée uniquement après réception de données valides.", "native_zendure_control_enabled": "Transfère les commandes BSFAI vers le transport local du modèle.", "native_zendure_local_mqtt_server": "Adresse transmise à l’appareil Legacy via Bluetooth et utilisée par BSFAI.", "native_zendure_local_mqtt_port": "Les appareils Legacy utilisent le port standard 1883.", "native_zendure_local_mqtt_username": "Compte du broker utilisé uniquement par BSFAI.", "native_zendure_local_mqtt_password": "Conservez le masque à points pour réutiliser le mot de passe enregistré.", "native_zendure_legacy_wifi_ssid": "Requis uniquement pour la configuration Bluetooth.", "native_zendure_legacy_wifi_password": "Requis uniquement pour la configuration Bluetooth.", "native_zendure_legacy_provision": "Crée le compte du broker de l’appareil et transmet les paramètres via Bluetooth. L’appareil redémarre."}},
+      "dashboard": {
+        "title": "Tableau de bord HEMS",
+        "description": "Active ou désactive le tableau de bord HEMS personnalisé de Battery SmartFlow AI dans la barre latérale.",
+        "data": {"hems_dashboard_enabled": "Afficher le tableau de bord HEMS dans la barre latérale"}
+      },
       "general": {
         "title": "Paramètres de Battery SmartFlow AI – Général",
         "description": "Paramètres généraux de l’installation. Les valeurs de régulation propres à l’appareil restent intégrées au profil sélectionné.",
@@ -365,7 +388,9 @@
       "options": {
         "none": "Aucun capteur réseau",
         "single": "Un capteur (+ / −)",
-        "split": "Deux capteurs (soutirage et injection)"
+        "split": "Deux capteurs (soutirage et injection)",
+        "shelly_pro_3em": "Shelly Pro 3EM Gen2 (local)",
+        "shelly_3em": "Shelly 3EM Gen1 (local)"
       }
     }
   },
@@ -384,8 +409,17 @@
         "state": {
           "standby": "Veille",
           "charge": "Charge",
+          "pv_surplus": "Charge du surplus PV",
           "discharge": "Décharge",
           "constant_discharge": "Décharge constante"
+        }
+      },
+      "offgrid_mode_control": {
+        "name": "Mode hors réseau",
+        "state": {
+          "off": "Désactivé",
+          "normal": "Normal",
+          "eco": "Économique"
         }
       }
     },
@@ -403,7 +437,7 @@
         "name": "SoC maximum"
       },
       "max_charge": {
-        "name": "Puissance de charge max."
+        "name": "Puissance de charge CA max."
       },
       "max_discharge": {
         "name": "Puissance de décharge max."
@@ -434,6 +468,7 @@
       }
     },
     "sensor": {
+      "grid_power": {"name": "Puissance réseau"},
       "native_zendure_status": {"name": "État du test Zendure natif", "state": {"disabled": "Non configuré", "discovering": "Recherche des appareils", "connecting": "Connexion", "capturing": "Collecte initiale", "observing": "Observation active", "error": "Erreur"}}, "native_zendure_control": {"name": "Contrôle Zendure natif", "state": {"disabled_zha_active": "Désactivé", "native_transport_not_ready": "Aucune donnée", "native_local_handover_cloud_active": "Cloud", "native_cloud_mqtt_active": "Cloud", "native_zensdk_active": "ZenSDK", "native_local_mqtt_active": "Local", "native_local_unsupported": "Non pris en charge"}}, "native_zendure_device_count": {"name": "Appareils Zendure natifs trouvés"}, "native_zendure_message_count": {"name": "Messages Zendure natifs reçus"}, "native_zendure_last_message": {"name": "Dernier message Zendure natif"}, "native_zendure_last_capture": {"name": "Paquet de synchronisation Zendure"}, "native_zendure_error": {"name": "Erreur Zendure native"},
       "native_hardware_pack_count": {"name":"Battery count"},
       "native_hardware_capacity_kwh": {"name":"Nominal capacity"},
@@ -442,6 +477,7 @@
       "native_hardware_cell_delta_v": {"name":"Cell voltage difference"},
       "native_hardware_pack_status": {"name":"Status","state":{"idle":"Idle","charge":"Charging","discharge":"Discharging"}},
       "native_hardware_rssi": {"name": "Wi-Fi signal strength"},
+      "native_hardware_remaining_output_time": {"name": "Temps estimé avant décharge complète"},
       "native_hardware_available_energy": {"name": "Available energy"},
       "native_hardware_roundtrip_efficiency": {"name": "Rendement aller-retour"},
       "native_hardware_charged_energy": {"name": "Énergie totale chargée"},
@@ -452,7 +488,15 @@
       "native_hardware_soc_max": {"name":"Hardware maximum SoC"},
       "native_hardware_heating": {"name":"Battery heating","state":{"on":"On","off":"Off"}},
       "native_hardware_setpoint_storage": {"name": "Stockage des consignes", "state": {"persistent_storage": "Stockage permanent", "temporary_control": "Commande temporaire", "unknown": "Inconnu"}},
-      "native_hardware_online": {"name": "État en ligne", "state": {"online": "En ligne", "offline": "Hors ligne"}}, "native_hardware_soc_pct": {"name": "État de charge"}, "native_hardware_charge_power_w": {"name": "Puissance de charge"}, "native_hardware_discharge_power_w": {"name": "Puissance de décharge"}, "native_hardware_ac_input_power_w": {"name": "Puissance d’entrée CA"}, "native_hardware_ac_output_power_w": {"name": "Puissance de sortie CA"}, "native_hardware_pv_power_w": {"name": "Puissance PV"}, "native_hardware_mode": {"name": "Mode de fonctionnement", "state": {"idle": "Veille", "charge": "Charge", "discharge": "Décharge", "unknown": "Inconnu"}}, "native_hardware_temperature_c": {"name": "Température"}, "native_hardware_battery_voltage_v": {"name": "Tension de la batterie"}, "native_hardware_voltage_v": {"name": "Tension"}, "native_hardware_current_a": {"name": "Courant"}, "native_hardware_cell_min_v": {"name": "Tension de cellule minimale"}, "native_hardware_cell_max_v": {"name": "Tension de cellule maximale"}, "native_hardware_state_code": {"name": "Code d’état"}, "native_hardware_pack_type": {"name": "Type de batterie"}, "native_hardware_fault_code": {"name": "Code d’erreur"}, "native_hardware_protection_active": {"name": "Protection active"}, "native_hardware_firmware": {"name": "Micrologiciel"}, "native_hardware_product_id": {"name": "ID du produit"}, "native_hardware_profile": {"name": "Profil de l’appareil"}, "native_hardware_transport": {"name": "Voie de communication", "state": {"home_assistant": "Home Assistant / Z-HA", "cloud_mqtt": "Cloud", "local_mqtt": "Local", "zensdk": "ZenSDK"}}, "native_hardware_control_state": {"name": "État du contrôle", "state": {"observation": "Observation", "eligible": "Éligible", "enabled": "Activé", "active": "Contrôle actif", "hems_blocked": "Bloqué par HEMS", "unsupported": "Non pris en charge", "offline": "Hors ligne"}}, "native_hardware_hems": {"name": "Zendure HEMS", "state": {"active": "Actif", "inactive": "Inactif", "unknown": "Inconnu", "stale": "Obsolète", "invalid": "Invalide", "unsupported": "Non pris en charge"}}, "native_hardware_last_message": {"name": "Dernières données reçues"},
+      "native_hardware_data_ready": {"name": "Données de l'appareil", "state": {"not_ready": "Pas prêt", "ready": "Prêt", "unknown": "Inconnu"}},
+      "native_hardware_grid_connection": {"name": "Connexion réseau", "state": {"disconnected": "Déconnecté", "connected": "Connecté", "unknown": "Inconnu"}},
+      "native_hardware_pv_status": {"name": "État PV", "state": {"inactive": "Inactif", "active": "Actif", "unknown": "Inconnu"}},
+      "native_hardware_soc_calibration": {"name": "Étalonnage SoC", "state": {"normal": "Normal", "calibrating": "Étalonnage en cours", "unknown": "Inconnu"}},
+      "native_hardware_passthrough": {"name": "Transit", "state": {"inactive": "Inactif", "active": "Actif", "unknown": "Inconnu"}},
+      "native_hardware_reverse_flow": {"name": "Flux inverse", "state": {"inactive": "Inactif", "active": "Actif", "unknown": "Inconnu"}},
+      "native_hardware_offgrid_mode": {"name": "Mode hors réseau", "state": {"standard": "Standard", "economic": "Économique", "disabled": "Désactivé", "unknown": "Inconnu"}},
+      "native_hardware_error_status": {"name": "État d'erreur", "state": {"no_error": "Aucune erreur", "error": "Erreur", "unknown": "Inconnu"}},
+      "native_hardware_online": {"name": "État en ligne", "state": {"online": "En ligne", "offline": "Hors ligne"}}, "native_hardware_soc_pct": {"name": "État de charge"}, "native_hardware_charge_power_w": {"name": "Puissance de charge"}, "native_hardware_discharge_power_w": {"name": "Puissance de décharge"}, "native_hardware_ac_input_power_w": {"name": "Puissance d’entrée CA"}, "native_hardware_ac_output_power_w": {"name": "Puissance de sortie CA"}, "native_hardware_pv_power_w": {"name": "Puissance PV"}, "native_hardware_mode": {"name": "Mode de fonctionnement", "state": {"idle": "Veille", "charge": "Charge", "discharge": "Décharge", "unknown": "Inconnu"}}, "native_hardware_temperature_c": {"name": "Température"}, "native_hardware_cell_temperature_c": {"name": "Température maximale des cellules"}, "native_hardware_battery_voltage_v": {"name": "Tension de la batterie"}, "native_hardware_voltage_v": {"name": "Tension"}, "native_hardware_current_a": {"name": "Courant"}, "native_hardware_cell_min_v": {"name": "Tension de cellule minimale"}, "native_hardware_cell_max_v": {"name": "Tension de cellule maximale"}, "native_hardware_state_code": {"name": "Code d’état"}, "native_hardware_pack_type": {"name": "Type de batterie"}, "native_hardware_fault_code": {"name": "Code d’erreur"}, "native_hardware_protection_active": {"name": "Protection active"}, "native_hardware_firmware": {"name": "Micrologiciel"}, "native_hardware_product_id": {"name": "ID du produit"}, "native_hardware_profile": {"name": "Profil de l’appareil"}, "native_hardware_transport": {"name": "Voie de communication", "state": {"home_assistant": "Home Assistant / Z-HA", "cloud_mqtt": "Cloud", "local_mqtt": "Local", "zensdk": "ZenSDK"}}, "native_hardware_control_state": {"name": "État du contrôle", "state": {"observation": "Observation", "eligible": "Éligible", "enabled": "Activé", "active": "Contrôle actif", "hems_blocked": "Bloqué par HEMS", "unsupported": "Non pris en charge", "offline": "Hors ligne"}}, "native_hardware_hems": {"name": "Zendure HEMS", "state": {"active": "Actif", "inactive": "Inactif", "unknown": "Inconnu", "stale": "Obsolète", "invalid": "Invalide", "unsupported": "Non pris en charge"}}, "native_hardware_last_message": {"name": "Dernières données reçues"},
       "device_profile": {
         "name": "Profil d’appareil actif"
       },
@@ -546,6 +590,9 @@
       "learned_planning_deadline": {
         "name": "Planification de charge : deadline"
       },
+      "learned_planning_coverage_end": {
+        "name": "Diagnostic : fin de la couverture planifiée du pic tarifaire"
+      },
       "learned_planning_required_charge_energy_kwh": {
         "name": "Planification de charge : énergie à recharger"
       },
@@ -596,6 +643,9 @@
       },
       "learned_planning_forecast_adjustment_kwh": {
         "name": "Diagnostic : correction prévision planification apprise"
+      },
+      "learned_planning_pv_forecast_credit_kwh": {
+        "name": "Diagnostic : prévision PV prise en compte dans le plan de charge"
       },
       "learned_planning_effective_charge_power_w": {
         "name": "Diagnostic : puissance de charge effective planification apprise"
@@ -747,9 +797,9 @@
         }
       },
       "soc_limit_status": {
-        "name": "État limite SoC",
+        "name": "État de limite SoC matériel",
         "state": {
-          "not_configured": "Aucun capteur de limite SoC configuré",
+          "not_configured": "État de limite SoC matériel indisponible",
           "no_limit": "Aucune limite active",
           "upper_limit_active": "Limite SoC supérieure active (charge bloquée)",
           "lower_limit_active": "Limite SoC inférieure active (décharge bloquée)"
@@ -932,7 +982,7 @@
         }
       },
       "avg_charge_price": {
-        "name": "Prix – Ancien prix moyen de charge batterie"
+        "name": "Prix – Prix moyen de charge batterie historique (estimation SoC)"
       },
       "profit_eur": {
         "name": "Bilan depuis le début – Ancien gain commercial"
@@ -964,6 +1014,7 @@
       "economics_total_native_pv_to_home_kwh": {"name": "Énergie depuis le début – PV natif vers maison"},
       "economics_average_grid_charge_price": {"name": "Prix – Prix moyen de charge réseau"},
       "economics_average_pv_opportunity_value": {"name": "Prix – Valeur d’opportunité PV moyenne"},
+      "economics_average_battery_charge_price": {"name": "Prix – Prix moyen de charge batterie (réseau + PV)"},
       "economics_average_export_price": {"name": "Prix – Tarif d’injection moyen"},
       "economics_average_battery_discharge_value": {"name": "Prix – Valeur moyenne de décharge batterie"},
       "economics_average_native_pv_to_home_return": {"name": "Prix – Valeur moyenne du PV natif vers la maison"},

@@ -34,6 +34,22 @@ from .cloud_mqtt_commands import (
 )
 
 
+CLOUD_STATE_METADATA_KEYS = frozenset(
+    {
+        "sn",
+        "deviceKey",
+        "productKey",
+        "productModel",
+        "deviceName",
+        "online",
+        "isHA",
+        "packData",
+        "timestamp",
+        "ts",
+    }
+)
+
+
 _LOGGER = logging.getLogger(__name__)
 _MAX_RETAINED_MESSAGES = 10_000
 _COMMAND_READBACK_TIMEOUT_SECONDS = 15.0
@@ -123,7 +139,7 @@ class CloudMqttSession(Protocol):
     def connection_phase(self) -> str: ...
 
     @property
-    def connection_diagnostics(self) -> Mapping[str, str | bool]: ...
+    def connection_diagnostics(self) -> Mapping[str, str | bool | int | None]: ...
 
 
 SessionFactory = Callable[[CloudMqttCredentials], CloudMqttSession]
@@ -158,12 +174,17 @@ class ZendureCloudMqttTransport:
         self._connect_failure: str | None = None
         self._stopping = False
         self._disconnect_reported = False
+        self._disconnect_count = 0
+        self._reconnect_count = 0
+        self._last_disconnect_category = "none"
         self._reconnect_task: asyncio.Task[None] | None = None
         self._session_number = 0
         self._request_message_id = 0
         self._last_message_at: datetime | None = None
         self._last_connection_phase = "not_started"
-        self._last_connection_diagnostics: dict[str, str | bool] = {
+        self._last_connection_diagnostics: dict[
+            str, str | bool | int | None
+        ] = {
             "credential_source": "cloud_mqtt_block",
             "transport_security": "unknown",
             "endpoint_scope": "unknown",
@@ -250,14 +271,22 @@ class ZendureCloudMqttTransport:
         return self._last_connection_phase
 
     @property
-    def connection_diagnostics(self) -> Mapping[str, str | bool]:
+    def connection_diagnostics(self) -> Mapping[str, Any]:
         """Return only allow-listed, non-identifying connection facts."""
 
+        diagnostics: dict[str, Any] = {}
         if self._session is not None:
             value = getattr(self._session, "connection_diagnostics", None)
             if isinstance(value, Mapping):
-                return dict(value)
-        return dict(self._last_connection_diagnostics)
+                diagnostics.update(value)
+        if not diagnostics:
+            diagnostics.update(self._last_connection_diagnostics)
+        diagnostics.update({
+            "disconnect_count": self._disconnect_count,
+            "reconnect_count": self._reconnect_count,
+            "last_disconnect_category": self._last_disconnect_category,
+        })
+        return diagnostics
 
     @property
     def topics(self) -> tuple[str, ...]:
@@ -423,6 +452,8 @@ class ZendureCloudMqttTransport:
             return
         self._state = ConnectionState.CONNECTED
         self._connected.set()
+        if self._disconnect_count > self._reconnect_count:
+            self._reconnect_count += 1
         if self._disconnect_reported:
             _LOGGER.info("Zendure Cloud MQTT reconnected")
         self._disconnect_reported = False
@@ -438,6 +469,9 @@ class ZendureCloudMqttTransport:
         self._connected.clear()
         if self._stopping:
             return
+        if self._state is ConnectionState.CONNECTED:
+            self._disconnect_count += 1
+            self._last_disconnect_category = _disconnect_category(reason)
         safe = ZendureDiagnosticSanitizer().sanitize(reason or "unknown")
         if bool(getattr(self._session, "manages_reconnect", False)):
             # Paho's network loop already owns reconnection for this session.
@@ -538,7 +572,7 @@ class ZendureCloudMqttTransport:
         if candidate_id is not None and state_message:
             state = self._devices[candidate_id]
             state.last_message_at = received_at
-            for name in _property_names(parsed):
+            for name in _property_names(parsed, topic=topic):
                 state.property_updated_at[name] = received_at
             online = _online_value(parsed)
             if online is not None:
@@ -650,12 +684,18 @@ def _pack_identity(value: Any, main_device_id: str | None) -> str | None:
     return None
 
 
-def _property_names(value: Any) -> set[str]:
+def _property_names(value: Any, *, topic: str = "") -> set[str]:
     if not isinstance(value, Mapping):
         return set()
     properties = value.get("properties")
     if isinstance(properties, Mapping):
         return {str(name) for name in properties}
+    if topic.rstrip("/").endswith("/state"):
+        return {
+            str(name)
+            for name in value
+            if name not in CLOUD_STATE_METADATA_KEYS
+        }
     return set()
 
 
@@ -688,6 +728,8 @@ class PahoReadOnlyMqttSession:
         self._endpoint_scope = "unknown"
         self._socket_family = "unknown"
         self._connect_packet_sent = False
+        self._last_disconnect_packet_from_server: bool | None = None
+        self._last_disconnect_reason_code: int | None = None
         self._client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
             client_id=self._client_id(credentials),
@@ -713,13 +755,17 @@ class PahoReadOnlyMqttSession:
         return self._connection_phase
 
     @property
-    def connection_diagnostics(self) -> Mapping[str, str | bool]:
+    def connection_diagnostics(self) -> Mapping[str, str | bool | int | None]:
         return {
             "credential_source": "cloud_mqtt_block",
             "transport_security": "tls" if self._tls else "plain",
             "endpoint_scope": self._endpoint_scope,
             "socket_family": self._socket_family,
             "connect_packet_sent": self._connect_packet_sent,
+            "last_disconnect_packet_from_server": (
+                self._last_disconnect_packet_from_server
+            ),
+            "last_disconnect_reason_code": self._last_disconnect_reason_code,
         }
 
     def set_callbacks(
@@ -831,9 +877,23 @@ class PahoReadOnlyMqttSession:
         reason_code: Any,
         _properties: Any,
     ) -> None:
+        self._last_disconnect_packet_from_server = (
+            _disconnect_packet_from_server(_flags)
+        )
+        self._last_disconnect_reason_code = _reason_code_number(reason_code)
         if self._on_disconnect is not None:
+            reason = (
+                None
+                if _reason_code_success(reason_code)
+                else (
+                    f"{reason_code}; reason_code="
+                    f"{self._last_disconnect_reason_code}; "
+                    "disconnect_packet_from_server="
+                    f"{self._last_disconnect_packet_from_server}"
+                )
+            )
             self._on_disconnect(
-                None if _reason_code_success(reason_code) else str(reason_code)
+                reason
             )
 
     def _paho_message(self, _client: Any, _userdata: Any, message: Any) -> None:
@@ -867,6 +927,25 @@ def _reason_code_success(reason_code: Any) -> bool:
         return int(value) == 0
     except (TypeError, ValueError):
         return str(reason_code).strip().casefold() == "success"
+
+
+def _disconnect_packet_from_server(flags: Any) -> bool | None:
+    """Return Paho's broker-packet flag only when it is an actual boolean."""
+
+    value = getattr(flags, "is_disconnect_packet_from_server", None)
+    return value if isinstance(value, bool) else None
+
+
+def _reason_code_number(reason_code: Any) -> int | None:
+    """Extract Paho's numeric reason code without retaining arbitrary text."""
+
+    value = getattr(reason_code, "value", reason_code)
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def _bsfai_client_id(cloud_client_id: str) -> str:
@@ -932,6 +1011,22 @@ def _safe_peer_scope(mqtt_socket: Any) -> str:
     if address.is_global:
         return "public"
     return "other"
+
+
+def _disconnect_category(reason: str | None) -> str:
+    """Classify disconnects without retaining/exporting broker text."""
+
+    normalized = str(reason or "").casefold()
+    if any(token in normalized for token in ("auth", "refused", "denied")):
+        return "broker_rejected"
+    if any(
+        token in normalized
+        for token in ("network", "socket", "timeout", "reset", "eof", "connection")
+    ):
+        return "network_or_transport_error"
+    if normalized in {"0", "success", "normal", "normal disconnection"}:
+        return "normal_disconnect"
+    return "unclassified"
 
 
 def _parse_broker_url(value: str) -> tuple[str, int, bool]:

@@ -61,6 +61,7 @@ from .hardware.zendure.first_write import (
 from .hardware.zendure.hems import ZendureHemsCommandGate
 from .hardware.zendure.initial_sync import (
     async_capture_initial_sync,
+    capture_zensdk_initial_sync,
     export_initial_sync_capture,
 )
 from .hardware.zendure.local_mqtt import (
@@ -95,6 +96,10 @@ ZENSDK_POLL_INTERVAL = 5.0
 ZENSDK_OFFLINE_AFTER_FAILURES = 3
 ZENSDK_MAX_DATA_AGE = 30.0
 ZENSDK_MAX_RETRY_INTERVAL = 60.0
+LEGACY_GROUPED_CONTROL_MAX_DATA_AGE = 180.0
+_LEGACY_GROUPED_CONTROL_MODELS = frozenset(
+    {"hyper2000", "hub2000", "solarflowhub2000"}
+)
 
 
 @dataclass(slots=True)
@@ -208,7 +213,8 @@ class NativeZendureRuntime:
         if self._selected_device is None:
             return None
         state = self._states.get(self._selected_device)
-        if state is None or not _fresh_native_state(state):
+        device = self._inventory.devices.get(self._selected_device)
+        if state is None or not _fresh_native_state(state, device=device):
             return None
         return state
 
@@ -298,7 +304,8 @@ class NativeZendureRuntime:
         if self._selected_device is None:
             return None
         state = self._states.get(self._selected_device)
-        if state is None or not _fresh_native_state(state):
+        device = self._inventory.devices.get(self._selected_device)
+        if state is None or not _fresh_native_state(state, device=device):
             return None
 
         mode = state.mode
@@ -666,7 +673,11 @@ class NativeZendureRuntime:
             DeviceControlState.OFFLINE,
         }:
             return device.control_state
-        if state is None or not _fresh_native_state(state) or not device.online:
+        if (
+            state is None
+            or not _fresh_native_state(state, device=device)
+            or not device.online
+        ):
             return DeviceControlState.OFFLINE
         if self._selected_control_transport(device).transport is None:
             return DeviceControlState.UNSUPPORTED
@@ -742,6 +753,7 @@ class NativeZendureRuntime:
                     self._transport.command_diagnostics
                     if self._transport is not None else {"commands": []}
                 ),
+                "cloud_mqtt": self._cloud_mqtt_diagnostics(),
                 "local_mqtt": self._local_mqtt_diagnostics(),
                 "last_command_result": self._last_command_result,
                 "write_authority": self._transport_router.diagnostics(),
@@ -889,7 +901,11 @@ class NativeZendureRuntime:
                 ))
             state = self._states.get(self._selected_device)
             source_device = self._inventory.devices.get(self._selected_device)
-            if state is None or source_device is None or not _fresh_native_state(state):
+            if (
+                state is None
+                or source_device is None
+                or not _fresh_native_state(state, device=source_device)
+            ):
                 return self._remember_command_result(_command_result(
                     CommandExecutionStatus.SKIPPED, "native_state_not_fresh"
                 ))
@@ -1028,6 +1044,75 @@ class NativeZendureRuntime:
                 output_written=final_command.should_write_output,
             ))
 
+    def selected_offgrid_mode(self) -> str | None:
+        """Return the selected system's current, documented native off-grid mode."""
+
+        state = self.selected_device_state()
+        if state is None:
+            return None
+        observed = state.diagnostics.get("gridOffMode")
+        if observed is None or not observed.valid or isinstance(observed.value, bool):
+            return None
+        try:
+            numeric = int(observed.value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if numeric != observed.value:
+            return None
+        return {0: "normal", 1: "eco", 2: "off"}.get(numeric)
+
+    def native_offgrid_mode_control_available(self) -> bool:
+        """Check whether a manual mode write can use the guarded ZenSDK path."""
+
+        if (
+            not self._control_enabled
+            or self._status != STATUS_OBSERVING
+            or self._selected_device is None
+        ):
+            return False
+        state = self._states.get(self._selected_device)
+        device = self._inventory.devices.get(self._selected_device)
+        if state is None or device is None or not _fresh_native_state(state, device=device):
+            return False
+        if self.selected_offgrid_mode() is None:
+            return False
+        if self._effective_control_transport(device).transport is not ZendureTransport.ZENSDK:
+            return False
+        if not self._control_transport_ready(ZendureTransport.ZENSDK):
+            return False
+        matrix = resolve_zendure_device(device.native_identities[0]) if device.native_identities else None
+        return bool(
+            matrix is not None
+            and matrix.native_control_approved
+            and matrix.property_write_level(
+                ZendureTransport.ZENSDK, "gridOffMode"
+            ) is VerificationLevel.VERIFIED
+        )
+
+    async def async_select_offgrid_mode(self, option: str) -> CommandExecutionResult:
+        """Send a user-selected native off-grid mode through the command gate."""
+
+        if option not in {"normal", "eco", "off"}:
+            return self._remember_command_result(_command_result(
+                CommandExecutionStatus.SKIPPED, "invalid_offgrid_mode"
+            ))
+        if not self.native_offgrid_mode_control_available():
+            return self._remember_command_result(_command_result(
+                CommandExecutionStatus.SKIPPED, "native_offgrid_control_not_ready"
+            ))
+        command = DeviceCommand(
+            ac_mode="output",
+            input_limit_w=0,
+            output_limit_w=0,
+            reason="manual_offgrid_mode_selection",
+            should_write_mode=False,
+            should_write_input=False,
+            should_write_output=False,
+            should_write_offgrid_mode=True,
+            offgrid_mode=option,
+        )
+        return await self.async_execute_device_command(command)
+
     def _remember_command_result(
         self, result: CommandExecutionResult
     ) -> CommandExecutionResult:
@@ -1055,6 +1140,8 @@ class NativeZendureRuntime:
                     candidate_id,
                     system_id=candidate_id,
                 )
+            selected_transport = self._startup_transport()
+            use_cloud_mqtt = selected_transport is not ZendureTransport.ZENSDK
             self._normalizer = NativeSourceFusion(
                 bootstrap,
                 preferred_transport=self._configured_transport,
@@ -1069,14 +1156,21 @@ class NativeZendureRuntime:
                 self._get_json,
             )
             self._record_zensdk_cycle(zensdk)
-            self._transport = ZendureCloudMqttTransport(
-                bootstrap,
-                # Zendure routes account Cloud telemetry only to the assigned
-                # client identity.  Local selections still need that proven
-                # Cloud session while their Legacy handover is pending.
-                use_assigned_client_id=True,
+            self._transport = (
+                ZendureCloudMqttTransport(
+                    bootstrap,
+                    # Zendure routes account Cloud telemetry only to the assigned
+                    # client identity.  Local selections still need that proven
+                    # Cloud session while their Legacy handover is pending.
+                    use_assigned_client_id=True,
+                )
+                if use_cloud_mqtt
+                else None
             )
-            if self._local_mqtt_credentials is not None:
+            if (
+                selected_transport is ZendureTransport.LOCAL_MQTT
+                and self._local_mqtt_credentials is not None
+            ):
                 candidate = ZendureLocalMqttTransport(
                     bootstrap, self._local_mqtt_credentials
                 )
@@ -1091,20 +1185,28 @@ class NativeZendureRuntime:
                         )
             self._set_status(STATUS_CONNECTING)
             self._set_status(STATUS_CAPTURING)
-            capture = await async_capture_initial_sync(
-                bootstrap,
-                self._transport,
-                initial_messages=zensdk.messages,
-                zensdk_attempts=zensdk.attempts,
-                completion_transport=(
-                    self._configured_transport.value
-                    if self._configured_transport in {
-                        ZendureTransport.CLOUD_MQTT,
-                        ZendureTransport.ZENSDK,
-                    }
-                    else None
-                ),
-            )
+            if self._transport is not None:
+                capture = await async_capture_initial_sync(
+                    bootstrap,
+                    self._transport,
+                    initial_messages=zensdk.messages,
+                    zensdk_attempts=zensdk.attempts,
+                    completion_transport=(
+                        self._configured_transport.value
+                        if self._configured_transport in {
+                            ZendureTransport.CLOUD_MQTT,
+                            ZendureTransport.ZENSDK,
+                        }
+                        else None
+                    ),
+                )
+            else:
+                capture = capture_zensdk_initial_sync(
+                    bootstrap,
+                    messages=zensdk.messages,
+                    zensdk_attempts=zensdk.attempts,
+                    selected_device_id=self._selected_device,
+                )
             self._capture_complete = capture.complete
             self._capture_reason = capture.completion_reason
             exported = await self._hass.async_add_executor_job(
@@ -1151,6 +1253,8 @@ class NativeZendureRuntime:
     def _capture_failure_is_fatal(self, reason: str) -> bool:
         """Keep a proven local transport alive when Cloud observation fails."""
 
+        if reason.startswith("zensdk_initial_sync"):
+            return False
         if reason in {"initial_sync_quiet", "hard_timeout"}:
             return False
         if (
@@ -1394,7 +1498,7 @@ class NativeZendureRuntime:
         ready = bool(
             selection.transport is not None
             and state is not None
-            and _fresh_native_state(state)
+            and _fresh_native_state(state, device=device)
             and self._control_transport_ready(selection.transport)
         )
         self._transport_router.update_readiness(
@@ -1475,6 +1579,43 @@ class NativeZendureRuntime:
                 )
             ],
             "command_verification": transport.command_diagnostics,
+        }
+
+    def _cloud_mqtt_diagnostics(self) -> dict[str, Any]:
+        transport = self._transport
+        if transport is None:
+            disabled_by_selection = (
+                self._startup_transport() is ZendureTransport.ZENSDK
+            )
+            return {
+                "configured": self._bootstrap is not None,
+                "enabled": False,
+                "state": (
+                    "disabled_by_selected_transport"
+                    if disabled_by_selection
+                    else "not_started"
+                ),
+            }
+        state = getattr(transport, "state", None)
+        device_states = getattr(transport, "device_states", {})
+        return {
+            "configured": True,
+            "state": getattr(state, "value", str(state or "unknown")),
+            "connection_variant": getattr(
+                transport, "connection_variant", "unknown"
+            ),
+            "connection_phase": getattr(transport, "connection_phase", "unknown"),
+            "connection": dict(getattr(transport, "connection_diagnostics", {})),
+            "last_message_at": getattr(transport, "last_message_at", None),
+            "devices": [
+                {
+                    "device_id": candidate_id,
+                    "last_message_at": state.last_message_at,
+                    "online": state.online,
+                    "property_count": len(state.property_updated_at),
+                }
+                for candidate_id, state in sorted(device_states.items())
+            ],
         }
 
     def _zensdk_health(self, candidate_id: str, now: datetime) -> dict[str, Any]:
@@ -1674,6 +1815,16 @@ class NativeZendureRuntime:
             "configured_transport",
         )
 
+    def _startup_transport(self) -> ZendureTransport | None:
+        """Resolve the selected path before opening any MQTT session."""
+
+        if self._configured_transport is not None:
+            return self._configured_transport
+        device = self._inventory.devices.get(self._selected_device or "")
+        if device is None:
+            return None
+        return self._selected_control_transport(device).transport
+
     def _control_sensor_state(self) -> str:
         configured = self._selected_local_transport()
         active = self._active_control_transport()
@@ -1781,8 +1932,13 @@ def _numeric_value(measured: Any) -> float | None:
         return None
 
 
-def _fresh_native_state(state: Any, *, maximum_age_seconds: float = 30.0) -> bool:
-    """Require fresh device safety data; HEMS freshness has its own gate.
+def _fresh_native_state(
+    state: Any,
+    *,
+    maximum_age_seconds: float = 30.0,
+    device: MainDevice | None = None,
+) -> bool:
+    """Require fresh control-safety data; HEMS freshness has its own gate.
 
     The HEMS activity fallback deliberately keeps the timestamp of the last
     observed activity.  Once its quiet confirmation window has elapsed that
@@ -1791,8 +1947,29 @@ def _fresh_native_state(state: Any, *, maximum_age_seconds: float = 30.0) -> boo
     it here as well would permanently suppress otherwise safe commands.
     """
 
+    # The legacy Local MQTT protocol does not publish an explicit online flag.
+    # Its transport state can therefore be ``unknown`` even while fresh, valid
+    # SoC and protection telemetry is arriving.  Requiring that optional flag
+    # would turn such a healthy device into ``soc_invalid``.  A recent SoC and
+    # protection state are the actual safety prerequisites; their timestamps
+    # also prove that the device is still communicating.
+    # Hyper/Hub 2000 legacy firmware reports safety values in grouped,
+    # infrequent updates. Match the normalizer's bounded 180-second window
+    # only for these explicitly identified models; every other device keeps
+    # the strict 30-second control gate.
+    model = "".join(
+        character
+        for character in str(
+            (device.model or device.profile_key) if device else ""
+        ).casefold()
+        if character.isalnum()
+    )
+    if model in _LEGACY_GROUPED_CONTROL_MODELS:
+        maximum_age_seconds = max(
+            maximum_age_seconds, LEGACY_GROUPED_CONTROL_MAX_DATA_AGE
+        )
     now = datetime.now(timezone.utc)
-    required = (state.online, state.protection_active)
+    required = (state.soc_pct, state.protection_active)
     return all(
         item.valid
         and item.observed_at is not None
@@ -1898,6 +2075,11 @@ def _skip_matching_writes(command: DeviceCommand, state: Any) -> DeviceCommand:
         and charge_power.valid
         and float(charge_power.value) > 30
     )
+    stopping_active_discharge = bool(
+        zero_power_command
+        and discharge_power.valid
+        and float(discharge_power.value) > 30
+    )
     stopping_previous_target = bool(
         zero_power_command
         and any(
@@ -1905,7 +2087,11 @@ def _skip_matching_writes(command: DeviceCommand, state: Any) -> DeviceCommand:
             for key in ("last_input_limit_w", "last_output_limit_w")
         )
     )
-    force_atomic_idle = stopping_active_input or stopping_previous_target
+    force_atomic_idle = (
+        stopping_active_input
+        or stopping_active_discharge
+        or stopping_previous_target
+    )
     input_is_inactive = bool(
         float(command.input_limit_w) > 0
         and charge_power.valid
@@ -1955,10 +2141,14 @@ def _skip_matching_writes(command: DeviceCommand, state: Any) -> DeviceCommand:
             should_write_output,
             command.should_write_min_soc,
             command.should_write_max_soc,
+            command.should_write_offgrid_mode,
         )),
         skip_reason=(
             "none"
-            if any((should_write_mode, should_write_input, should_write_output))
+            if any((
+                should_write_mode, should_write_input, should_write_output,
+                command.should_write_offgrid_mode,
+            ))
             else command.skip_reason
         ),
     )
@@ -1969,6 +2159,7 @@ def _has_writes(command: DeviceCommand) -> bool:
         command.should_write_mode, command.should_write_input,
         command.should_write_output, command.should_write_min_soc,
         command.should_write_max_soc,
+        command.should_write_offgrid_mode,
     ))
 
 

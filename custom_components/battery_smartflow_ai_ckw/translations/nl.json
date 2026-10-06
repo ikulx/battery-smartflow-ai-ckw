@@ -11,6 +11,7 @@
       "debug_recording_already_stopped": "De debugopname is al gestopt."
     },
     "error": {
+      "invalid_shelly_host": "Vul alleen een hostnaam of IP-adres in, zonder schema, poort of pad.",
       "grid_split_missing": "Bij gebruik van twee sensoren moeten zowel netafname als netteruglevering zijn geselecteerd.",
       "unsupported_device": "Unsupported device model.",
       "invalid_token": "De indeling van het app-token is ongeldig.", "invalid_or_expired_token": "Het app-token is ongeldig of verlopen.", "cannot_connect": "Kan geen verbinding maken met Zendure Cloud.", "timeout": "Zendure Cloud antwoordde niet op tijd.", "invalid_response": "Zendure Cloud gaf een onverwacht antwoord.", "no_devices": "Er zijn geen Zendure-apparaten gevonden.", "no_mqtt_credentials": "Zendure gaf geen Cloud MQTT-toegang.", "duplicate_device_id": "Zendure gaf dubbele apparaatidentiteiten.", "incomplete_device": "Zendure gaf een onvolledig apparaat terug.", "device_not_found": "Het geselecteerde apparaat is niet meer beschikbaar.", "local_mqtt_required": "Voor dit Legacy-apparaat zijn de lokale MQTT-brokerinstellingen vereist.", "legacy_wifi_required": "Voer de wifi-SSID en het wachtwoord in voordat u het Legacy-apparaat configureert.", "legacy_port_required": "Zendure Legacy-apparaten vereisen lokale brokerpoort 1883.", "legacy_ble_device_not_found": "Het geselecteerde Legacy-apparaat is momenteel niet bereikbaar via Bluetooth.", "legacy_device_id_missing": "Zendure leverde geen identiteit voor het Legacy-apparaat.", "legacy_provision_failed": "Het Legacy-apparaat kon niet worden geconfigureerd. Controleer Bluetooth, wifi en brokerinstellingen."
@@ -73,7 +74,7 @@
           "input_limit_entity": "Number-entiteit voor het instellen van het laadvermogen in watt.",
           "output_limit_entity": "Number-entiteit voor het instellen van het ontlaadvermogen in watt.",
 		  "offgrid_power_entity": "Optionele sensor voor het vermogen van het Zendure off-grid / eilandstopcontact. Positieve waarden worden geïnterpreteerd als een actieve belasting op het eilandstopcontact.",
-          "offgrid_mode_entity": "Optionele select-sensor voor de Zendure off-grid / eilandstopcontact-modus. De modus wordt alleen gelezen en nooit door Battery SmartFlow AI ingesteld.",
+          "offgrid_mode_entity": "Optionele Home Assistant-select voor de Zendure off-gridmodus. Als deze is ingesteld, voegt BSFAI een aparte bediening toe en stuurt handmatige keuzes door naar deze select. De modus wordt nooit automatisch gewijzigd.",
 		  "feed_in_tariff": "Vergoeding per teruggeleverde kWh in dezelfde valuta-eenheid als de stroomprijzen. Deze dient als terugvalwaarde wanneer geen geldige dynamische terugleverprijs beschikbaar is.",
           "dynamic_feed_in_price_entity": "Optionele numerieke Home Assistant-sensor voor de actuele dynamische terugleverprijs. Een geldige sensorwaarde, inclusief nul of een negatieve prijs, krijgt voorrang op de vaste vergoeding."
         }
@@ -84,12 +85,20 @@
         "data": {
           "grid_power_entity": "Netvermogen (single)",
           "grid_import_entity": "Netafname (split)",
-          "grid_export_entity": "Netteruglevering (split)"
+          "grid_export_entity": "Netteruglevering (split)",
+          "shelly_pro_3em_host": "Hostnaam of IP-adres van de Shelly Pro 3EM Gen2",
+          "shelly_pro_3em_password": "Shelly Pro 3EM-wachtwoord (optioneel)",
+          "shelly_3em_host": "Hostnaam of IP-adres van de Shelly 3EM Gen1",
+          "shelly_3em_password": "Shelly 3EM-wachtwoord (optioneel)"
         },
         "data_description": {
           "grid_power_entity": "Eén sensor met positief vermogen bij afname en negatief bij teruglevering.",
           "grid_import_entity": "Sensor met actuele netafname in watt.",
-          "grid_export_entity": "Sensor met actuele netteruglevering in watt."
+          "grid_export_entity": "Sensor met actuele netteruglevering in watt.",
+          "shelly_pro_3em_host": "Lokale hostnaam of IP-adres van de Shelly Pro 3EM Gen2. Gebruik een gereserveerd of statisch adres.",
+          "shelly_pro_3em_password": "Optioneel apparaatwachtwoord. Shelly gebruikt lokale SHA-256-digest-authenticatie.",
+          "shelly_3em_host": "Lokale hostnaam of IP-adres van de klassieke Shelly 3EM. Gebruik een gereserveerd of statisch adres.",
+          "shelly_3em_password": "Optioneel wachtwoord. Gen1 gebruikt HTTP Basic-authenticatie zonder versleuteling; gebruik dit alleen op een vertrouwd lokaal netwerk."
         }
       },
       "grid": {
@@ -98,12 +107,20 @@
         "data": {
           "grid_power_entity": "Netvermogen (single)",
           "grid_import_entity": "Netafname (split)",
-          "grid_export_entity": "Netteruglevering (split)"
+          "grid_export_entity": "Netteruglevering (split)",
+          "shelly_pro_3em_host": "Hostnaam of IP-adres van de Shelly Pro 3EM Gen2",
+          "shelly_pro_3em_password": "Shelly Pro 3EM-wachtwoord (optioneel)",
+          "shelly_3em_host": "Hostnaam of IP-adres van de Shelly 3EM Gen1",
+          "shelly_3em_password": "Shelly 3EM-wachtwoord (optioneel)"
         },
         "data_description": {
           "grid_power_entity": "Eén sensor met positief vermogen bij afname en negatief bij teruglevering.",
           "grid_import_entity": "Sensor met actuele netafname in watt.",
-          "grid_export_entity": "Sensor met actuele netteruglevering in watt."
+          "grid_export_entity": "Sensor met actuele netteruglevering in watt.",
+          "shelly_pro_3em_host": "Lokale hostnaam of IP-adres van de Shelly Pro 3EM Gen2. Gebruik een gereserveerd of statisch adres.",
+          "shelly_pro_3em_password": "Optioneel apparaatwachtwoord. Shelly gebruikt lokale SHA-256-digest-authenticatie.",
+          "shelly_3em_host": "Lokale hostnaam of IP-adres van de klassieke Shelly 3EM. Gebruik een gereserveerd of statisch adres.",
+          "shelly_3em_password": "Optioneel wachtwoord. Gen1 gebruikt HTTP Basic-authenticatie zonder versleuteling; gebruik dit alleen op een vertrouwd lokaal netwerk."
         }
       },
       "user": {
@@ -237,7 +254,7 @@
           "input_limit_entity": "Instelbaar laadvermogen in watt.",
           "output_limit_entity": "Instelbaar ontlaadvermogen in watt.",
 		  "offgrid_power_entity": "Optionele sensor voor het vermogen van het Zendure off-grid / eilandstopcontact. Positieve waarden worden geïnterpreteerd als een actieve belasting op het eilandstopcontact.",
-          "offgrid_mode_entity": "Optionele select-sensor voor de Zendure off-grid / eilandstopcontact-modus. De modus wordt alleen gelezen en nooit door Battery SmartFlow AI ingesteld.",
+          "offgrid_mode_entity": "Optionele Home Assistant-select voor de Zendure off-gridmodus. Als deze is ingesteld, voegt BSFAI een aparte bediening toe en stuurt handmatige keuzes door naar deze select. De modus wordt nooit automatisch gewijzigd.",
 		  "feed_in_tariff": "Vergoeding per teruggeleverde kWh in dezelfde valuta-eenheid als de stroomprijzen. Deze dient als terugvalwaarde wanneer geen geldige dynamische terugleverprijs beschikbaar is.",
           "dynamic_feed_in_price_entity": "Optionele numerieke Home Assistant-sensor voor de actuele dynamische terugleverprijs. Een geldige sensorwaarde, inclusief nul of een negatieve prijs, krijgt voorrang op de vaste vergoeding."
         }
@@ -251,6 +268,7 @@
         "description": "Kies welk instellingenonderdeel je wilt bewerken. Apparaatspecifieke regelwaarden worden automatisch beheerd door het geselecteerde apparaatprofiel.",
         "menu_options": {
           "general": "Algemeen",
+          "dashboard": "HEMS-dashboard",
           "expert": "Expertmodus",
           "native_zendure": "Native Zendure-test",
           "debug": "Debugmodus"
@@ -258,6 +276,11 @@
       },
       "native_zendure": {"title": "Native Zendure-verbinding", "description": "Voer het Home Assistant-app-token uit de Zendure-app in. Een vast puntenmasker geeft aan dat een token is opgeslagen; het is niet het token of de lengte ervan. Alleen een apparaat selecteren activeert de besturing niet; daarvoor is de aparte schakelaar in de volgende stap vereist.", "data": {"native_zendure_app_token": "Zendure app-token", "disable_native_zendure_test": "Native Zendure-test uitschakelen en verwijderen"}, "data_description": {"native_zendure_app_token": "Laat het puntenmasker ongewijzigd om het opgeslagen token opnieuw te gebruiken, of vervang het door een volledig nieuw Home Assistant-app-token.", "disable_native_zendure_test": "Stopt de verbinding en verwijdert het token. Z-HA blijft ongewijzigd."}},
       "native_zendure_device": {"title": "Zendure-systeem selecteren", "description": "Zendure meldde deze apparaten:\n\n{device_summary}\n\nSelecteer precies één systeem. BSFAI kiest automatisch het lokale transport en kan Legacy-apparaten via Bluetooth configureren.", "data": {"native_zendure_selected_device": "Zendure-systeem", "native_zendure_control_transport": "Communicatieverbinding", "native_zendure_control_enabled": "Native Zendure-besturing inschakelen", "native_zendure_local_mqtt_server": "Lokale MQTT-server", "native_zendure_local_mqtt_port": "Lokale MQTT-poort", "native_zendure_local_mqtt_username": "Lokale MQTT-gebruikersnaam", "native_zendure_local_mqtt_password": "Lokaal MQTT-wachtwoord", "native_zendure_legacy_wifi_ssid": "Wifi-SSID van Legacy-apparaat", "native_zendure_legacy_wifi_password": "Wifi-wachtwoord van Legacy-apparaat", "native_zendure_legacy_provision": "Geselecteerd Legacy-apparaat nu configureren"}, "data_description": {"native_zendure_selected_device": "Er wordt precies één hoofdsysteem geselecteerd; packs kunnen niet afzonderlijk worden bestuurd. BSFAI bepaalt ZenSDK of Local MQTT aan de hand van de geverifieerde modelfamilie.", "native_zendure_control_transport": "Cloud werkt na accountdetectie. De aanbevolen lokale verbinding wordt pas gebruikt nadat actuele gegevens zijn ontvangen.", "native_zendure_control_enabled": "Stuurt BSFAI-opdrachten via het lokale transport van het model.", "native_zendure_local_mqtt_server": "Adres dat via Bluetooth naar het Legacy-apparaat wordt gestuurd en door BSFAI wordt gebruikt.", "native_zendure_local_mqtt_port": "Legacy-apparaten gebruiken standaardpoort 1883.", "native_zendure_local_mqtt_username": "Brokeraccount dat alleen door BSFAI wordt gebruikt.", "native_zendure_local_mqtt_password": "Laat het puntenmasker staan om het opgeslagen wachtwoord opnieuw te gebruiken.", "native_zendure_legacy_wifi_ssid": "Alleen nodig voor Bluetooth-configuratie.", "native_zendure_legacy_wifi_password": "Alleen nodig voor Bluetooth-configuratie.", "native_zendure_legacy_provision": "Verstuurt het brokeradres en de wifi-instellingen via Bluetooth. Het apparaat start opnieuw."}},
+      "dashboard": {
+        "title": "HEMS-dashboard",
+        "description": "Schakel het aangepaste HEMS-dashboard van Battery SmartFlow AI in of uit in de zijbalk.",
+        "data": {"hems_dashboard_enabled": "Toon het HEMS-dashboard in de zijbalk"}
+      },
       "general": {
         "title": "Battery SmartFlow AI instellen – Algemeen",
         "description": "Algemene installatie-instellingen. Apparaatspecifieke regelwaarden blijven onderdeel van het geselecteerde apparaatprofiel.",
@@ -365,7 +388,9 @@
       "options": {
         "none": "Geen netsensor",
         "single": "Eén sensor (+ / −)",
-        "split": "Twee sensoren (afname en teruglevering)"
+        "split": "Twee sensoren (afname en teruglevering)",
+        "shelly_pro_3em": "Shelly Pro 3EM Gen2 (lokaal)",
+        "shelly_3em": "Shelly 3EM Gen1 (lokaal)"
       }
     }
   },
@@ -384,8 +409,17 @@
         "state": {
           "standby": "Stand-by",
           "charge": "Laden",
+          "pv_surplus": "Laden op PV-overschot",
           "discharge": "Ontladen",
           "constant_discharge": "Constante ontlading"
+        }
+      },
+      "offgrid_mode_control": {
+        "name": "Off-gridmodus",
+        "state": {
+          "off": "Uit",
+          "normal": "Normaal",
+          "eco": "Economisch"
         }
       }
     },
@@ -403,7 +437,7 @@
         "name": "SoC maximum"
       },
       "max_charge": {
-        "name": "Max. laadvermogen"
+        "name": "Max. AC-laadvermogen"
       },
       "max_discharge": {
         "name": "Max. ontlaadvermogen"
@@ -434,6 +468,7 @@
       }
     },
     "sensor": {
+      "grid_power": {"name": "Netvermogen"},
       "native_zendure_status": {"name": "Status native Zendure-test", "state": {"disabled": "Niet ingesteld", "discovering": "Apparaten zoeken", "connecting": "Verbinden", "capturing": "Eerste gegevens verzamelen", "observing": "Observatie actief", "error": "Fout"}}, "native_zendure_control": {"name": "Native Zendure-besturing", "state": {"disabled_zha_active": "Uitgeschakeld", "native_transport_not_ready": "Geen gegevens", "native_local_handover_cloud_active": "Cloud", "native_cloud_mqtt_active": "Cloud", "native_zensdk_active": "ZenSDK", "native_local_mqtt_active": "Lokaal", "native_local_unsupported": "Niet ondersteund"}}, "native_zendure_device_count": {"name": "Gevonden native Zendure-apparaten"}, "native_zendure_message_count": {"name": "Ontvangen native Zendure-berichten"}, "native_zendure_last_message": {"name": "Laatste native Zendure-bericht"}, "native_zendure_last_capture": {"name": "Native Zendure-synchronisatiepakket"}, "native_zendure_error": {"name": "Native Zendure-fout"},
       "native_hardware_pack_count": {"name":"Battery count"},
       "native_hardware_capacity_kwh": {"name":"Nominal capacity"},
@@ -442,6 +477,7 @@
       "native_hardware_cell_delta_v": {"name":"Cell voltage difference"},
       "native_hardware_pack_status": {"name":"Status","state":{"idle":"Idle","charge":"Charging","discharge":"Discharging"}},
       "native_hardware_rssi": {"name": "Wi-Fi signal strength"},
+      "native_hardware_remaining_output_time": {"name": "Geschatte resterende tijd tot leeg"},
       "native_hardware_available_energy": {"name": "Available energy"},
       "native_hardware_roundtrip_efficiency": {"name": "Retourrendement"},
       "native_hardware_charged_energy": {"name": "Totale geladen energie"},
@@ -452,7 +488,15 @@
       "native_hardware_soc_max": {"name":"Hardware maximum SoC"},
       "native_hardware_heating": {"name":"Battery heating","state":{"on":"On","off":"Off"}},
       "native_hardware_setpoint_storage": {"name": "Opslag van instelwaarden", "state": {"persistent_storage": "Permanente opslag", "temporary_control": "Tijdelijke regeling", "unknown": "Onbekend"}},
-      "native_hardware_online": {"name": "Onlinestatus", "state": {"online": "Online", "offline": "Offline"}}, "native_hardware_soc_pct": {"name": "Laadstatus"}, "native_hardware_charge_power_w": {"name": "Laadvermogen"}, "native_hardware_discharge_power_w": {"name": "Ontlaadvermogen"}, "native_hardware_ac_input_power_w": {"name": "AC-ingangsvermogen"}, "native_hardware_ac_output_power_w": {"name": "AC-uitgangsvermogen"}, "native_hardware_pv_power_w": {"name": "PV-vermogen"}, "native_hardware_mode": {"name": "Bedrijfsmodus", "state": {"idle": "Stand-by", "charge": "Laden", "discharge": "Ontladen", "unknown": "Onbekend"}}, "native_hardware_temperature_c": {"name": "Temperatuur"}, "native_hardware_battery_voltage_v": {"name": "Accuspanning"}, "native_hardware_voltage_v": {"name": "Spanning"}, "native_hardware_current_a": {"name": "Stroom"}, "native_hardware_cell_min_v": {"name": "Laagste celspanning"}, "native_hardware_cell_max_v": {"name": "Hoogste celspanning"}, "native_hardware_state_code": {"name": "Statuscode"}, "native_hardware_pack_type": {"name": "Accutype"}, "native_hardware_fault_code": {"name": "Foutcode"}, "native_hardware_protection_active": {"name": "Beveiliging actief"}, "native_hardware_firmware": {"name": "Firmware"}, "native_hardware_product_id": {"name": "Product-ID"}, "native_hardware_profile": {"name": "Apparaatprofiel"}, "native_hardware_transport": {"name": "Communicatieroute", "state": {"home_assistant": "Home Assistant / Z-HA", "cloud_mqtt": "Cloud", "local_mqtt": "Lokaal", "zensdk": "ZenSDK"}}, "native_hardware_control_state": {"name": "Besturingsstatus", "state": {"observation": "Observatie", "eligible": "Geschikt", "enabled": "Ingeschakeld", "active": "Actief bestuurd", "hems_blocked": "Geblokkeerd door HEMS", "unsupported": "Niet ondersteund", "offline": "Offline"}}, "native_hardware_hems": {"name": "Zendure HEMS", "state": {"active": "Actief", "inactive": "Inactief", "unknown": "Onbekend", "stale": "Verouderd", "invalid": "Ongeldig", "unsupported": "Niet ondersteund"}}, "native_hardware_last_message": {"name": "Laatste gegevens ontvangen"},
+      "native_hardware_data_ready": {"name": "Apparaatgegevens", "state": {"not_ready": "Niet gereed", "ready": "Gereed", "unknown": "Onbekend"}},
+      "native_hardware_grid_connection": {"name": "Netaansluiting", "state": {"disconnected": "Niet verbonden", "connected": "Verbonden", "unknown": "Onbekend"}},
+      "native_hardware_pv_status": {"name": "PV-status", "state": {"inactive": "Inactief", "active": "Actief", "unknown": "Onbekend"}},
+      "native_hardware_soc_calibration": {"name": "SoC-kalibratie", "state": {"normal": "Normaal", "calibrating": "Kalibratie bezig", "unknown": "Onbekend"}},
+      "native_hardware_passthrough": {"name": "Doorvoer", "state": {"inactive": "Inactief", "active": "Actief", "unknown": "Onbekend"}},
+      "native_hardware_reverse_flow": {"name": "Terugstroom", "state": {"inactive": "Inactief", "active": "Actief", "unknown": "Onbekend"}},
+      "native_hardware_offgrid_mode": {"name": "Off-gridmodus", "state": {"standard": "Standaard", "economic": "Economisch", "disabled": "Uitgeschakeld", "unknown": "Onbekend"}},
+      "native_hardware_error_status": {"name": "Foutstatus", "state": {"no_error": "Geen fout", "error": "Fout", "unknown": "Onbekend"}},
+      "native_hardware_online": {"name": "Onlinestatus", "state": {"online": "Online", "offline": "Offline"}}, "native_hardware_soc_pct": {"name": "Laadstatus"}, "native_hardware_charge_power_w": {"name": "Laadvermogen"}, "native_hardware_discharge_power_w": {"name": "Ontlaadvermogen"}, "native_hardware_ac_input_power_w": {"name": "AC-ingangsvermogen"}, "native_hardware_ac_output_power_w": {"name": "AC-uitgangsvermogen"}, "native_hardware_pv_power_w": {"name": "PV-vermogen"}, "native_hardware_mode": {"name": "Bedrijfsmodus", "state": {"idle": "Stand-by", "charge": "Laden", "discharge": "Ontladen", "unknown": "Onbekend"}}, "native_hardware_temperature_c": {"name": "Temperatuur"}, "native_hardware_cell_temperature_c": {"name": "Maximale celtemperatuur"}, "native_hardware_battery_voltage_v": {"name": "Accuspanning"}, "native_hardware_voltage_v": {"name": "Spanning"}, "native_hardware_current_a": {"name": "Stroom"}, "native_hardware_cell_min_v": {"name": "Laagste celspanning"}, "native_hardware_cell_max_v": {"name": "Hoogste celspanning"}, "native_hardware_state_code": {"name": "Statuscode"}, "native_hardware_pack_type": {"name": "Accutype"}, "native_hardware_fault_code": {"name": "Foutcode"}, "native_hardware_protection_active": {"name": "Beveiliging actief"}, "native_hardware_firmware": {"name": "Firmware"}, "native_hardware_product_id": {"name": "Product-ID"}, "native_hardware_profile": {"name": "Apparaatprofiel"}, "native_hardware_transport": {"name": "Communicatieroute", "state": {"home_assistant": "Home Assistant / Z-HA", "cloud_mqtt": "Cloud", "local_mqtt": "Lokaal", "zensdk": "ZenSDK"}}, "native_hardware_control_state": {"name": "Besturingsstatus", "state": {"observation": "Observatie", "eligible": "Geschikt", "enabled": "Ingeschakeld", "active": "Actief bestuurd", "hems_blocked": "Geblokkeerd door HEMS", "unsupported": "Niet ondersteund", "offline": "Offline"}}, "native_hardware_hems": {"name": "Zendure HEMS", "state": {"active": "Actief", "inactive": "Inactief", "unknown": "Onbekend", "stale": "Verouderd", "invalid": "Ongeldig", "unsupported": "Niet ondersteund"}}, "native_hardware_last_message": {"name": "Laatste gegevens ontvangen"},
       "device_profile": {
         "name": "Actief apparaatprofiel"
       },
@@ -546,6 +590,9 @@
       "learned_planning_deadline": {
         "name": "Laadplanning: deadline"
       },
+      "learned_planning_coverage_end": {
+        "name": "Diagnose: einde van geplande piekprijsdekking"
+      },
       "learned_planning_required_charge_energy_kwh": {
         "name": "Laadplanning: bijlaadenergie"
       },
@@ -596,6 +643,9 @@
       },
       "learned_planning_forecast_adjustment_kwh": {
         "name": "Diagnose: prognosetoeslag lerende planning"
+      },
+      "learned_planning_pv_forecast_credit_kwh": {
+        "name": "Diagnose: PV-prognose verrekend in laadplanning"
       },
       "learned_planning_effective_charge_power_w": {
         "name": "Diagnose: effectief laadvermogen lerende planning"
@@ -747,9 +797,9 @@
         }
       },
       "soc_limit_status": {
-        "name": "SoC-limietstatus",
+        "name": "Hardware SoC-limietstatus",
         "state": {
-          "not_configured": "Geen SoC-limietsensor geconfigureerd",
+          "not_configured": "Hardware SoC-limietstatus niet beschikbaar",
           "no_limit": "Geen limiet actief",
           "upper_limit_active": "Bovenste SoC-limiet actief (laden geblokkeerd)",
           "lower_limit_active": "Onderste SoC-limiet actief (ontladen geblokkeerd)"
@@ -932,7 +982,7 @@
         }
       },
       "avg_charge_price": {
-        "name": "Prijzen – Gem. eerdere batterijlaadprijs"
+        "name": "Prijzen – Gem. historische acculaadprijs (SoC-schatting)"
       },
       "profit_eur": {
         "name": "Balans sinds start – Eerdere handelswinst"
@@ -964,6 +1014,7 @@
       "economics_total_native_pv_to_home_kwh": {"name": "Energie sinds start – Eigen PV direct naar huis"},
       "economics_average_grid_charge_price": {"name": "Prijzen – Gem. netlaadprijs"},
       "economics_average_pv_opportunity_value": {"name": "Prijzen – Gem. PV-opportuniteitswaarde"},
+      "economics_average_battery_charge_price": {"name": "Prijzen – Gem. batterijlaadprijs (net + PV)"},
       "economics_average_export_price": {"name": "Prijzen – Gem. terugleverprijs"},
       "economics_average_battery_discharge_value": {"name": "Prijzen – Gem. waarde batterijontlading"},
       "economics_average_native_pv_to_home_return": {"name": "Prijzen – Gem. waarde eigen PV direct naar huis"},

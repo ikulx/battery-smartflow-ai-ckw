@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, List, Literal, Optional
 
-from .const import MANUAL_CONST_DISCHARGE
+from .const import MANUAL_CONST_DISCHARGE, MANUAL_PV_SURPLUS
 from .core.models.runtime import AiMode, DecisionContext, RuntimeSnapshot
 from .market_price import (
     MarketPrice,
@@ -652,6 +652,17 @@ class PvHouseLoadPassthroughRule(BaseRule):
         if not bool(ctx.pv_houseload_passthrough_active):
             return None
 
+        # A forecast-adjusted learned plan can identify an uncovered energy
+        # need that must be charged before its price deadline. Do not let the
+        # active passthrough latch mask that planned charge; the normal PV rule
+        # still gets first opportunity to use real surplus below.
+        plan = getattr(ctx, "learned_charge_plan", None)
+        if (
+            engine._learned_planning_has_usable_charge_need(ctx)
+            and str(getattr(plan, "mode", "") or "") == "charge"
+        ):
+            return None
+
         target_w = max(0.0, float(ctx.pv_houseload_passthrough_target_w or 0.0))
         if target_w <= 0.0:
             return None
@@ -746,7 +757,11 @@ class PvRule(BaseRule):
             return None
 
         planning = engine._evaluate_adaptive_planning(ctx)
-        if planning is not None:
+        manual_pv_surplus = bool(
+            ctx.ai_mode == "manual"
+            and ctx.manual_action == MANUAL_PV_SURPLUS
+        )
+        if planning is not None and not manual_pv_surplus:
             return None
 
         if ctx.soc >= ctx.soc_max:
@@ -1018,6 +1033,12 @@ class AutarkyLoadCoverageRule(BaseRule):
 class ManualRule(BaseRule):
     def evaluate(self, engine, ctx):
         if ctx.ai_mode != "manual":
+            return None
+
+        if ctx.manual_action == MANUAL_PV_SURPLUS:
+            # Let PvRule apply the existing export threshold, hysteresis and
+            # power-delta logic. Without confirmed surplus it cannot request
+            # grid charging; price rules stay inactive in manual mode.
             return None
 
         if ctx.manual_action == "charge":
@@ -1660,10 +1681,15 @@ class DecisionEngine:
         return base_price * valley_factor
 
     def _compute_economic_discharge_threshold(self, ctx: DecisionContext) -> Optional[float]:
-        if ctx.avg_charge_price is None:
+        charge_price = (
+            ctx.economics_average_battery_charge_price
+            if ctx.economics_average_battery_charge_price is not None
+            else ctx.avg_charge_price
+        )
+        if charge_price is None:
             return None
         try:
-            avg_charge_price = float(ctx.avg_charge_price)
+            avg_charge_price = float(charge_price)
             margin_pct = float(ctx.profit_margin_pct)
         except Exception:
             return None
@@ -1691,7 +1717,11 @@ class DecisionEngine:
 
         configured_expensive_threshold = max(0.0, configured_expensive_threshold)
 
-        avg_charge_price = ctx.avg_charge_price
+        avg_charge_price = (
+            ctx.economics_average_battery_charge_price
+            if ctx.economics_average_battery_charge_price is not None
+            else ctx.avg_charge_price
+        )
         try:
             avg_charge_price_float = (
                 float(avg_charge_price)

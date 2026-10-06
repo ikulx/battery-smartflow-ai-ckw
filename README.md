@@ -51,6 +51,20 @@ V5 is now the **current stable release**. Start with the illustrated
 [V5 quick start](docs/user-guide.md#v5-quick-start-connect-zendure-directly)
 or the [German guide](docs/anleitung.md#v5-schnellstart-zendure-direkt-verbinden).
 
+## V5.1.0 adds the BSFAI HEMS Portal
+
+V5.1.0 introduces an optional, purpose-built dashboard for energy flows,
+forecasts, economics, controls, and Zendure hardware topology. It includes
+interactive history charts and a left-to-right battery SoC view. Enable it from
+the integration's settings to add **BSFAI Portal** to the Home Assistant
+sidebar. The portal uses existing Home Assistant entities and services; it is
+not a second hardware controller.
+
+![Battery SmartFlow AI Portal V5.1.0 overview](docs/images/v510_portal_overview.png)
+
+See the [English portal guide](docs/user-guide.md#v510-the-bsfai-portal) or the
+[German portal guide](docs/anleitung.md#v510-das-bsfai-portal).
+
 ---
 
 # 🌍 Language
@@ -238,6 +252,8 @@ sources during setup; multiple sources are combined automatically.
 
 # 🛠 Installation (HACS)
 
+Requires Home Assistant Core 2026.8.0 or newer.
+
 [![HACS Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ikulx&repository=battery-smartflow-ai-ckw&category=integration)
 
 1. Open HACS
@@ -320,7 +336,7 @@ with an off-grid / island socket:
 * Off-grid power
 * Off-grid mode
 
-The off-grid mode is only read by Battery SmartFlow AI. It is **never** controlled or changed by the integration.
+When the selected native ZenSDK device reports `gridOffMode`, BSFAI exposes a guarded control for explicit user changes and verifies the result through readback. If native control is unavailable, an optional existing Home Assistant select can be configured as a manual forwarding fallback. BSFAI never changes this mode automatically.
 
 Positive off-grid power values are interpreted as an active load at the island socket.
 
@@ -626,6 +642,20 @@ V5 ist jetzt die **aktuelle stabile Version**. Der bebilderte
 und der [englische User Guide](docs/user-guide.md#v5-quick-start-connect-zendure-directly)
 führen durch die neue Ersteinrichtung.
 
+## V5.1.0 bringt das BSFAI-HEMS-Portal
+
+V5.1.0 ergänzt ein optionales, eigens gestaltetes Dashboard für Energieflüsse,
+Prognosen, Wirtschaftlichkeit, Steuerung und Zendure-Hardware-Topologie. Es
+bietet Verlaufsdiagramme und eine SoC-Füllstandsanzeige für Akkus. Aktiviere
+es in den Integrationseinstellungen, damit **BSFAI Portal** in der
+Home-Assistant-Seitenleiste erscheint. Das Portal verwendet vorhandene
+Home-Assistant-Entitäten und -Dienste und ist kein zweiter Hardware-Regler.
+
+![Übersicht des Battery SmartFlow AI Portals V5.1.0](docs/images/v510_portal_overview.png)
+
+Mehr dazu in der [deutschen Portal-Anleitung](docs/anleitung.md#v510-das-bsfai-portal)
+oder im [englischen User Guide](docs/user-guide.md#v510-the-bsfai-portal).
+
 ---
 
 ## Was macht diese Integration?
@@ -807,6 +837,8 @@ werden automatisch zusammengeführt.
 
 # 🛠 Installation (HACS)
 
+Erfordert Home Assistant Core 2026.8.0 oder neuer.
+
 [![HACS Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ikulx&repository=battery-smartflow-ai-ckw&category=integration)
 
 1. HACS öffnen
@@ -891,7 +923,11 @@ optionale Sensoren konfiguriert werden:
 * Off-Grid-Leistung
 * Off-Grid-Modus
 
-Der Off-Grid-Modus wird von Battery SmartFlow AI nur gelesen. Er wird **niemals** durch die Integration gesetzt oder verändert.
+Wenn das ausgewählte native ZenSDK-Gerät `gridOffMode` meldet, stellt BSFAI
+eine abgesicherte Steuerung für manuelle Änderungen bereit und prüft das
+Ergebnis per Rückmeldung. Falls native Steuerung nicht verfügbar ist, kann
+optional ein vorhandener Home-Assistant-Select als manuelle Weiterleitung
+konfiguriert werden. Die Automatik ändert den Modus niemals selbstständig.
 
 Positive Off-Grid-Leistungswerte werden als aktive Last an der Inselsteckdose interpretiert.
 
@@ -997,6 +1033,11 @@ Unterstützte Off-Grid-Moduswerte:
 * `off`
 * `normal`
 * `eco`
+
+Wenn ein vorhandener Home-Assistant-Select für den Off-Grid-Modus konfiguriert
+ist, stellt BSFAI zusätzlich einen eigenen Select bereit und leitet manuelle
+Auswahländerungen an diesen weiter. Ohne konfigurierten Select gibt es keine
+Steuerung. Die Automatik ändert den Off-Grid-Modus niemals selbstständig.
 
 Bei aktiver Off-Grid-Last kann Battery SmartFlow AI einen technischen Unterstützungsmodus verwenden:
 

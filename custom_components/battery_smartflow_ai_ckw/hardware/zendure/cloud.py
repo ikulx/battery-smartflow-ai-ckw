@@ -12,6 +12,8 @@ import binascii
 from copy import deepcopy
 from dataclasses import dataclass, field
 import hashlib
+import logging
+import re
 import secrets
 import time
 from typing import Any, Awaitable, Callable, Mapping, Protocol
@@ -31,6 +33,9 @@ CLIENT_ID = "zenHa"
 # Required by Zendure's HA endpoint.  Keep this protocol signing material in
 # the transport adapter; it is not user/account data and must not leave it.
 _SIGNING_KEY = "C*dafwArEOXK"
+_LOGGER = logging.getLogger(__name__)
+_DIAGNOSTIC_FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
+_REDACTED_FIELD_NAME = "[redacted]"
 
 
 class ZendureCloudError(Exception):
@@ -217,7 +222,29 @@ def _parse_bootstrap(payload: Any) -> ZendureCloudBootstrap:
     devices = tuple(_parse_device(item) for item in raw_devices)
     candidate_ids = [item.candidate.candidate_id for item in devices]
     if len(candidate_ids) != len(set(candidate_ids)):
-        raise ZendureCloudError("duplicate_device_id")
+        unique_devices: list[ZendureCloudDevice] = []
+        unique_raw_devices: list[Mapping[str, Any]] = []
+        first_by_candidate: dict[
+            str, tuple[ZendureCloudDevice, Mapping[str, Any]]
+        ] = {}
+        redundant_records = True
+        for device, raw in zip(devices, raw_devices, strict=True):
+            candidate_id = device.candidate.candidate_id
+            first = first_by_candidate.get(candidate_id)
+            if first is None:
+                first_by_candidate[candidate_id] = (device, raw)
+                unique_devices.append(device)
+                unique_raw_devices.append(raw)
+                continue
+            if not _same_supported_device_metadata(first[1], raw):
+                redundant_records = False
+        _log_duplicate_device_identities(
+            devices, raw_devices, redundant_records_ignored=redundant_records
+        )
+        if not redundant_records:
+            raise ZendureCloudError("duplicate_device_id")
+        devices = tuple(unique_devices)
+        raw_devices = unique_raw_devices
     mqtt = _parse_mqtt(data.get("mqtt"))
     raw_device_list = tuple(
         deepcopy(dict(item)) for item in raw_devices if isinstance(item, Mapping)
@@ -227,6 +254,115 @@ def _parse_bootstrap(payload: Any) -> ZendureCloudBootstrap:
         mqtt=mqtt,
         raw_device_list=raw_device_list,
     )
+
+
+def _log_duplicate_device_identities(
+    devices: tuple[ZendureCloudDevice, ...],
+    raw_devices: list[Any],
+    *,
+    redundant_records_ignored: bool,
+) -> None:
+    """Log duplicate positions and a privacy-safe metadata comparison."""
+    seen: dict[str, int] = {}
+    duplicates: list[tuple[int, int, str, str, dict[str, Any]]] = []
+    safe_fields = {
+        "deviceKey": "device_key",
+        "snNumber": "serial_number",
+        "productKey": "product_key",
+        "productModel": "product_model",
+        "deviceName": "device_name",
+        "online": "online",
+        "isOnline": "is_online",
+        "packNum": "pack_count",
+        "packData": "pack_data",
+        "ip": "ip_address",
+    }
+    for position, device in enumerate(devices, start=1):
+        identity = device.candidate.identity
+        key = device.candidate.candidate_id
+        first_position = seen.get(key)
+        if first_position is None:
+            seen[key] = position
+            continue
+        identity_source = "deviceKey" if identity.device_id else "serialNumber"
+        model = identity.product_model or "unknown"
+        first_raw = raw_devices[first_position - 1]
+        current_raw = raw_devices[position - 1]
+        if not isinstance(first_raw, Mapping) or not isinstance(current_raw, Mapping):
+            comparison = {"records_identical": False, "comparison_available": False}
+        else:
+            differing_fields = tuple(
+                field
+                for field in safe_fields
+                if first_raw.get(field) != current_raw.get(field)
+            )
+            known_fields = set(safe_fields)
+            first_other = {
+                field: value for field, value in first_raw.items() if field not in known_fields
+            }
+            current_other = {
+                field: value for field, value in current_raw.items() if field not in known_fields
+            }
+            missing = object()
+            other_differing_fields = tuple(
+                sorted(
+                    {
+                        _safe_diagnostic_field_name(field)
+                        for field in set(first_other) | set(current_other)
+                        if first_other.get(field, missing)
+                        != current_other.get(field, missing)
+                    }
+                )
+            )
+            comparison = {
+                "records_identical": dict(first_raw) == dict(current_raw),
+                "differing_fields": differing_fields,
+                "other_fields_differ": first_other != current_other,
+                "other_differing_fields": other_differing_fields,
+            }
+        duplicates.append(
+            (first_position, position, identity_source, model, comparison)
+        )
+
+    action = (
+        "redundant records with matching supported metadata were ignored"
+        if redundant_records_ignored
+        else "conflicting duplicate identities were rejected"
+    )
+    _LOGGER.warning(
+        "Zendure device discovery returned duplicate identities; %s; "
+        "duplicate positions and sanitized metadata comparison "
+        "(no identifier or field values): %s",
+        action,
+        duplicates,
+    )
+
+
+def _same_supported_device_metadata(
+    first: Mapping[str, Any], current: Mapping[str, Any]
+) -> bool:
+    """Allow duplicate rows only when all behavior-relevant fields agree."""
+    supported_fields = (
+        "deviceKey",
+        "snNumber",
+        "productKey",
+        "productModel",
+        "deviceName",
+        "online",
+        "isOnline",
+        "packNum",
+        "packData",
+        "ip",
+    )
+    return all(first.get(field) == current.get(field) for field in supported_fields)
+
+
+def _safe_diagnostic_field_name(field: Any) -> str:
+    """Return a field name without logging its associated value."""
+    name = str(field)
+    if not _DIAGNOSTIC_FIELD_NAME_PATTERN.fullmatch(name):
+        return _REDACTED_FIELD_NAME
+    return name
 
 
 _KNOWN_DEVICE_FIELDS = {

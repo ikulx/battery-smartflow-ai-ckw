@@ -13,6 +13,7 @@
 ## Table of Contents
 
 * [V5 quick start: connect Zendure directly](#v5-quick-start-connect-zendure-directly)
+* [V5.1.0: the BSFAI Portal](#v510-the-bsfai-portal)
 * [Chapter 1 – What does Battery SmartFlow AI do?](#chapter-1--what-does-battery-smartflow-ai-do)
 * [Chapter 2 – Mandatory Requirements](#chapter-2--mandatory-requirements)
 * [Chapter 3 – Installation](#chapter-3--installation)
@@ -116,6 +117,56 @@ selected device, communication path and actual data reception. The *Zendure
 initial-sync JSON* and a time-limited BSFAI debug recording can help with
 support; review both files for personal information before sharing them. Do
 not enable native control alongside active Z-HA regulation.
+
+## V5.1.0: the BSFAI Portal
+
+V5.1.0 adds an optional standalone HEMS-style dashboard. It brings current
+Home Assistant readings and existing BSFAI features together in a dedicated
+interface. The portal does not add another control loop or communicate with
+Zendure hardware directly: its controls continue to use the existing Home
+Assistant entities and services.
+
+Enable it under **Settings → Devices & services → Battery SmartFlow AI →
+Configure**, then select **Show the HEMS dashboard in the sidebar**. The
+**BSFAI Portal** entry will then appear in the Home Assistant sidebar.
+
+### Overview and hardware topology
+
+The overview shows live readings, system health, and discovered SolarFlow
+devices with their battery packs. State of charge appears as a colored fill;
+open the details for a system or battery pack when you need more telemetry.
+
+![BSFAI Portal 5.1.0: energy overview, system health, and hardware topology](images/v510_portal_overview.png)
+
+### Energy and forecast
+
+**Energy & Forecast** combines live power, accumulated energy flows, and solar
+forecasts. Forecasts come from the selected Home Assistant Energy forecast
+integration, rather than being hard-coded to Solcast. Clickable readings open
+their history charts for hour-to-month ranges when Home Assistant has recorded
+history for the sensor.
+
+![BSFAI Portal 5.1.0: live power, energy flows, and solar forecast](images/v510_portal_energy_forecast.png)
+
+### Economics
+
+The economics view brings together price and charge planning, daily costs,
+revenue, battery benefit, and weighted averages. The sensors remain available
+individually in Home Assistant; the portal organizes them into a concise view
+and offers direct history navigation for supported readings.
+
+![BSFAI Portal 5.1.0: price planning and economics](images/v510_portal_economics.png)
+
+### Controls
+
+The **Controls** view operates existing BSFAI select and number entities.
+Changes are saved through Home Assistant. Hardware SoC limits are shown for
+reference and are not writable from this portal.
+
+![BSFAI Portal 5.1.0: operating mode, settings, and hardware SoC limits](images/v510_portal_controls.png)
+
+The displayed readings depend on the entities and forecast providers you have
+configured. Missing or unavailable sources are identified in the portal.
 
 ## Upgrade from V4.7.4 to V5
 
@@ -242,6 +293,8 @@ Battery SmartFlow AI is not intended to switch as much as possible, but rather:
 ---
 
 # Chapter 2 – Mandatory Requirements
+
+Home Assistant Core 2026.8.0 or newer is required.
 
 In order for Battery SmartFlow AI to work correctly and stably, certain settings must be observed.
 
@@ -699,6 +752,74 @@ Battery SmartFlow AI uses this data to:
 * economic discharging
 * Price window evaluation
 
+#### EDF Tempo with a template sensor
+
+Users of the French EDF Tempo tariff can expose its hourly prices through a
+template sensor's `rates` attribute. This example requires the EDF Tempo
+integration. Replace the entity IDs with the IDs used by your installation:
+
+```yaml
+template:
+  - sensor:
+      - name: "Tempo prix horaires"
+        unique_id: tempo_prix_horaires
+        device_class: monetary
+        unit_of_measurement: "EUR/kWh"
+        availability: >
+          {{ states('sensor.tarif_actuel_tempo_6kva_ttc')
+             not in ['unknown', 'unavailable', 'none', ''] }}
+        state: >
+          {{ states('sensor.tarif_actuel_tempo_6kva_ttc') | float }}
+        attributes:
+          rates: >
+            {% set colors = {
+              'yesterday': states('sensor.tarif_tempo_couleur_hier') | lower,
+              'today': states('sensor.tarif_tempo_couleur_aujourd_hui') | lower,
+              'tomorrow': states('sensor.tarif_tempo_couleur_demain') | lower
+            } %}
+            {% set tariffs = {
+              'bleu_hc': states('sensor.tarif_bleu_tempo_heures_creuses_ttc') | float(none),
+              'bleu_hp': states('sensor.tarif_bleu_tempo_heures_pleines_ttc') | float(none),
+              'blanc_hc': states('sensor.tarif_blanc_tempo_heures_creuses_ttc') | float(none),
+              'blanc_hp': states('sensor.tarif_blanc_tempo_heures_pleines_ttc') | float(none),
+              'rouge_hc': states('sensor.tarif_rouge_tempo_heures_creuses_ttc') | float(none),
+              'rouge_hp': states('sensor.tarif_rouge_tempo_heures_pleines_ttc') | float(none)
+            } %}
+            {% set ns = namespace(prices=[]) %}
+            {% for day_offset in range(2) %}
+              {% for hour in range(24) %}
+                {% if day_offset == 0 and hour < 6 %}
+                  {% set color = colors.yesterday %}
+                {% elif day_offset == 0 %}
+                  {% set color = colors.today %}
+                {% elif hour < 6 %}
+                  {% set color = colors.today %}
+                {% else %}
+                  {% set color = colors.tomorrow %}
+                {% endif %}
+                {% set period = 'hc' if hour < 6 or hour >= 22 else 'hp' %}
+                {% set price = tariffs.get(color ~ '_' ~ period) %}
+                {% set start = today_at('%02d:00' | format(hour)) + timedelta(days=day_offset) %}
+                {% if price is not none %}
+                  {% set ns.prices = ns.prices + [{
+                    'starts_at': start.isoformat(),
+                    'total': price,
+                    'energy': price,
+                    'tax': 0,
+                    'level': color,
+                    'period': period
+                  }] %}
+                {% endif %}
+              {% endfor %}
+            {% endfor %}
+            {{ ns.prices }}
+```
+
+Then select the new sensor as the dynamic price source in BSFAI. Unknown tariff
+colors or prices are intentionally omitted; they are never created as
+`0.00 €/kWh`, which could otherwise make unpublished prices look artificially
+cheap to the charge planner.
+
 ---
 
 ### Current electricity price
@@ -782,7 +903,18 @@ Battery SmartFlow AI sets the desired discharging power in watts.
 
 Grid measurement is crucial for good control.
 
-Battery SmartFlow AI supports three variants.
+In addition to Home Assistant sensors, Battery SmartFlow AI supports direct local
+polling of the Shelly Pro 3EM Gen2 and the classic Shelly 3EM (Gen1). Select the
+matching Shelly mode and enter its hostname or IP address. A device password is
+optional.
+
+The classic 3EM is polled locally through its Gen1 HTTP interface. This connection
+is unencrypted, so use it only on a trusted local network. A reserved or static IP
+address is recommended.
+
+For both Shelly modes, positive total power means grid import and negative power
+means export. The Pro 3EM Gen2 and classic 3EM Gen1 are separate device options
+using different local interfaces.
 
 ---
 
@@ -979,7 +1111,9 @@ or discharging strategy.
 
 ### Off-grid mode
 
-Off-grid mode is an optional select sensor.
+Off-grid mode is reported as native telemetry when available. A manual control
+is exposed for supported native ZenSDK devices; an existing Home Assistant
+select can optionally serve as a fallback.
 
 Typical internal states:
 
@@ -989,11 +1123,13 @@ Typical internal states:
 | `normal` | Normal operation |
 | `eco` | economical off-grid mode |
 
-Battery SmartFlow AI reads only in this mode.
+Battery SmartFlow AI reads this mode as control context. Manual choices are
+written through the selected native ZenSDK connection when supported; otherwise
+they can be forwarded to a configured Home Assistant select.
 
 > [!IMPORTANT]
-> Battery SmartFlow AI does not set or change off-grid mode.
-> Control remains with Zendure App, ZHA or the Zendure integration used.
+> BSFAI automation never changes off-grid mode automatically. Native writes
+> are offered only for approved ZenSDK devices with fresh telemetry.
 
 ---
 
@@ -1031,9 +1167,9 @@ valid candidates for:
 
 ### Limitation
 
-Battery SmartFlow AI does not change the device's off-grid mode. Which
-The power that the island socket actually provides remains dependent on Zendure.
-Firmware, device limits and device configuration dependent.
+Manual off-grid mode changes are forwarded to the configured select. The power
+provided by the island socket remains dependent on Zendure firmware, device
+limits and device configuration.
 
 ---
 
@@ -2928,8 +3064,9 @@ start a debug recording; the package contains the read power, mode, detected
 load and internal control reason.
 
 > [!NOTE]
-> Battery SmartFlow AI only reads the off-grid mode and does not directly
-> control the off-grid socket. The actual off-grid power remains the
+> Battery SmartFlow AI uses off-grid mode as context. Manual changes are sent
+> natively when the selected ZenSDK path is approved; automation never changes
+> this mode. The actual off-grid power remains the
 > responsibility of Zendure firmware and the device configuration.
 
 ---

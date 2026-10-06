@@ -13,6 +13,7 @@
 ## Inhaltsverzeichnis
 
 * [V5-Schnellstart: Zendure direkt verbinden](#v5-schnellstart-zendure-direkt-verbinden)
+* [V5.1.0: Das BSFAI-Portal](#v510-das-bsfai-portal)
 * [Kapitel 1 – Was macht Battery SmartFlow AI?](#kapitel-1--was-macht-battery-smartflow-ai)
 * [Kapitel 2 – Zwingende Voraussetzungen](#kapitel-2--zwingende-voraussetzungen)
 * [Kapitel 3 – Installation](#kapitel-3--installation)
@@ -123,6 +124,58 @@ Datenempfang. Für Support können das *Zendure-Initial-Sync-JSON* und eine
 zeitlich begrenzte BSFAI-Debug-Aufzeichnung hilfreich sein; prüfe beide Dateien
 vor dem Teilen auf persönliche Daten. Schalte die native Steuerung nicht
 parallel zu einer aktiven Z-HA-Regelung ein.
+
+## V5.1.0: Das BSFAI-Portal
+
+V5.1.0 ergänzt ein optionales, eigenständiges Dashboard im Stil eines HEMS-
+Portals. Es fasst aktuelle Home-Assistant-Werte und vorhandene BSFAI-Funktionen
+in einer eigenen Oberfläche zusammen. Das Portal aktiviert keine zusätzliche
+Regelung und spricht die Zendure-Hardware nicht direkt an: Steuerelemente
+verwenden weiterhin die vorhandenen Home-Assistant-Entitäten und -Dienste.
+
+Aktiviere es über **Einstellungen → Geräte & Dienste → Battery SmartFlow AI →
+Konfigurieren** und die Option **HEMS-Dashboard in der Seitenleiste anzeigen**.
+Anschließend erscheint **BSFAI Portal** in der Home-Assistant-Seitenleiste.
+
+### Übersicht und Hardware-Topologie
+
+Die Übersicht zeigt Live-Werte, Systemzustand und erkannte SolarFlow-Geräte
+mit zugehörigen Akku-Packs. Der SoC wird als farbiger Füllstand dargestellt;
+Details zu System und Akku-Pack lassen sich gezielt öffnen.
+
+![BSFAI-Portal V5.1.0: Energieübersicht, Systemzustand und Hardware-Topologie](images/v510_portal_overview.png)
+
+### Energie und Prognose
+
+Der Bereich **Energie & Prognose** zeigt Momentanleistungen, aufsummierte
+Energieflüsse und PV-Prognosen. Die Prognose wird über die ausgewählte
+Home-Assistant-Energieprognose-Integration bezogen, nicht fest von Solcast.
+Klickbare Messwerte öffnen ihre Verlaufsdiagramme mit Zeiträumen von Stunde
+bis Monat, sofern Home Assistant dafür Verlauf gespeichert hat.
+
+![BSFAI-Portal V5.1.0: Momentanleistung, Energieflüsse und Solarprognose](images/v510_portal_energy_forecast.png)
+
+### Wirtschaftlichkeit
+
+Die Wirtschaftlichkeitsansicht bündelt Preis- und Ladeplanung, Tageskosten,
+Erlöse, Batterienutzen und gewichtete Durchschnittswerte. Die Sensoren bleiben
+auch einzeln in Home Assistant verfügbar; das Portal stellt sie übersichtlich
+zusammen und bietet für passende Messwerte den direkten Zugang zum Verlauf.
+
+![BSFAI-Portal V5.1.0: Preisplanung und Wirtschaftlichkeit](images/v510_portal_economics.png)
+
+### Steuerung
+
+Im Bereich **Steuerung** lassen sich vorhandene BSFAI-Auswahl- und
+Zahlen-Entitäten bedienen. Änderungen werden über Home Assistant gespeichert;
+die Anzeige nennt weiterhin die verfügbaren Hardware-SoC-Grenzen zur
+Information.
+
+![BSFAI-Portal V5.1.0: Betriebsart, Einstellungen und Hardware-SoC-Grenzen](images/v510_portal_controls.png)
+
+Die Darstellung und verfügbare Werte richten sich nach den eingerichteten
+Entitäten und Prognosequellen. Nicht konfigurierte oder nicht verfügbare
+Messwerte werden im Portal entsprechend gekennzeichnet.
 
 ## Upgrade von V4.7.4 auf V5
 
@@ -253,6 +306,8 @@ Battery SmartFlow AI soll nicht möglichst viel schalten, sondern:
 # Kapitel 2 – Zwingende Voraussetzungen
 
 Damit Battery SmartFlow AI korrekt und stabil arbeiten kann, müssen bestimmte Einstellungen zwingend beachtet werden.
+
+Voraussetzung ist Home Assistant Core 2026.8.0 oder neuer.
 
 Die Integration übernimmt die Steuerung des ausgewählten Zendure-Systems.
 Parallele oder widersprüchliche Steuerungen führen zu Instabilität. Z-HA ist
@@ -712,6 +767,75 @@ Battery SmartFlow AI nutzt diese Daten für:
 * wirtschaftliche Entladung
 * Preisfensterbewertung
 
+#### EDF Tempo mit einem Template-Sensor
+
+Nutzer des französischen EDF-Tempo-Tarifs können die stündlichen Tarife über
+einen Template-Sensor als `rates`-Attribut bereitstellen. Das Beispiel setzt die
+EDF-Tempo-Integration voraus. Ersetze die Entity-IDs bei Bedarf durch die IDs
+deiner Sensoren:
+
+```yaml
+template:
+  - sensor:
+      - name: "Tempo prix horaires"
+        unique_id: tempo_prix_horaires
+        device_class: monetary
+        unit_of_measurement: "EUR/kWh"
+        availability: >
+          {{ states('sensor.tarif_actuel_tempo_6kva_ttc')
+             not in ['unknown', 'unavailable', 'none', ''] }}
+        state: >
+          {{ states('sensor.tarif_actuel_tempo_6kva_ttc') | float }}
+        attributes:
+          rates: >
+            {% set colors = {
+              'yesterday': states('sensor.tarif_tempo_couleur_hier') | lower,
+              'today': states('sensor.tarif_tempo_couleur_aujourd_hui') | lower,
+              'tomorrow': states('sensor.tarif_tempo_couleur_demain') | lower
+            } %}
+            {% set tariffs = {
+              'bleu_hc': states('sensor.tarif_bleu_tempo_heures_creuses_ttc') | float(none),
+              'bleu_hp': states('sensor.tarif_bleu_tempo_heures_pleines_ttc') | float(none),
+              'blanc_hc': states('sensor.tarif_blanc_tempo_heures_creuses_ttc') | float(none),
+              'blanc_hp': states('sensor.tarif_blanc_tempo_heures_pleines_ttc') | float(none),
+              'rouge_hc': states('sensor.tarif_rouge_tempo_heures_creuses_ttc') | float(none),
+              'rouge_hp': states('sensor.tarif_rouge_tempo_heures_pleines_ttc') | float(none)
+            } %}
+            {% set ns = namespace(prices=[]) %}
+            {% for day_offset in range(2) %}
+              {% for hour in range(24) %}
+                {% if day_offset == 0 and hour < 6 %}
+                  {% set color = colors.yesterday %}
+                {% elif day_offset == 0 %}
+                  {% set color = colors.today %}
+                {% elif hour < 6 %}
+                  {% set color = colors.today %}
+                {% else %}
+                  {% set color = colors.tomorrow %}
+                {% endif %}
+                {% set period = 'hc' if hour < 6 or hour >= 22 else 'hp' %}
+                {% set price = tariffs.get(color ~ '_' ~ period) %}
+                {% set start = today_at('%02d:00' | format(hour)) + timedelta(days=day_offset) %}
+                {% if price is not none %}
+                  {% set ns.prices = ns.prices + [{
+                    'starts_at': start.isoformat(),
+                    'total': price,
+                    'energy': price,
+                    'tax': 0,
+                    'level': color,
+                    'period': period
+                  }] %}
+                {% endif %}
+              {% endfor %}
+            {% endfor %}
+            {{ ns.prices }}
+```
+
+Wähle den erzeugten Sensor anschließend als dynamische Preisquelle in BSFAI.
+Unbekannte Farben oder Tarife werden bewusst ausgelassen und niemals als
+`0,00 €/kWh` angelegt, damit noch nicht veröffentlichte Preise keine künstlich
+billige Ladeplanung auslösen.
+
 ---
 
 ### Aktueller Strompreis
@@ -795,7 +919,18 @@ Battery SmartFlow AI setzt hier die gewünschte Entladeleistung in Watt.
 
 Die Netzmessung ist entscheidend für eine gute Regelung.
 
-Battery SmartFlow AI unterstützt drei Varianten.
+Neben den Home-Assistant-Sensoren unterstützt Battery SmartFlow AI auch die lokale
+Abfrage eines Shelly Pro 3EM Gen2 und des klassischen Shelly 3EM (Gen1). Wähle
+dafür den passenden Shelly-Modus und trage Hostname oder IP-Adresse ein. Ein
+Gerätepasswort ist optional.
+
+Der klassische 3EM wird lokal über seine Gen1-HTTP-Schnittstelle abgefragt.
+Diese Verbindung ist unverschlüsselt; verwende sie nur in einem vertrauenswürdigen
+lokalen Netzwerk. Eine reservierte oder statische IP-Adresse wird empfohlen.
+
+Bei beiden Shelly-Modi gilt: positiver Gesamtwert bedeutet Netzbezug, negativer
+Wert Netzeinspeisung. Der Pro 3EM Gen2 und der klassische 3EM Gen1 sind getrennte
+Geräteoptionen und verwenden unterschiedliche lokale Schnittstellen.
 
 ---
 
@@ -1002,11 +1137,15 @@ Typische interne Zustände:
 | `normal` | Normalbetrieb               |
 | `eco`    | ökonomischer Off-Grid-Modus |
 
-Battery SmartFlow AI liest diesen Modus nur.
+Wenn das ausgewählte native ZenSDK-Gerät `gridOffMode` meldet, stellt BSFAI
+einen eigenen Select für manuelle Änderungen bereit und prüft den Wert nach
+dem Schreiben per Rückmeldung. Falls native Steuerung nicht verfügbar ist,
+kann ein vorhandener Home-Assistant-Select als manuelle Weiterleitung dienen.
 
 > [!IMPORTANT]
-> Battery SmartFlow AI setzt oder verändert den Off-Grid-Modus nicht.
-> Die Steuerung bleibt bei Zendure App, ZHA oder der verwendeten Zendure-Integration.
+> Die BSFAI-Automatik ändert den Off-Grid-Modus niemals selbstständig. Native
+> Schreibbefehle werden nur für freigegebene ZenSDK-Geräte und bei frischer
+> Telemetrie angeboten.
 
 ---
 
@@ -1044,9 +1183,11 @@ keine gültigen Kandidaten für:
 
 ### Einschränkung
 
-Battery SmartFlow AI verändert den Off-Grid-Modus des Geräts nicht. Welche
-Leistung die Inselsteckdose tatsächlich bereitstellt, bleibt von Zendure-
-Firmware, Gerätegrenzen und Gerätekonfiguration abhängig.
+Eine manuelle Änderung wird nativ über ZenSDK geschrieben und anhand des
+Rücklesewerts geprüft; falls das nicht möglich ist, kann sie an einen
+konfigurierten Home-Assistant-Select weitergeleitet werden. Welche Leistung
+die Inselsteckdose tatsächlich bereitstellt, bleibt von Zendure-Firmware,
+Gerätegrenzen und Gerätekonfiguration abhängig.
 
 ---
 
@@ -2956,8 +3097,9 @@ Prüfung eine Debug-Aufzeichnung; das Paket enthält die gelesene Leistung, den
 Modus, die erkannte Last und den internen Regelgrund.
 
 > [!NOTE]
-> Battery SmartFlow AI liest den Off-Grid-Modus nur und steuert die
-> Inselsteckdose nicht direkt. Die tatsächlich bereitgestellte
+> Battery SmartFlow AI nutzt den Off-Grid-Modus als Kontext. Manuelle Änderungen
+> werden nativ geschrieben, wenn der ausgewählte ZenSDK-Pfad dafür freigegeben
+> ist; die Automatik verändert ihn nicht. Die tatsächlich bereitgestellte
 > Off-Grid-Leistung bleibt Aufgabe von Zendure-Firmware und Gerätekonfiguration.
 
 ---

@@ -42,6 +42,10 @@ from .const import (
     CONF_GRID_POWER_ENTITY,
     CONF_GRID_IMPORT_ENTITY,
     CONF_GRID_EXPORT_ENTITY,
+    CONF_SHELLY_PRO_3EM_HOST,
+    CONF_SHELLY_PRO_3EM_PASSWORD,
+    CONF_SHELLY_3EM_HOST,
+    CONF_SHELLY_3EM_PASSWORD,
     CONF_SOC_LIMIT_ENTITY,
     CONF_PACK_CAPACITY_KWH,
     CONF_BATTERY_AC_POWER_ENTITY,
@@ -59,6 +63,8 @@ from .const import (
     GRID_MODE_NONE,
     GRID_MODE_SINGLE,
     GRID_MODE_SPLIT,
+    GRID_MODE_SHELLY_PRO_3EM,
+    GRID_MODE_SHELLY_3EM,
     # settings keys (entry.options)
     SETTING_SOC_MIN,
     SETTING_SOC_MAX,
@@ -121,7 +127,11 @@ from .const import (
     ZENDURE_MODE_INPUT,
     ZENDURE_MODE_OUTPUT,
 )
-from .device_profiles import get_device_profile, merge_profile_with_overrides
+from .device_profiles import (
+    get_device_profile,
+    merge_profile_with_overrides,
+    resolve_charge_limits,
+)
 from .decision_engine import (
     advance_pv_charge_hysteresis,
     compute_pv_attributable_export_w,
@@ -129,6 +139,15 @@ from .decision_engine import (
     DecisionResult,
 )
 from .core.models.runtime import RuntimeSnapshot
+from .hardware.shelly_pro_3em import (
+    ShellyDigestSession,
+    ShellyPro3EMError,
+    async_read_shelly_pro_3em_power,
+)
+from .hardware.shelly_3em import (
+    Shelly3EMError,
+    async_read_shelly_3em_power,
+)
 from .forecast import async_build_forecast_summary
 from .learned_planning import (
     LearningSample,
@@ -145,6 +164,7 @@ from .grid_history import GridHistory, build_grid_history_config
 from .charge_source_allocator import ChargeSourceAllocator
 from .charge_commit_policy import (
     current_inactive_commit_abort_reason,
+    completed_charge_stop_decision,
     learned_commit_is_forced,
     learned_commit_price_phase,
     learned_commit_should_yield_to_discharge,
@@ -324,7 +344,7 @@ def _clamp_season_counter(value: Any) -> int:
 @dataclass
 class SelectedEntities:
     soc: str
-    pv: str
+    pv: str | None
     native_pv: str | None
     pv_forecast_today: str | None
     pv_forecast_tomorrow: str | None
@@ -355,6 +375,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         entry: ConfigEntry,
         *,
         clock: Clock | None = None,
+        debug_recorder: DebugRecorder | None = None,
     ) -> None:
         self.hass = hass
         self.entry = entry
@@ -389,7 +410,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self.entities = SelectedEntities(
             soc=str(entry.data.get(CONF_SOC_ENTITY, "")),
-            pv=str(entry.data[CONF_PV_ENTITY]),
+            pv=entry.data.get(CONF_PV_ENTITY),
             native_pv=entry.data.get(CONF_NATIVE_PV_ENTITY),
             pv_forecast_today=entry.data.get(CONF_PV_FORECAST_TODAY_ENTITY),
             pv_forecast_tomorrow=entry.data.get(CONF_PV_FORECAST_TOMORROW_ENTITY),
@@ -423,6 +444,21 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 entry.options.get(key) for key in LOWEST_CELL_VOLTAGE_CONFIG_KEYS
             ),
         )
+        self._shelly_pro_3em_host = str(
+            entry.data.get(CONF_SHELLY_PRO_3EM_HOST, "") or ""
+        )
+        self._shelly_pro_3em_password = str(
+            entry.options.get(CONF_SHELLY_PRO_3EM_PASSWORD, "") or ""
+        )
+        self._shelly_digest = ShellyDigestSession(
+            password=self._shelly_pro_3em_password
+        )
+        self._shelly_3em_host = str(entry.data.get(CONF_SHELLY_3EM_HOST, "") or "")
+        self._shelly_3em_password = str(
+            entry.options.get(CONF_SHELLY_3EM_PASSWORD, "") or ""
+        )
+        self._shelly_grid_power_w: float | None = None
+        self._shelly_last_error: str | None = None
 
         self.runtime_mode: dict[str, Any] = {
             "ai_mode": AI_MODE_AUTOMATIC,
@@ -430,7 +466,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
         self._engine = DecisionEngine()
-        self._debug_recorder = DebugRecorder(integration_version=INTEGRATION_VERSION)
+        self._debug_recorder = debug_recorder or DebugRecorder(
+            integration_version=INTEGRATION_VERSION
+        )
         self._debug_last_package: str | None = None
         self._debug_last_error: str | None = None
         self._automatic_strategy = AutomaticStrategy()
@@ -1531,6 +1569,15 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     abort_reason,
                     completed=completed,
                 )
+
+                stop_decision = completed_charge_stop_decision(
+                    decision=decision,
+                    abort_reason=abort_reason,
+                    target_soc=commit.target_soc,
+                )
+                if stop_decision is not None:
+                    return stop_decision
+
                 return decision
                 
             # V4.3.0-dev5.8:
@@ -1829,6 +1876,12 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return the sparse recording status for the options flow."""
 
         return self._debug_recorder.status
+
+    @property
+    def debug_recorder_for_reload(self) -> DebugRecorder:
+        """Return the in-memory recorder so an options reload can reuse it."""
+
+        return self._debug_recorder
 
     def _debug_configured_entities(self) -> dict[str, str | None]:
         """Return entity ids by diagnostic role without reading their contents."""
@@ -2542,6 +2595,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if mode == GRID_MODE_NONE:
             return None, None
 
+        if mode in (GRID_MODE_SHELLY_PRO_3EM, GRID_MODE_SHELLY_3EM):
+            gp = self._shelly_grid_power_w
+            if gp is None:
+                return None, None
+            if gp >= 0:
+                return gp, 0.0
+            return 0.0, abs(gp)
+
         if mode == GRID_MODE_SINGLE and self.entities.grid_power:
             gp = _to_float(self._state(self.entities.grid_power), None)
             if gp is None:
@@ -2595,6 +2656,51 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 timestamp=self._ckw_last_fetch,
             ),
         )
+    async def _async_refresh_shelly_grid_power(self) -> None:
+        """Refresh the configured local Shelly grid reading."""
+
+        self._shelly_grid_power_w = None
+        mode = self.entities.grid_mode
+        if mode not in (GRID_MODE_SHELLY_PRO_3EM, GRID_MODE_SHELLY_3EM):
+            return
+
+        model_name = "Shelly Pro 3EM" if mode == GRID_MODE_SHELLY_PRO_3EM else "Shelly 3EM"
+        try:
+            from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+            if mode == GRID_MODE_SHELLY_PRO_3EM:
+                self._shelly_grid_power_w = await async_read_shelly_pro_3em_power(
+                    async_get_clientsession(self.hass),
+                    host=self._shelly_pro_3em_host,
+                    password=self._shelly_pro_3em_password,
+                    auth=self._shelly_digest,
+                    timeout_seconds=1.5,
+                )
+            else:
+                self._shelly_grid_power_w = await async_read_shelly_3em_power(
+                    async_get_clientsession(self.hass),
+                    host=self._shelly_3em_host,
+                    password=self._shelly_3em_password,
+                    timeout_seconds=1.5,
+                )
+        except Exception as err:
+            reason = (
+                str(err)
+                if isinstance(err, (ShellyPro3EMError, Shelly3EMError))
+                else type(err).__name__
+            )
+            if reason != self._shelly_last_error:
+                _LOGGER.warning(
+                    "Local %s grid reading is unavailable (%s)",
+                    model_name,
+                    reason,
+                )
+            self._shelly_last_error = reason
+            return
+
+        if self._shelly_last_error is not None:
+            _LOGGER.info("Local %s grid reading recovered", model_name)
+        self._shelly_last_error = None
 
     def _get_import_market_price(self, now: datetime) -> MarketPrice:
         """Build the canonical import price from the configured V4.5 sources."""
@@ -2654,15 +2760,19 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         native = getattr(self, "native_zendure", None)
         if native is not None and native.control_enabled:
             state = native.selected_device_state()
-            if state is None or not state.soc_pct.valid:
+            if state is None:
                 return None
-            lower = state.setpoints.min_soc_pct
-            upper = state.setpoints.max_soc_pct
-            if upper.valid and state.soc_pct.value >= upper.value:
-                return 1
-            if lower.valid and state.soc_pct.value <= lower.value:
-                return 2
-            return 0 if lower.valid and upper.valid else None
+            # ``socLimit`` is the device-reported SoC-limit state.  Do not
+            # infer it from the current SoC and the configured minSoc/socSet:
+            # those are setpoints, whereas socLimit tells us whether the BMS
+            # is actually blocking charge or discharge right now.
+            measured = state.diagnostics.get("socLimit")
+            if measured is None or not measured.valid:
+                return None
+            value = _to_float(measured.value, None)
+            if value is None or value not in (0, 1, 2):
+                return None
+            return int(value)
         if not self.entities.soc_limit:
             return None
         raw = self._state(self.entities.soc_limit)
@@ -4142,6 +4252,10 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             native_pv = _to_float(self._state(self.entities.native_pv), None)
             if native_state is not None:
                 native_pv = float(native_state.pv_power_w.value) if native_state.pv_power_w.valid else None
+                # Native Zendure setup can operate without an external PV
+                # entity; use the device telemetry for all PV-based logic.
+                if pv is None:
+                    pv = native_pv
 
             if soc is None or not 0.0 <= float(soc) <= 100.0:
                 return await self._enter_safe_idle(
@@ -4186,10 +4300,14 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 previous_at=previous_soc_at,
                 now=now,
                 capacity_kwh=battery_capacity_kwh,
-                max_charge_w=float(
-                    profile.get("MAX_INPUT_W", DEFAULT_MAX_CHARGE)
-                    or DEFAULT_MAX_CHARGE
-                ),
+                max_charge_w=resolve_charge_limits(
+                    profile,
+                    configured_charge_w=DEFAULT_MAX_CHARGE,
+                    battery_packs=self._get_setting(
+                        SETTING_BATTERY_PACKS,
+                        DEFAULT_BATTERY_PACKS,
+                    ),
+                )[0],
                 max_discharge_w=float(
                     profile.get("MAX_OUTPUT_W", DEFAULT_MAX_DISCHARGE)
                     or DEFAULT_MAX_DISCHARGE
@@ -4295,9 +4413,27 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 profile.get("MAX_DISCHARGE_W", DEFAULT_MAX_DISCHARGE),
             )
 
+            configured_max_charge = float(max_charge)
             profile_max_in = float(profile.get("MAX_INPUT_W", max_charge))
             profile_max_out = float(profile.get("MAX_OUTPUT_W", max_discharge))
-            max_charge = min(float(max_charge), profile_max_in)
+            try:
+                configured_packs = int(
+                    self._get_setting(
+                        SETTING_BATTERY_PACKS,
+                        DEFAULT_BATTERY_PACKS,
+                    )
+                )
+            except (TypeError, ValueError):
+                configured_packs = DEFAULT_BATTERY_PACKS
+            max_battery_charge_limit, max_ac_input, max_charge = resolve_charge_limits(
+                profile,
+                configured_charge_w=configured_max_charge,
+                battery_packs=configured_packs,
+                native_pv_w=native_pv_w,
+                native_pv_valid=bool(
+                    native_pv_configured and native_pv_sensor_valid
+                ),
+            )
             max_discharge = min(float(max_discharge), profile_max_out)
 
             soc_limits_valid = bool(
@@ -4305,6 +4441,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             power_limits_valid = bool(
                 float(max_charge) >= 0.0
+                and float(max_ac_input) >= 0.0
                 and float(max_discharge) > 0.0
                 and float(profile_max_in) > 0.0
                 and float(profile_max_out) > 0.0
@@ -4369,6 +4506,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 load_coverage_priority = False
 
             grid_sensor_configured = self.entities.grid_mode != GRID_MODE_NONE
+            await self._async_refresh_shelly_grid_power()
             grid_import_raw, grid_export_raw = self._get_grid()
             grid_sensor_valid = bool(
                 grid_sensor_configured
@@ -4781,6 +4919,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     or 0.0
                 ),
                 avg_charge_price=self._persist.get("trade_avg_charge_price"),
+                economics_average_battery_charge_price=(
+                    self._economics_engine.total_snapshot().average_battery_charge_price
+                ),
                 expensive_threshold=float(expensive),
                 very_expensive_threshold=float(very_expensive),
                 profit_margin_pct=float(profit_margin_pct),
@@ -5542,6 +5683,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "economics_average_pv_opportunity_value": (
                     economics_total_snapshot.average_pv_opportunity_value
                 ),
+                "economics_average_battery_charge_price": (
+                    economics_total_snapshot.average_battery_charge_price
+                ),
                 "economics_average_export_price": (
                     economics_total_snapshot.average_export_price
                 ),
@@ -5801,7 +5945,8 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ),
                 pv_w=float(pv_w or 0.0),
                 house_load_w=float(house_load or 0.0),
-                max_grid_input_w=float(max_charge),
+                max_grid_input_w=float(max_ac_input),
+                max_total_charge_w=float(max_battery_charge_limit),
                 native_pv_w=float(native_pv_w),
                 native_pv_valid=bool(
                     native_pv_configured and native_pv_sensor_valid
@@ -6210,7 +6355,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 grid=grid_history_state,
                 previous_input_w=float(self._persist.get("last_set_input_w", 0.0) or 0.0),
                 previous_output_w=float(self._persist.get("last_set_output_w", 0.0) or 0.0),
-                max_input_w=float(max_charge),
+                max_input_w=float(max_ac_input),
                 max_output_w=float(max_discharge),
             )
             
@@ -6229,7 +6374,7 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._state(self.entities.output_limit),
                     None,
                 ),
-                max_input_w=float(max_charge),
+                max_input_w=float(max_ac_input),
                 max_output_w=float(max_discharge),
             )
 
@@ -6659,6 +6804,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     or 0.0
                 ),
                 avg_charge_price=self._persist.get("trade_avg_charge_price"),
+                economics_average_battery_charge_price=(
+                    economics_total_snapshot.average_battery_charge_price
+                ),
                 expensive_threshold=float(expensive),
                 very_expensive_threshold=float(very_expensive),
                 profit_margin_pct=float(profit_margin_pct),
@@ -6805,6 +6953,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "native_pv_sensor_valid": native_pv_sensor_valid,
                 "deficit": float(grid_import),
                 "surplus": float(grid_export),
+                "grid_power_w": (
+                    self._shelly_grid_power_w
+                    if self.entities.grid_mode in (GRID_MODE_SHELLY_PRO_3EM, GRID_MODE_SHELLY_3EM)
+                    else None
+                ),
                 "grid_sensor_configured": bool(grid_sensor_configured),
                 "grid_sensor_valid": bool(grid_sensor_valid),
                 "soc_limits_valid": bool(soc_limits_valid),
@@ -6913,6 +7066,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     discharge_blocked_by_soc_min or cell_voltage_discharge_blocked
                 ),
                 "max_charge": max_charge,
+                "max_ac_input": max_ac_input,
+                "configured_ac_charge_limit": configured_max_charge,
+                "max_battery_charge_limit": max_battery_charge_limit,
                 "max_discharge": max_discharge,
                 "set_mode": ac_mode,
                 "set_input_w": int(round(in_w, 0)),
@@ -7621,6 +7777,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "learned_planning_forecast_adjustment_kwh": float(
                     learned_charge_plan.forecast_adjustment_kwh
                 ),
+                "learned_planning_pv_forecast_credit_kwh": float(
+                    learned_charge_plan.forecast_pv_credit_kwh
+                ),
                 "learned_planning_required_charge_energy_kwh": float(
                     learned_charge_plan.required_charge_energy_kwh
                 ),
@@ -7638,6 +7797,9 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ),
                 "learned_planning_deadline": self._stable_iso_minute(
                     learned_charge_plan.planning_deadline
+                ),
+                "learned_planning_coverage_end": self._stable_iso_minute(
+                    learned_charge_plan.charge_coverage_end
                 ),
                 "learned_planning_deadline_reason": learned_charge_plan.deadline_reason,
                 "learned_planning_optimal_charge_start": self._stable_iso_minute(
@@ -7880,6 +8042,11 @@ class ZendureSmartFlowCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "debug": "OK",
                 **self._debug_status_data(),
                 "details": details,
+                "grid_power_w": (
+                    self._shelly_grid_power_w
+                    if self.entities.grid_mode in (GRID_MODE_SHELLY_PRO_3EM, GRID_MODE_SHELLY_3EM)
+                    else None
+                ),
                 "decision_reason": decision.reason,
                 "next_action_time": next_action_time_state,
                 "next_action_state": next_action_state,

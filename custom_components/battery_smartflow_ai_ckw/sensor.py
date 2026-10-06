@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -29,6 +29,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
+    GRID_MODE_SHELLY_PRO_3EM,
     INTEGRATION_MANUFACTURER,
     INTEGRATION_MODEL,
     INTEGRATION_VERSION,
@@ -56,12 +57,23 @@ from .const import (
 )
 from .device_profiles import DEVICE_PROFILES
 from .native_device_overview import legacy_display_retains_stale_value
+from .native_entity_availability import (
+    OPTIONAL_NATIVE_MAIN_SENSOR_KEYS,
+    optional_native_main_sensor_available,
+    optional_native_sensor_registry_action,
+)
+from .remaining_output_time import RemainingOutputTime
 from .core.full_charge_maintenance import (
     MaintenanceBlockReason,
     MaintenanceState,
     MaintenanceWindow,
 )
-from .diagnostic_values import safe_diagnostic_sensor_value, smart_mode_state
+from .diagnostic_values import (
+    safe_diagnostic_sensor_value,
+    smart_mode_state,
+    zendure_documented_status_state,
+)
+from .hardware.zendure.normalizer import RAW_MAIN_DIAGNOSTICS
 from .native_registry_identity import (
     native_hardware_unique_id,
     native_main_device_identifier,
@@ -118,6 +130,7 @@ ECONOMICS_PRICE_SENSOR_KEYS = frozenset(
     {
         "economics_average_grid_charge_price",
         "economics_average_pv_opportunity_value",
+        "economics_average_battery_charge_price",
         "economics_average_export_price",
         "economics_average_battery_discharge_value",
         "economics_average_native_pv_to_home_return",
@@ -266,6 +279,7 @@ NATIVE_MAIN_SENSORS = (
     NativeHardwareSensorDescription(
         key="firmware", translation_key="native_hardware_firmware",
         source="firmware", entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
     ),
     NativeHardwareSensorDescription(
         key="product_id", translation_key="native_hardware_product_id",
@@ -303,6 +317,19 @@ NATIVE_MAIN_SENSORS = (
 )
 
 NATIVE_MAIN_SENSORS += (
+    NativeHardwareSensorDescription(
+        key="wifi_status", name="Wi-Fi status",
+        measurement_key="wifiState", device_class=SensorDeviceClass.ENUM,
+        options=["connected", "disconnected", "unknown"],
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    NativeHardwareSensorDescription(
+        key="remaining_output_time",
+        translation_key="native_hardware_remaining_output_time",
+        measurement_key="remainOutTime",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
     NativeHardwareSensorDescription(
         key="rssi", translation_key="native_hardware_rssi", measurement_key="rssi",
         native_unit_of_measurement="dBm", device_class=SensorDeviceClass.SIGNAL_STRENGTH,
@@ -393,16 +420,82 @@ NATIVE_MAIN_SENSORS += (
     ),
 )
 
-# Raw properties stay disabled diagnostics until the user needs them; no guessed enums.
-from .hardware.zendure.normalizer import RAW_MAIN_DIAGNOSTICS
+_DOCUMENTED_ZENDURE_STATUS_SENSORS = (
+    ("dataReady", "native_hardware_data_ready", ["not_ready", "ready", "unknown"]),
+    (
+        "gridState",
+        "native_hardware_grid_connection",
+        ["disconnected", "connected", "unknown"],
+    ),
+    ("pvStatus", "native_hardware_pv_status", ["inactive", "active", "unknown"]),
+    (
+        "socStatus",
+        "native_hardware_soc_calibration",
+        ["normal", "calibrating", "unknown"],
+    ),
+    ("pass", "native_hardware_passthrough", ["inactive", "active", "unknown"]),
+    (
+        "reverseState",
+        "native_hardware_reverse_flow",
+        ["inactive", "active", "unknown"],
+    ),
+    (
+        "gridOffMode",
+        "native_hardware_offgrid_mode",
+        ["standard", "economic", "disabled", "unknown"],
+    ),
+    ("is_error", "native_hardware_error_status", ["no_error", "error", "unknown"]),
+)
+_DOCUMENTED_ZENDURE_STATUS_KEYS = frozenset(
+    item[0] for item in _DOCUMENTED_ZENDURE_STATUS_SENSORS
+)
 
+NATIVE_MAIN_SENSORS += tuple(
+    NativeHardwareSensorDescription(
+        key=key,
+        translation_key=translation_key,
+        measurement_key=key,
+        device_class=SensorDeviceClass.ENUM,
+        options=options,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    )
+    for key, translation_key, options in _DOCUMENTED_ZENDURE_STATUS_SENSORS
+)
+
+_MPPT_POWER_PROPERTIES = tuple(f"solarPower{index}" for index in range(1, 7))
+
+NATIVE_MAIN_SENSORS += tuple(
+    NativeHardwareSensorDescription(
+        key=key,
+        name=key,
+        measurement_key=key,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    )
+    for key in _MPPT_POWER_PROPERTIES
+)
+
+# Other raw properties stay disabled diagnostics until the user needs them;
+# do not guess units, device classes, or enum semantics.
 NATIVE_MAIN_SENSORS += tuple(
     NativeHardwareSensorDescription(
         key=key, name=key, measurement_key=key,
         suggested_display_precision=0,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-    ) for key in RAW_MAIN_DIAGNOSTICS if key != "smartMode"
+    ) for key in RAW_MAIN_DIAGNOSTICS
+    if key not in {
+        "smartMode",
+        "wifiState",
+        "remainOutTime",
+        *_DOCUMENTED_ZENDURE_STATUS_KEYS,
+        *_MPPT_POWER_PROPERTIES,
+    }
 )
 
 NATIVE_PACK_SENSORS = (
@@ -466,7 +559,7 @@ NATIVE_PACK_SENSORS = (
         suggested_display_precision=2,
     ),
     NativeHardwareSensorDescription(
-        key="temperature_c", translation_key="native_hardware_temperature_c",
+        key="temperature_c", translation_key="native_hardware_cell_temperature_c",
         measurement_key="temperature_c",
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -1450,6 +1543,14 @@ _SENSOR_DESCRIPTIONS: tuple[ZendureSensorEntityDescription, ...] = (
         economics_device=True,
     ),
     ZendureSensorEntityDescription(
+        key="economics_average_battery_charge_price",
+        translation_key="economics_average_battery_charge_price",
+        runtime_key="economics_average_battery_charge_price",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:battery-charging-100",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
         key="economics_average_export_price",
         translation_key="economics_average_export_price",
         runtime_key="economics_average_export_price",
@@ -1649,6 +1750,15 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = tuple(
 # description tuple so existing entity identity remains provably unchanged.
 SENSORS += (
     ZendureSensorEntityDescription(
+        key="grid_power",
+        translation_key="grid_power",
+        runtime_key="grid_power_w",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:transmission-tower",
+        suggested_display_precision=0,
+    ),
+    ZendureSensorEntityDescription(
         key="full_charge_maintenance_state",
         translation_key="full_charge_maintenance_state",
         runtime_key="full_charge_maintenance_state",
@@ -1807,8 +1917,11 @@ async def async_setup_entry(
     add_entities(entities)
 
     known_native_entities: set[tuple[str, str, str]] = set()
+    entity_registry = er.async_get(hass)
+    optional_registry_initialized = False
 
     def add_discovered_native_entities() -> None:
+        nonlocal optional_registry_initialized
         discovered = []
         for system in coordinator.native_zendure.hardware_overview():
             firmware = _measured_value(getattr(system, "firmware", None))
@@ -1823,16 +1936,61 @@ async def async_setup_entry(
                 via_device_id=integration_device.id,
             )
             for description in NATIVE_MAIN_SENSORS:
+                available = optional_native_main_sensor_available(
+                    system, description.key
+                )
+                if description.key in OPTIONAL_NATIVE_MAIN_SENSOR_KEYS:
+                    unique_id = native_hardware_unique_id(
+                        entry.entry_id,
+                        "main",
+                        system.public_id,
+                        description.key,
+                    )
+                    entity_id = entity_registry.async_get_entity_id(
+                        "sensor", DOMAIN, unique_id
+                    )
+                    if entity_id is not None:
+                        registered = entity_registry.async_get(entity_id)
+                        action = optional_native_sensor_registry_action(
+                            available=available,
+                            disabled_by_integration=(
+                                registered is not None
+                                and registered.disabled_by
+                                is er.RegistryEntryDisabler.INTEGRATION
+                            ),
+                            enabled=(
+                                registered is not None
+                                and registered.disabled_by is None
+                            ),
+                            initializing=not optional_registry_initialized,
+                        )
+                        if action == "enable":
+                            entity_registry.async_update_entity(
+                                entity_id, disabled_by=None
+                            )
+                        elif action == "disable":
+                            entity_registry.async_update_entity(
+                                entity_id,
+                                disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+                            )
                 key = ("main", system.public_id, description.key)
                 if key not in known_native_entities:
                     known_native_entities.add(key)
+                    effective_description = (
+                        replace(
+                            description,
+                            entity_registry_enabled_default=available,
+                        )
+                        if description.key in OPTIONAL_NATIVE_MAIN_SENSOR_KEYS
+                        else description
+                    )
                     discovered.append(NativeZendureHardwareSensor(
                         entry,
                         coordinator,
                         kind="main",
                         public_id=system.public_id,
                         parent_public_id=None,
-                        description=description,
+                        description=effective_description,
                     ))
             for pack in system.packs:
                 for description in NATIVE_PACK_SENSORS:
@@ -1849,6 +2007,7 @@ async def async_setup_entry(
                         ))
         if discovered:
             add_entities(discovered)
+        optional_registry_initialized = True
 
     add_discovered_native_entities()
     unsubscribe = coordinator.async_add_listener(add_discovered_native_entities)
@@ -1877,6 +2036,7 @@ class NativeZendureHardwareSensor(CoordinatorEntity, SensorEntity):
         self._kind = kind
         self._public_id = public_id
         self._parent_public_id = parent_public_id
+        self._remaining_output_time = RemainingOutputTime()
         self._attr_unique_id = native_hardware_unique_id(
             entry.entry_id,
             kind,
@@ -2004,6 +2164,33 @@ class NativeZendureHardwareSensor(CoordinatorEntity, SensorEntity):
             )
         return attributes
 
+    def _remaining_output_minutes(self, item, measured) -> int | None:
+        """Return the device's remaining discharge minutes, only while discharging.
+
+        The value is meaningful only during discharge. When charging, idle, or
+        reported as zero/invalid, the estimate carries no usable meaning, so the
+        entity stays unavailable rather than pointing at ``now``.
+        """
+
+        discharge = item.measurements.get("discharge_power_w")
+        return self._remaining_output_time.remaining_minutes(
+            _measured_value(measured),
+            _measured_value(discharge),
+            estimate_available=self._measurement_available_for_display(measured),
+            discharge_available=(
+                discharge is not None and discharge.valid
+            ),
+        )
+
+    def _remaining_output_timestamp(self, item, measured):
+        """Absolute "battery empty at" time, stepping only when minutes change."""
+
+        minutes = self._remaining_output_minutes(item, measured)
+        return self._remaining_output_time.timestamp(
+            minutes,
+            now=dt_util.utcnow(),
+        )
+
     @property
     def available(self) -> bool:
         item = self._item()
@@ -2018,6 +2205,8 @@ class NativeZendureHardwareSensor(CoordinatorEntity, SensorEntity):
                 and item.selected_transport.value == "zensdk"
             ):
                 return True
+            if description.measurement_key == "remainOutTime":
+                return self._remaining_output_minutes(item, measured) is not None
             return self._measurement_available_for_display(measured)
         if description.source == "firmware":
             return self._measurement_available_for_display(item.firmware)
@@ -2039,6 +2228,23 @@ class NativeZendureHardwareSensor(CoordinatorEntity, SensorEntity):
             measured = item.measurements.get(self.entity_description.measurement_key)
             if self.entity_description.measurement_key == "smartMode":
                 return smart_mode_state(_measured_value(measured))
+            if self.entity_description.measurement_key == "wifiState":
+                raw_value = _measured_value(measured)
+                if raw_value == 1:
+                    return "connected"
+                if raw_value == 0:
+                    return "disconnected"
+                return "unknown"
+            if self.entity_description.measurement_key == "remainOutTime":
+                return self._remaining_output_timestamp(item, measured)
+            if (
+                self.entity_description.measurement_key
+                in _DOCUMENTED_ZENDURE_STATUS_KEYS
+            ):
+                return zendure_documented_status_state(
+                    self.entity_description.measurement_key,
+                    _measured_value(measured),
+                )
             if (
                 self.entity_description.measurement_key == "localAPIEnable"
                 and (measured is None or not measured.valid)

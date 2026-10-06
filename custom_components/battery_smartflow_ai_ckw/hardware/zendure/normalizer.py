@@ -18,7 +18,11 @@ from ...core.models import (
     ZendureTransport,
 )
 from .cloud import ZendureCloudBootstrap
-from .cloud_mqtt import CloudMqttMessage, is_zendure_state_message
+from .cloud_mqtt import (
+    CLOUD_STATE_METADATA_KEYS,
+    CloudMqttMessage,
+    is_zendure_state_message,
+)
 from .device_matrix import resolve_zendure_device
 from .hems_activity import HemsActivityDiagnostic, HemsActivityTracker
 
@@ -241,11 +245,13 @@ PACK_PROPERTY_MAPPINGS = {
 RAW_MAIN_DIAGNOSTICS = (
     "acStatus", "aiState", "batCalTime", "bindstate", "dataReady", "dcStatus",
     "factoryModeState", "gridStandard", "gridState", "IOTState", "is_error",
-    "LCNState", "localAPIEnable", "net", "OldMode", "OTAState", "phaseSwitch",
-    "pvStatus", "rssi", "smartMode", "socStatus", "socCompSwitch", "writeRsp",
+    "LCNState", "localAPIEnable", "net", "oldMode", "OTAState", "phaseSwitch",
+    "pvStatus", "rssi", "wifiState", "smartMode", "socStatus", "socLimit", "socCompSwitch", "writeRsp",
+    "pass", "reverseState", "gridOffMode", "remainOutTime",
     "packNum", "solarPower1", "solarPower2", "solarPower3", "solarPower4",
     "solarPower5", "solarPower6", "PowerCycle",
 )
+
 for _raw in RAW_MAIN_DIAGNOSTICS:
     MAIN_PROPERTY_MAPPINGS[_raw] = _mapping(
         _raw, _raw, MappingScope.MAIN, (bool, int, float),
@@ -388,6 +394,28 @@ class ZendureCloudNormalizer:
                 self._invalidate_legacy_zero_battery_voltage(
                     system_id,
                     properties,
+                    observed_at,
+                )
+            elif message.topic.rstrip("/").endswith("/state"):
+                # Cloud state reports use top-level property/value pairs,
+                # unlike ZenSDK's {"properties": {...}} report envelope.
+                # They are partial updates, so absent properties deliberately
+                # keep their previous observation and timestamp.
+                state_properties = {
+                    key: value
+                    for key, value in payload.items()
+                    if key not in CLOUD_STATE_METADATA_KEYS
+                }
+                self._apply_properties(
+                    self._device_values[system_id],
+                    state_properties,
+                    MAIN_PROPERTY_MAPPINGS,
+                    self._unknown_main[system_id],
+                    observed_at,
+                )
+                self._invalidate_legacy_zero_battery_voltage(
+                    system_id,
+                    state_properties,
                     observed_at,
                 )
             self._apply_packs(system_id, payload.get("packData"), observed_at)

@@ -276,10 +276,13 @@ def _compute_daily_net_energy_for_sensor(
     fallback_state_kwh: float | None,
     target_date,
     forecast_base_load_w: float,
+    now_local: datetime | None = None,
 ) -> float:
     attrs, found = _read_sensor_attrs(hass, entity_id)
     if not found:
         return max(0.0, float(fallback_state_kwh or 0.0))
+
+    now_local = _normalize_dt(now_local) if now_local is not None else None
 
     hourly = _iter_hourly_intervals(attrs)
     if hourly:
@@ -293,10 +296,23 @@ def _compute_daily_net_energy_for_sensor(
             if power_kw is None or power_kw <= 0:
                 continue
 
-            gross_kwh = float(power_kw) * 1.0
+            duration_h = 1.0
+            if now_local is not None:
+                interval_end = start + timedelta(hours=duration_h)
+                if interval_end <= now_local:
+                    continue
+                duration_h = max(
+                    0.0,
+                    (interval_end - max(start, now_local)).total_seconds()
+                    / 3600.0,
+                )
+            if duration_h <= 0.0:
+                continue
+
+            gross_kwh = float(power_kw) * duration_h
             total_kwh += _net_interval_energy_kwh(
                 energy_kwh=gross_kwh,
-                duration_h=1.0,
+                duration_h=duration_h,
                 base_load_w=forecast_base_load_w,
             )
         return total_kwh
@@ -313,10 +329,23 @@ def _compute_daily_net_energy_for_sensor(
             if power_kw is None or power_kw <= 0:
                 continue
 
-            gross_kwh = float(power_kw) * 0.5
+            duration_h = 0.5
+            if now_local is not None:
+                interval_end = start + timedelta(minutes=30)
+                if interval_end <= now_local:
+                    continue
+                duration_h = max(
+                    0.0,
+                    (interval_end - max(start, now_local)).total_seconds()
+                    / 3600.0,
+                )
+            if duration_h <= 0.0:
+                continue
+
+            gross_kwh = float(power_kw) * duration_h
             total_kwh += _net_interval_energy_kwh(
                 energy_kwh=gross_kwh,
-                duration_h=0.5,
+                duration_h=duration_h,
                 base_load_w=forecast_base_load_w,
             )
         return total_kwh
@@ -433,7 +462,7 @@ def build_forecast_summary(
     if any_configured and (not any_found or not any_valid):
         return ForecastSummary(
             status=FORECAST_STATUS_UNAVAILABLE,
-            source_name="Solcast",
+            source_name="Configured Home Assistant forecast sensors",
             pv_outlook=PV_OUTLOOK_UNKNOWN,
         )
 
@@ -447,6 +476,7 @@ def build_forecast_summary(
         fallback_state_kwh=today_kwh_raw,
         target_date=today,
         forecast_base_load_w=forecast_base_load_w,
+        now_local=now_local,
     )
 
     tomorrow_kwh_val = _compute_daily_net_energy_for_sensor(
@@ -465,7 +495,7 @@ def build_forecast_summary(
         now_local=now_local,
     )
     gross_remaining_today_kwh = _compute_daily_net_energy_for_sensor(
-        hass, today_entity_id, today_kwh_raw, today, 0.0
+        hass, today_entity_id, today_kwh_raw, today, 0.0, now_local
     )
     gross_tomorrow_kwh = _compute_daily_net_energy_for_sensor(
         hass, tomorrow_entity_id, tomorrow_kwh_raw, tomorrow, 0.0
@@ -483,7 +513,7 @@ def build_forecast_summary(
 
     return ForecastSummary(
         status=FORECAST_STATUS_AVAILABLE,
-        source_name="Solcast",
+        source_name="Configured Home Assistant forecast sensors",
         remaining_today_kwh=round(float(remaining_today_kwh), 3),
         tomorrow_kwh=round(float(tomorrow_kwh_val), 3),
         gross_remaining_today_kwh=round(float(gross_remaining_today_kwh), 3),

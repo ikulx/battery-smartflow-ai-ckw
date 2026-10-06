@@ -268,6 +268,12 @@ def _entry(
             transport_writes[ZendureTransport.ZENSDK][property_name] = (
                 VerificationLevel.VERIFIED
             )
+        # Zendure-HA implements this documented property as a direct select;
+        # ZenSDK reports expose the same numeric field for native readback.
+        writes["gridOffMode"] = VerificationLevel.VERIFIED
+        transport_writes[ZendureTransport.ZENSDK]["gridOffMode"] = (
+            VerificationLevel.VERIFIED
+        )
     if local_mqtt_verified:
         transports[ZendureTransport.ZENSDK] = TransportCapability(
             ZendureTransport.ZENSDK,
@@ -345,6 +351,22 @@ ZENDURE_DEVICE_MATRIX: Mapping[str, ZendureDeviceMatrixEntry] = MappingProxyType
                 "SolarFlow 2400 AC+",
                 "solarFlow2400AC+",
                 "SF2400AC+",
+                zensdk_verified=True,
+            ),
+            _entry(
+                "SF1600AC",
+                "SolarFlow 1600 AC+",
+                "SF1600AC",
+                "solarFlow1600AC+",
+                "SF1600AC+",
+                zensdk_verified=True,
+            ),
+            _entry(
+                "SF800",
+                "SolarFlow 800",
+                "solarFlow800",
+                "SF800",
+                product_ids=("a4ss5P",),
                 zensdk_verified=True,
             ),
             _entry(

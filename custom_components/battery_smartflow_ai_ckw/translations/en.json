@@ -15,6 +15,7 @@
       "debug_recording_already_stopped": "The debug recording has already stopped."
     },
     "error": {
+      "invalid_shelly_host": "Enter a hostname or IP address only, without a scheme, port, or path.",
       "grid_split_missing": "When using two sensors, both grid import and grid export must be selected.",
       "unsupported_device": "Unsupported device model.",
       "invalid_token": "The App Token format is invalid.",
@@ -94,7 +95,7 @@
           "input_limit_entity": "Number entity for setting the charge power in watts.",
           "output_limit_entity": "Number entity for setting the discharge power in watts.",
           "offgrid_power_entity": "Optional sensor for the power of the Zendure off-grid / island socket. Positive values are interpreted as an active load at the island socket.",
-          "offgrid_mode_entity": "Optional select sensor for the Zendure off-grid / island socket mode. The mode is only read and is never set by Battery SmartFlow AI.",
+          "offgrid_mode_entity": "Optional fallback Home Assistant select for the Zendure off-grid / island socket mode. BSFAI uses its guarded native ZenSDK control when available; otherwise, manual choices can be forwarded to this entity. Automation never changes the mode automatically.",
           "feed_in_tariff": "Compensation per exported kWh in the same currency unit as the electricity prices. Used as a fallback when no valid dynamic feed-in price is available.",
           "dynamic_feed_in_price_entity": "Optional numeric Home Assistant sensor for the current dynamic feed-in price. A valid sensor value, including zero or a negative price, takes priority over the fixed feed-in tariff."
         }
@@ -105,12 +106,20 @@
         "data": {
           "grid_power_entity": "Grid power (single)",
           "grid_import_entity": "Grid import (split)",
-          "grid_export_entity": "Grid export (split)"
+          "grid_export_entity": "Grid export (split)",
+          "shelly_pro_3em_host": "Shelly Pro 3EM Gen2 hostname or IP address",
+          "shelly_pro_3em_password": "Shelly Pro 3EM password (optional)",
+          "shelly_3em_host": "Shelly 3EM Gen1 hostname or IP address",
+          "shelly_3em_password": "Shelly 3EM password (optional)"
         },
         "data_description": {
           "grid_power_entity": "A single sensor with positive power for import and negative power for export.",
           "grid_import_entity": "Sensor with current grid import power in watts.",
-          "grid_export_entity": "Sensor with current grid export power in watts."
+          "grid_export_entity": "Sensor with current grid export power in watts.",
+          "shelly_pro_3em_host": "Local hostname or IP address of the Shelly Pro 3EM Gen2. Use a reserved/static address.",
+          "shelly_pro_3em_password": "Optional device password. Shelly authentication uses the local SHA-256 digest challenge.",
+          "shelly_3em_host": "Local hostname or IP address of the classic Shelly 3EM. Use a reserved/static address.",
+          "shelly_3em_password": "Optional device password. Gen1 uses HTTP Basic authentication without encryption; use only on a trusted local network."
         }
       },
       "grid": {
@@ -119,12 +128,20 @@
         "data": {
           "grid_power_entity": "Grid power (single)",
           "grid_import_entity": "Grid import (split)",
-          "grid_export_entity": "Grid export (split)"
+          "grid_export_entity": "Grid export (split)",
+          "shelly_pro_3em_host": "Shelly Pro 3EM Gen2 hostname or IP address",
+          "shelly_pro_3em_password": "Shelly Pro 3EM password (optional)",
+          "shelly_3em_host": "Shelly 3EM Gen1 hostname or IP address",
+          "shelly_3em_password": "Shelly 3EM password (optional)"
         },
         "data_description": {
           "grid_power_entity": "A single sensor with positive power for import and negative power for export.",
           "grid_import_entity": "Sensor with current grid import power in watts.",
-          "grid_export_entity": "Sensor with current grid export power in watts."
+          "grid_export_entity": "Sensor with current grid export power in watts.",
+          "shelly_pro_3em_host": "Local hostname or IP address of the Shelly Pro 3EM Gen2. Use a reserved/static address.",
+          "shelly_pro_3em_password": "Optional device password. Shelly authentication uses the local SHA-256 digest challenge.",
+          "shelly_3em_host": "Local hostname or IP address of the classic Shelly 3EM. Use a reserved/static address.",
+          "shelly_3em_password": "Optional device password. Gen1 uses HTTP Basic authentication without encryption; use only on a trusted local network."
         }
       },
       "user": {
@@ -143,7 +160,7 @@
       },
       "native_device": {
         "title": "Select the Zendure system",
-        "description": "Zendure reported these devices:\n\n{device_summary}\n\nSelect exactly one system. Battery SmartFlow AI automatically uses the supported local transport for its model. Native control is activated only by the separate switch below. When enabled, BSFAI stops writing through the configured Z-HA entities.",
+        "description": "Zendure reported these devices:\n\n{device_summary}\n\nSelect exactly one system and its communication path. Cloud is the recommended starting path for Legacy devices. Native control is activated only by the separate switch below. When enabled, BSFAI stops writing through the configured Z-HA entities.",
         "data": {
           "native_zendure_selected_device": "Zendure system",
           "native_zendure_control_transport": "Communication path",
@@ -156,7 +173,7 @@
         "data_description": {
           "native_zendure_selected_device": "Exactly one main system is selected; packs cannot be controlled independently. Select a supported communication path for that system.",
           "native_zendure_control_transport": "Cloud is the recommended starting path for Legacy devices and works immediately after account discovery. Use Local MQTT only after the device itself sends current data to the local broker. ZenSDK remains recommended for supported newer systems.",
-          "native_zendure_control_enabled": "Explicitly transfers BSFAI command output from the Z-HA entities to the model's local transport. Disable this switch to retain the established Z-HA control path.",
+          "native_zendure_control_enabled": "Explicitly transfers BSFAI command output from the Z-HA entities to the selected supported communication path. Disable this switch to retain the established Z-HA control path.",
           "native_zendure_local_mqtt_server": "Shown only when the account contains a verified legacy family. The device is provisioned automatically on the first switch to Local MQTT unless this is explicitly skipped.",
           "native_zendure_local_mqtt_port": "Usually 1883 for a local unencrypted broker.",
           "native_zendure_local_mqtt_username": "Broker account used by BSFAI; it is kept private.",
@@ -262,7 +279,7 @@
           "input_limit_entity": "Adjustable charge power in watts.",
           "output_limit_entity": "Adjustable discharge power in watts.",
           "offgrid_power_entity": "Optional sensor for the power of the Zendure off-grid / island socket. Positive values are interpreted as an active load at the island socket.",
-          "offgrid_mode_entity": "Optional select sensor for the Zendure off-grid / island socket mode. The mode is only read and is never set by Battery SmartFlow AI.",
+          "offgrid_mode_entity": "Optional fallback Home Assistant select for the Zendure off-grid / island socket mode. BSFAI uses its guarded native ZenSDK control when available; otherwise, manual choices can be forwarded to this entity. Automation never changes the mode automatically.",
           "feed_in_tariff": "Compensation per exported kWh in the same currency unit as the electricity prices. Used as a fallback when no valid dynamic feed-in price is available.",
           "dynamic_feed_in_price_entity": "Optional numeric Home Assistant sensor for the current dynamic feed-in price. A valid sensor value, including zero or a negative price, takes priority over the fixed feed-in tariff."
         }
@@ -277,8 +294,16 @@
         "menu_options": {
           "general": "General",
           "expert": "Expert mode",
+          "dashboard": "HEMS dashboard",
           "native_zendure": "Native Zendure",
           "debug": "Debug mode"
+        }
+      },
+      "dashboard": {
+        "title": "HEMS dashboard",
+        "description": "Enable a dedicated Battery SmartFlow AI sidebar panel with a system overview and live status. The panel is off by default.",
+        "data": {
+          "hems_dashboard_enabled": "Show the HEMS dashboard in the sidebar"
         }
       },
       "native_zendure": {
@@ -447,7 +472,9 @@
       "options": {
         "none": "No grid sensor",
         "single": "One sensor (+ / −)",
-        "split": "Two sensors (import and export)"
+        "split": "Two sensors (import and export)",
+        "shelly_pro_3em": "Shelly Pro 3EM Gen2 (local)",
+        "shelly_3em": "Shelly 3EM Gen1 (local)"
       }
     }
   },
@@ -466,8 +493,17 @@
         "state": {
           "standby": "Standby",
           "charge": "Charging",
+          "pv_surplus": "PV surplus charge",
           "discharge": "Discharging",
           "constant_discharge": "Constant discharge"
+        }
+      },
+      "offgrid_mode_control": {
+        "name": "Off-grid mode",
+        "state": {
+          "off": "Off",
+          "normal": "Normal",
+          "eco": "Economic"
         }
       }
     },
@@ -485,7 +521,7 @@
         "name": "SoC maximum"
       },
       "max_charge": {
-        "name": "Max. charge power"
+        "name": "Max. AC charging power"
       },
       "max_discharge": {
         "name": "Max. discharge power"
@@ -516,6 +552,9 @@
       }
     },
     "sensor": {
+      "grid_power": {
+        "name": "Grid power"
+      },
       "native_zendure_status": {
         "name": "Native Zendure test status",
         "state": {
@@ -580,6 +619,9 @@
       "native_hardware_rssi": {
         "name": "Wi-Fi signal strength"
       },
+      "native_hardware_remaining_output_time": {
+        "name": "Estimated time until empty"
+      },
       "native_hardware_available_energy": {
         "name": "Available energy"
       },
@@ -619,6 +661,71 @@
           "unknown": "Unknown"
         }
       },
+      "native_hardware_data_ready": {
+        "name": "Device data",
+        "state": {
+          "not_ready": "Not ready",
+          "ready": "Ready",
+          "unknown": "Unknown"
+        }
+      },
+      "native_hardware_grid_connection": {
+        "name": "Grid connection",
+        "state": {
+          "disconnected": "Disconnected",
+          "connected": "Connected",
+          "unknown": "Unknown"
+        }
+      },
+      "native_hardware_pv_status": {
+        "name": "PV status",
+        "state": {
+          "inactive": "Inactive",
+          "active": "Active",
+          "unknown": "Unknown"
+        }
+      },
+      "native_hardware_soc_calibration": {
+        "name": "SoC calibration",
+        "state": {
+          "normal": "Normal",
+          "calibrating": "Calibrating",
+          "unknown": "Unknown"
+        }
+      },
+      "native_hardware_passthrough": {
+        "name": "Pass-through",
+        "state": {
+          "inactive": "Inactive",
+          "active": "Active",
+          "unknown": "Unknown"
+        }
+      },
+      "native_hardware_reverse_flow": {
+        "name": "Reverse flow",
+        "state": {
+          "inactive": "Inactive",
+          "active": "Active",
+          "unknown": "Unknown"
+        }
+      },
+      "native_hardware_offgrid_mode": {
+        "name": "Off-grid mode",
+        "state": {
+          "standard": "Standard",
+          "economic": "Economic",
+          "disabled": "Disabled",
+          "unknown": "Unknown"
+        }
+      },
+      "native_hardware_error_status": {
+        "name": "Error status",
+        "state": {
+          "no_error": "No error",
+          "error": "Error",
+          "unknown": "Unknown"
+        }
+      },
       "native_hardware_online": {
         "name": "Online status",
         "state": {
@@ -655,6 +762,9 @@
       },
       "native_hardware_temperature_c": {
         "name": "Temperature"
+      },
+      "native_hardware_cell_temperature_c": {
+        "name": "Maximum cell temperature"
       },
       "native_hardware_battery_voltage_v": {
         "name": "Battery voltage"
@@ -865,6 +975,9 @@
       "learned_planning_deadline": {
         "name": "Charge planning: Deadline"
       },
+      "learned_planning_coverage_end": {
+        "name": "Diagnostic: End of planned peak coverage"
+      },
       "learned_planning_required_charge_energy_kwh": {
         "name": "Charge planning: Recharge energy"
       },
@@ -915,6 +1028,9 @@
       },
       "learned_planning_forecast_adjustment_kwh": {
         "name": "Diagnostic: Learned planning forecast adjustment"
+      },
+      "learned_planning_pv_forecast_credit_kwh": {
+        "name": "Diagnostic: PV forecast credited to the charge plan"
       },
       "learned_planning_effective_charge_power_w": {
         "name": "Diagnostic: Learned planning effective charge power"
@@ -1066,9 +1182,9 @@
         }
       },
       "soc_limit_status": {
-        "name": "SoC limit status",
+        "name": "Hardware SoC limit status",
         "state": {
-          "not_configured": "No SoC limit sensor configured",
+          "not_configured": "Hardware SoC limit state unavailable",
           "no_limit": "No limit active",
           "upper_limit_active": "Upper SoC limit active (charging blocked)",
           "lower_limit_active": "Lower SoC limit active (discharging blocked)"
@@ -1265,7 +1381,7 @@
         }
       },
       "avg_charge_price": {
-        "name": "Prices – Avg. legacy battery charge price"
+        "name": "Prices – Legacy SoC-estimated average battery charge price"
       },
       "profit_eur": {
         "name": "Balance since start – Legacy trading profit"
@@ -1350,6 +1466,9 @@
       },
       "economics_average_pv_opportunity_value": {
         "name": "Prices – Avg. PV opportunity value"
+      },
+      "economics_average_battery_charge_price": {
+        "name": "Prices – Avg. battery charge price (grid + PV)"
       },
       "economics_average_export_price": {
         "name": "Prices – Avg. export price"
