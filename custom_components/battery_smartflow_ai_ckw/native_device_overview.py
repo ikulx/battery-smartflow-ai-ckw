@@ -1,0 +1,496 @@
+"""Privacy-safe hierarchical projection for the native device overview."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
+import hashlib
+from types import MappingProxyType
+from typing import Mapping
+from .native_capacity import (
+    native_capacity,
+    native_inventory_capacity,
+    pack_capacity_kwh,
+    resolve_pack_profile,
+)
+from .native_statistics import derived_statistics
+from .hardware.zendure.device_matrix import (
+    VerificationLevel,
+    ZENDURE_DEVICE_MATRIX,
+    resolve_zendure_device,
+)
+
+from .core.models import (
+    DeviceControlState,
+    DeviceInventory,
+    HemsStatus,
+    MeasuredValue,
+    NeutralDeviceState,
+    ValueValidity,
+    ZendureTransport,
+)
+
+
+# Legacy firmware publishes its state in sparse groups. Keep already reported
+# display values visible while the device is still sending other valid
+# telemetry, matching the five-minute liveness window used by Z-HA. This is
+# presentation-only: the native runtime continues to require each safety value
+# itself to be fresh before it can affect control.
+LEGACY_DISPLAY_RETENTION_SECONDS = 300.0
+
+
+def legacy_display_retains_stale_value(
+    parent: MainSystemOverview | None,
+    measured: MeasuredValue | None,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Return whether a stale Legacy value remains suitable for display."""
+
+    if (
+        parent is None
+        or measured is None
+        or measured.validity is not ValueValidity.STALE
+        or not _is_sparse_legacy_family(parent)
+        or parent.last_message_at is None
+    ):
+        return False
+    current = now or datetime.now(timezone.utc)
+    observed = parent.last_message_at.astimezone(timezone.utc)
+    age_seconds = (current.astimezone(timezone.utc) - observed).total_seconds()
+    return 0.0 <= age_seconds <= LEGACY_DISPLAY_RETENTION_SECONDS
+
+
+def _is_sparse_legacy_family(parent: MainSystemOverview) -> bool:
+    """Identify Legacy hardware independently of its selected transport.
+
+    A Legacy device may correctly run through Cloud MQTT while its local MQTT
+    capability remains merely optional. ``available_transports`` therefore
+    describes the active control path and is not an identity capability set.
+    """
+
+    return _is_sparse_legacy_profile(parent.profile_key)
+
+
+def _is_sparse_legacy_profile(profile_key: str | None) -> bool:
+    """Return whether a profile publishes Cloud state in sparse groups."""
+
+    entry = ZENDURE_DEVICE_MATRIX.get(profile_key or "")
+    return bool(
+        entry is not None
+        and entry.transport(ZendureTransport.LOCAL_MQTT).read
+        is VerificationLevel.VERIFIED
+        and entry.transport(ZendureTransport.ZENSDK).read
+        is VerificationLevel.UNSUPPORTED
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class PackOverview:
+    public_id: str
+    parent_public_id: str
+    serial_number: str | None
+    pack_model: str | None
+    firmware: MeasuredValue[str]
+    measurements: Mapping[str, MeasuredValue]
+    last_message_at: datetime | None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "measurements", MappingProxyType(dict(self.measurements))
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class MainSystemOverview:
+    public_id: str
+    display_name: str
+    model: str | None
+    serial_number: str | None
+    firmware: MeasuredValue[str]
+    measurements: Mapping[str, MeasuredValue]
+    product_id: str | None
+    profile_key: str | None
+    control_state: DeviceControlState
+    control_enabled: bool
+    actively_controlled: bool
+    status_text: str
+    selected_transport: ZendureTransport
+    available_transports: tuple[ZendureTransport, ...]
+    online: bool
+    hems_active: bool
+    hems_status: HemsStatus
+    hems_observed_at: datetime | None
+    control_block_reason: str | None
+    last_message_at: datetime | None
+    packs: tuple[PackOverview, ...]
+    migration_bound: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "measurements", MappingProxyType(dict(self.measurements))
+        )
+
+
+def build_native_device_overview(
+    inventory: DeviceInventory,
+    states: Mapping[str, NeutralDeviceState],
+    *,
+    statistics: Mapping[str, Mapping[str, object]] | None = None,
+    migration_bound_device: str | None = None,
+) -> tuple[MainSystemOverview, ...]:
+    """Build an unbounded hierarchy without exposing stable source identities."""
+
+    result = []
+    statistics = statistics or {}
+    for system_id, device in sorted(inventory.devices.items()):
+        state = states.get(system_id)
+        system_statistics = statistics.get(system_id, {})
+        public_id = _public_id("DEVICE", system_id)
+        identity = device.native_identities[0] if device.native_identities else None
+        matrix_entry = resolve_zendure_device(identity) if identity else None
+        profile_key = device.profile_key or (
+            matrix_entry.profile_key if matrix_entry else None
+        )
+        sparse_legacy = _is_sparse_legacy_profile(profile_key)
+        control_capacity = native_capacity(state)
+        inventory_capacity = native_inventory_capacity(state)
+        display_capacity = _display_capacity(
+            control_capacity,
+            inventory_capacity,
+            state,
+            sparse_legacy=sparse_legacy,
+        )
+        packs = []
+        state_packs = {item.pack_id: item for item in state.packs} if state else {}
+        for pack_id, pack_identity in sorted(inventory.packs.items()):
+            if pack_identity.parent_system_id != system_id:
+                continue
+            observed = state_packs.get(pack_id)
+            if observed is None:
+                continue
+            packs.append(
+                PackOverview(
+                    public_id=_public_id("PACK", pack_id),
+                    parent_public_id=public_id,
+                    serial_number=pack_identity.serial_number,
+                    pack_model=_pack_model(
+                        pack_identity.pack_type,
+                        device.model,
+                        pack_identity.serial_number or observed.serial_number,
+                    ),
+                    firmware=observed.firmware,
+                    measurements=MappingProxyType(
+                        {
+                            "soc_pct": observed.soc_pct,
+                            "charge_power_w": observed.charge_power_w,
+                            "discharge_power_w": observed.discharge_power_w,
+                            "voltage_v": observed.voltage_v,
+                            "current_a": observed.current_a,
+                            "cell_min_v": observed.cell_min_v,
+                            "cell_max_v": observed.cell_max_v,
+                            "temperature_c": observed.temperature_c,
+                            "state_code": observed.state_code,
+                            "fault_code": observed.fault_code,
+                            "protection_active": observed.protection_active,
+                            "pack_type": observed.pack_type,
+                            "cell_delta_v": _difference(
+                                observed.cell_max_v,
+                                observed.cell_min_v,
+                                retain_stale=sparse_legacy,
+                            ),
+                            "power_w": _difference(
+                                observed.discharge_power_w,
+                                observed.charge_power_w,
+                                retain_stale=sparse_legacy,
+                            ),
+                            "capacity_kwh": _optional_value(pack_capacity_kwh(
+                                observed.serial_number,
+                                observed.pack_type.value if observed.pack_type.valid else None,
+                            )),
+                            "status": _pack_status(observed.state_code),
+                            "heating_active": _boolean_status(
+                                _measurement(observed, "heating_active"),
+                                retain_stale=sparse_legacy,
+                            ),
+                        }
+                    ),
+                    last_message_at=observed.last_message_at,
+                )
+            )
+        result.append(
+            MainSystemOverview(
+                public_id=public_id,
+                display_name=device.display_name,
+                model=device.model,
+                serial_number=next(
+                    (
+                        native_identity.serial_number
+                        for native_identity in device.native_identities
+                        if native_identity.serial_number
+                    ),
+                    None,
+                ),
+                firmware=_measurement(state, "firmware"),
+                measurements=MappingProxyType(
+                    {**{
+                        key: _measurement(state, key)
+                        for key in (
+                            "soc_pct",
+                            "charge_power_w",
+                            "discharge_power_w",
+                            "ac_input_power_w",
+                            "ac_output_power_w",
+                            "pv_power_w",
+                            "mode",
+                            "fault_code",
+                            "protection_active",
+                            "temperature_c",
+                            "battery_voltage_v",
+                            "offgrid_power_w",
+                        )
+                    }, **dict(getattr(state, "diagnostics", {})),
+                     "pack_count": _optional_value(control_capacity.pack_count),
+                     "capacity_kwh": display_capacity,
+                     "power_w": _difference(
+                         _measurement(state, "discharge_power_w"),
+                         _measurement(state, "charge_power_w"),
+                         retain_stale=sparse_legacy,
+                     ),
+                     "hardware_soc_min": _measurement(getattr(state, "setpoints", None), "min_soc_pct"),
+                     "hardware_soc_max": _measurement(getattr(state, "setpoints", None), "max_soc_pct"),
+                     "heating_active": _boolean_status(
+                         _measurement(state, "heating_active"),
+                         retain_stale=sparse_legacy,
+                     ),
+                     "switching_count": _first_valid(
+                         _diagnostic_measurement(state, "switching_count"),
+                         _optional_value(system_statistics.get("switching_count")),
+                     ),
+                     "switching_count_is_estimate": _optional_value(
+                         not _diagnostic_measurement(state, "switching_count").valid
+                     ),
+                     "rssi": _diagnostic_measurement(state, "rssi"),
+                     "charged_energy_kwh": _optional_value(
+                         system_statistics.get("charged_kwh")
+                     ),
+                     "discharged_energy_kwh": _optional_value(
+                         system_statistics.get("discharged_kwh")
+                     ),
+                     "pv_energy_kwh": _optional_value(
+                         system_statistics.get("pv_energy_kwh")
+                     ),
+                     "available_energy_kwh": _derived_available_energy(
+                         soc_pct=system_statistics.get("available_energy_soc_pct")
+                         if system_statistics.get("available_energy_soc_pct") is not None
+                         else _measurement(state, "soc_pct").value if _measurement(state, "soc_pct").valid else None,
+                         capacity=display_capacity,
+                         charged_kwh=system_statistics.get("charged_kwh"),
+                         discharged_kwh=system_statistics.get("discharged_kwh"),
+                     ),
+                     "roundtrip_efficiency_pct": _optional_value(derived_statistics(
+                         soc_pct=None, capacity_kwh=None,
+                         charged_kwh=system_statistics.get("charged_kwh"),
+                         discharged_kwh=system_statistics.get("discharged_kwh"),
+                     ).roundtrip_efficiency_pct),
+                    }
+                ),
+                product_id=identity.product_id if identity else None,
+                profile_key=profile_key,
+                control_state=device.control_state,
+                control_enabled=device.control_state in {
+                    DeviceControlState.ENABLED,
+                    DeviceControlState.ACTIVE,
+                },
+                actively_controlled=(
+                    device.control_state is DeviceControlState.ACTIVE
+                ),
+                status_text=_status_text(device.control_state, device.hems_status),
+                selected_transport=device.selected_transport,
+                available_transports=tuple(
+                    sorted(device.available_transports, key=lambda item: item.value)
+                ),
+                online=device.online,
+                hems_active=device.hems_active,
+                hems_status=device.hems_status,
+                hems_observed_at=device.hems_observed_at,
+                control_block_reason=(
+                    f"zendure_hems_{device.hems_status.value}"
+                    if device.control_state is DeviceControlState.HEMS_BLOCKED
+                    else None
+                ),
+                last_message_at=state.last_message_at if state else None,
+                packs=tuple(packs),
+                migration_bound=system_id == migration_bound_device,
+            )
+        )
+    return tuple(result)
+
+
+def _measurement(state: object | None, key: str) -> MeasuredValue:
+    if state is None:
+        return MeasuredValue.absent(ValueValidity.MISSING)
+    return getattr(state, key, MeasuredValue.absent(ValueValidity.MISSING))
+
+def _diagnostic_measurement(state: object | None, key: str) -> MeasuredValue:
+    if state is None:
+        return MeasuredValue.absent(ValueValidity.MISSING)
+    value = getattr(state, "diagnostics", {}).get(key)
+    return value if isinstance(value, MeasuredValue) else MeasuredValue.absent(ValueValidity.MISSING)
+
+
+def _optional_value(value):
+    return MeasuredValue.available(value) if value is not None else MeasuredValue.absent(ValueValidity.UNKNOWN)
+
+
+def _first_valid(primary, fallback):
+    return primary if primary.valid else fallback
+
+
+def _difference(left, right, *, retain_stale: bool = False):
+    if not left.valid or not right.valid:
+        if (
+            retain_stale
+            and left.value is not None
+            and right.value is not None
+            and left.validity in {ValueValidity.VALID, ValueValidity.STALE}
+            and right.validity in {ValueValidity.VALID, ValueValidity.STALE}
+        ):
+            observed_at = min(
+                (
+                    value.observed_at
+                    for value in (left, right)
+                    if value.observed_at is not None
+                ),
+                default=None,
+            )
+            return MeasuredValue(
+                round(float(left.value) - float(right.value), 3),
+                ValueValidity.STALE,
+                observed_at,
+            )
+        return MeasuredValue.absent(ValueValidity.UNAVAILABLE)
+    return MeasuredValue.available(round(float(left.value) - float(right.value), 3))
+
+
+def _display_capacity(
+    control_capacity,
+    inventory_capacity,
+    state,
+    *,
+    sparse_legacy: bool,
+):
+    if control_capacity.capacity_kwh is not None:
+        return MeasuredValue.available(control_capacity.capacity_kwh)
+    if sparse_legacy and inventory_capacity.capacity_kwh is not None:
+        return MeasuredValue(
+            inventory_capacity.capacity_kwh,
+            ValueValidity.STALE,
+            getattr(state, "last_message_at", None),
+        )
+    return MeasuredValue.absent(ValueValidity.UNKNOWN)
+
+
+def _derived_available_energy(
+    *,
+    soc_pct,
+    capacity,
+    charged_kwh,
+    discharged_kwh,
+):
+    value = derived_statistics(
+        soc_pct=soc_pct,
+        capacity_kwh=capacity.value if capacity.value is not None else None,
+        charged_kwh=charged_kwh,
+        discharged_kwh=discharged_kwh,
+    ).available_energy_kwh
+    if value is None:
+        return MeasuredValue.absent(ValueValidity.UNKNOWN)
+    if capacity.validity is ValueValidity.STALE:
+        return MeasuredValue(value, ValueValidity.STALE, capacity.observed_at)
+    return MeasuredValue.available(value)
+
+
+def _pack_status(value):
+    return _optional_value({0: "idle", 1: "charge", 2: "discharge"}.get(value.value) if value.valid else None)
+
+
+def _boolean_status(value, *, retain_stale: bool = False):
+    if value.valid:
+        return MeasuredValue.available("on" if value.value else "off")
+    if (
+        retain_stale
+        and value.value is not None
+        and value.validity is ValueValidity.STALE
+    ):
+        return MeasuredValue(
+            "on" if value.value else "off",
+            ValueValidity.STALE,
+            value.observed_at,
+        )
+    return MeasuredValue.absent(ValueValidity.UNKNOWN)
+
+
+def _pack_model(
+    value: str | None,
+    parent_model: str | None,
+    serial_number: str | None = None,
+) -> str | None:
+    """Resolve only verified pack models; never present a numeric code as one."""
+
+    if value is None:
+        profile = resolve_pack_profile(serial_number, None, parent_model)
+        return profile.model if profile is not None else None
+    normalized = str(value).strip()
+    profile = resolve_pack_profile(serial_number, normalized, parent_model)
+    if profile is not None:
+        return profile.model
+    return normalized if normalized and not normalized.isdecimal() else None
+
+
+def _public_id(kind: str, value: str) -> str:
+    digest = hashlib.sha256(f"bsfai:{kind}:{value}".encode()).hexdigest()[:12]
+    return f"ZD_{kind}_{digest}"
+
+
+def _status_text(state: DeviceControlState, hems_status: HemsStatus) -> str:
+    if state is DeviceControlState.HEMS_BLOCKED:
+        return {
+            HemsStatus.ACTIVE: "Observation mode - Zendure HEMS active",
+            HemsStatus.STALE: "Observation mode - Zendure HEMS status stale",
+            HemsStatus.INVALID: "Observation mode - Zendure HEMS status invalid",
+            HemsStatus.UNKNOWN: "Observation mode - Zendure HEMS status unknown",
+        }.get(hems_status, "Observation mode - Zendure HEMS blocks control")
+    return {
+        DeviceControlState.OBSERVATION: "Observation mode",
+        DeviceControlState.ELIGIBLE: "Eligible for control",
+        DeviceControlState.ENABLED: "Control enabled",
+        DeviceControlState.ACTIVE: "Actively controlled",
+        DeviceControlState.UNSUPPORTED: (
+            "Observation mode - device profile not supported"
+        ),
+        DeviceControlState.OFFLINE: "Observation mode - device offline",
+    }[state]
+
+
+def with_control_state(
+    item: MainSystemOverview,
+    control_state: DeviceControlState,
+) -> MainSystemOverview:
+    """Return one overview item with a runtime-derived control state."""
+
+    return replace(
+        item,
+        control_state=control_state,
+        control_enabled=control_state in {
+            DeviceControlState.ENABLED,
+            DeviceControlState.ACTIVE,
+        },
+        actively_controlled=control_state is DeviceControlState.ACTIVE,
+        status_text=_status_text(control_state, item.hems_status),
+        control_block_reason=(
+            f"zendure_hems_{item.hems_status.value}"
+            if control_state is DeviceControlState.HEMS_BLOCKED
+            else None
+        ),
+    )

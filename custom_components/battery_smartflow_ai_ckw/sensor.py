@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -11,9 +11,17 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.const import UnitOfEnergy, UnitOfPower
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import DeviceInfo
@@ -21,6 +29,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
+    GRID_MODE_SHELLY_PRO_3EM,
     INTEGRATION_MANUFACTURER,
     INTEGRATION_MODEL,
     INTEGRATION_VERSION,
@@ -40,13 +49,37 @@ from .const import (
     SOURCE_ACTION_ENUMS,
     SOURCE_AC_MODE_ENUMS,
     STRATEGY_REASON_ENUMS,
+    STRATEGIC_REASON_ENUMS,
     DECISION_REASON_ENUMS,
     CHARGE_COMMIT_TYPE_ENUMS,
     CHARGE_COMMIT_ABORT_REASON_ENUMS,
     AUTOMATIC_WEIGHTING_ENUMS,
 )
 from .device_profiles import DEVICE_PROFILES
-from .diagnostic_values import safe_diagnostic_sensor_value
+from .native_device_overview import legacy_display_retains_stale_value
+from .native_entity_availability import (
+    OPTIONAL_NATIVE_MAIN_SENSOR_KEYS,
+    optional_native_main_sensor_available,
+    optional_native_sensor_registry_action,
+)
+from .remaining_output_time import RemainingOutputTime
+from .core.full_charge_maintenance import (
+    MaintenanceBlockReason,
+    MaintenanceState,
+    MaintenanceWindow,
+)
+from .diagnostic_values import (
+    safe_diagnostic_sensor_value,
+    smart_mode_state,
+    zendure_documented_status_state,
+)
+from .hardware.zendure.normalizer import RAW_MAIN_DIAGNOSTICS
+from .native_registry_identity import (
+    native_hardware_unique_id,
+    native_main_device_identifier,
+    native_pack_device_identifier,
+)
+from .native_config_ui import native_device_name
 from .price_currency import price_input_profile
 
 _LOGGER = logging.getLogger(__name__)
@@ -89,6 +122,7 @@ ECONOMICS_MONETARY_SENSOR_KEYS = frozenset(
         "export_revenue",
         "avoided_grid_import_cost",
         "battery_benefit",
+        "native_pv_self_consumption_value",
     )
 )
 
@@ -96,8 +130,10 @@ ECONOMICS_PRICE_SENSOR_KEYS = frozenset(
     {
         "economics_average_grid_charge_price",
         "economics_average_pv_opportunity_value",
+        "economics_average_battery_charge_price",
         "economics_average_export_price",
         "economics_average_battery_discharge_value",
+        "economics_average_native_pv_to_home_return",
     }
 )
 
@@ -175,6 +211,391 @@ CHARGE_SOURCE_ALLOCATION_REASON_ENUMS = [
 class ZendureSensorEntityDescription(SensorEntityDescription):
     runtime_key: str
     economics_device: bool = False
+
+
+@dataclass(frozen=True, kw_only=True)
+class NativeHardwareSensorDescription(SensorEntityDescription):
+    measurement_key: str | None = None
+    source: str = "measurement"
+
+
+NATIVE_MAIN_SENSORS = (
+    NativeHardwareSensorDescription(
+        key="online", translation_key="native_hardware_online", source="online",
+        device_class=SensorDeviceClass.ENUM, options=["online", "offline"],
+    ),
+    NativeHardwareSensorDescription(
+        key="soc_pct", translation_key="native_hardware_soc_pct",
+        measurement_key="soc_pct", native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="charge_power_w", translation_key="native_hardware_charge_power_w",
+        measurement_key="charge_power_w", native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="discharge_power_w", translation_key="native_hardware_discharge_power_w",
+        measurement_key="discharge_power_w", native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="ac_input_power_w", translation_key="native_hardware_ac_input_power_w",
+        measurement_key="ac_input_power_w", native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="ac_output_power_w", translation_key="native_hardware_ac_output_power_w",
+        measurement_key="ac_output_power_w", native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="pv_power_w", translation_key="native_hardware_pv_power_w",
+        measurement_key="pv_power_w", native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="mode", translation_key="native_hardware_mode",
+        measurement_key="mode", device_class=SensorDeviceClass.ENUM,
+        options=["idle", "charge", "discharge", "unknown"],
+    ),
+    NativeHardwareSensorDescription(
+        key="temperature_c", translation_key="native_hardware_temperature_c",
+        measurement_key="temperature_c",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="battery_voltage_v",
+        translation_key="native_hardware_battery_voltage_v",
+        measurement_key="battery_voltage_v",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+    ),
+    NativeHardwareSensorDescription(
+        key="firmware", translation_key="native_hardware_firmware",
+        source="firmware", entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    NativeHardwareSensorDescription(
+        key="product_id", translation_key="native_hardware_product_id",
+        source="product_id", entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    NativeHardwareSensorDescription(
+        key="profile", translation_key="native_hardware_profile",
+        source="profile", entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    NativeHardwareSensorDescription(
+        key="transport", translation_key="native_hardware_transport",
+        source="transport", device_class=SensorDeviceClass.ENUM,
+        options=["home_assistant", "cloud_mqtt", "local_mqtt", "zensdk"],
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    NativeHardwareSensorDescription(
+        key="control_state", translation_key="native_hardware_control_state",
+        source="control_state", device_class=SensorDeviceClass.ENUM,
+        options=["observation", "eligible", "enabled", "active", "hems_blocked",
+                 "unsupported", "offline"],
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    NativeHardwareSensorDescription(
+        key="hems", translation_key="native_hardware_hems", source="hems",
+        device_class=SensorDeviceClass.ENUM,
+        options=["active", "inactive", "unknown", "stale", "invalid", "unsupported"],
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    NativeHardwareSensorDescription(
+        key="last_message", translation_key="native_hardware_last_message",
+        source="last_message", device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+)
+
+NATIVE_MAIN_SENSORS += (
+    NativeHardwareSensorDescription(
+        key="wifi_status", name="Wi-Fi status",
+        measurement_key="wifiState", device_class=SensorDeviceClass.ENUM,
+        options=["connected", "disconnected", "unknown"],
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    NativeHardwareSensorDescription(
+        key="remaining_output_time",
+        translation_key="native_hardware_remaining_output_time",
+        measurement_key="remainOutTime",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
+    NativeHardwareSensorDescription(
+        key="rssi", translation_key="native_hardware_rssi", measurement_key="rssi",
+        native_unit_of_measurement="dBm", device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+        state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=0,
+    ),
+    NativeHardwareSensorDescription(
+        key="available_energy_kwh", translation_key="native_hardware_available_energy",
+        measurement_key="available_energy_kwh", native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        suggested_display_precision=2,
+    ),
+    NativeHardwareSensorDescription(
+        key="roundtrip_efficiency_pct", translation_key="native_hardware_roundtrip_efficiency",
+        measurement_key="roundtrip_efficiency_pct", native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=1,
+    ),
+    NativeHardwareSensorDescription(
+        key="charged_energy_kwh", translation_key="native_hardware_charged_energy",
+        measurement_key="charged_energy_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=2,
+    ),
+    NativeHardwareSensorDescription(
+        key="discharged_energy_kwh", translation_key="native_hardware_discharged_energy",
+        measurement_key="discharged_energy_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=2,
+    ),
+    NativeHardwareSensorDescription(
+        key="pv_energy_kwh", translation_key="native_hardware_pv_energy",
+        measurement_key="pv_energy_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=2,
+    ),
+    NativeHardwareSensorDescription(
+        key="switching_count", translation_key="native_hardware_switching_count",
+        measurement_key="switching_count", entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=0,
+    ),
+    NativeHardwareSensorDescription(
+        key="heating_active", translation_key="native_hardware_heating", measurement_key="heating_active",
+        device_class=SensorDeviceClass.ENUM, options=["on", "off"],
+    ),
+    NativeHardwareSensorDescription(
+        key="hardware_soc_min", translation_key="native_hardware_soc_min", measurement_key="hardware_soc_min",
+        native_unit_of_measurement=PERCENTAGE, suggested_display_precision=0,
+    ),
+    NativeHardwareSensorDescription(
+        key="hardware_soc_max", translation_key="native_hardware_soc_max", measurement_key="hardware_soc_max",
+        native_unit_of_measurement=PERCENTAGE, suggested_display_precision=0,
+    ),
+    NativeHardwareSensorDescription(
+        key="pack_count", translation_key="native_hardware_pack_count", measurement_key="pack_count",
+        state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=0,
+    ),
+    NativeHardwareSensorDescription(
+        key="capacity_kwh", translation_key="native_hardware_capacity_kwh", measurement_key="capacity_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        suggested_display_precision=2,
+    ),
+    NativeHardwareSensorDescription(
+        key="power_w", translation_key="native_hardware_power_w", measurement_key="power_w",
+        native_unit_of_measurement=UnitOfPower.WATT, device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="offgrid_power_w", translation_key="native_hardware_offgrid_power_w", measurement_key="offgrid_power_w",
+        native_unit_of_measurement=UnitOfPower.WATT, device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="smartMode",
+        translation_key="native_hardware_setpoint_storage",
+        measurement_key="smartMode",
+        device_class=SensorDeviceClass.ENUM,
+        options=["persistent_storage", "temporary_control", "unknown"],
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+)
+
+_DOCUMENTED_ZENDURE_STATUS_SENSORS = (
+    ("dataReady", "native_hardware_data_ready", ["not_ready", "ready", "unknown"]),
+    (
+        "gridState",
+        "native_hardware_grid_connection",
+        ["disconnected", "connected", "unknown"],
+    ),
+    ("pvStatus", "native_hardware_pv_status", ["inactive", "active", "unknown"]),
+    (
+        "socStatus",
+        "native_hardware_soc_calibration",
+        ["normal", "calibrating", "unknown"],
+    ),
+    ("pass", "native_hardware_passthrough", ["inactive", "active", "unknown"]),
+    (
+        "reverseState",
+        "native_hardware_reverse_flow",
+        ["inactive", "active", "unknown"],
+    ),
+    (
+        "gridOffMode",
+        "native_hardware_offgrid_mode",
+        ["standard", "economic", "disabled", "unknown"],
+    ),
+    ("is_error", "native_hardware_error_status", ["no_error", "error", "unknown"]),
+)
+_DOCUMENTED_ZENDURE_STATUS_KEYS = frozenset(
+    item[0] for item in _DOCUMENTED_ZENDURE_STATUS_SENSORS
+)
+
+NATIVE_MAIN_SENSORS += tuple(
+    NativeHardwareSensorDescription(
+        key=key,
+        translation_key=translation_key,
+        measurement_key=key,
+        device_class=SensorDeviceClass.ENUM,
+        options=options,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    )
+    for key, translation_key, options in _DOCUMENTED_ZENDURE_STATUS_SENSORS
+)
+
+_MPPT_POWER_PROPERTIES = tuple(f"solarPower{index}" for index in range(1, 7))
+
+NATIVE_MAIN_SENSORS += tuple(
+    NativeHardwareSensorDescription(
+        key=key,
+        name=key,
+        measurement_key=key,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    )
+    for key in _MPPT_POWER_PROPERTIES
+)
+
+# Other raw properties stay disabled diagnostics until the user needs them;
+# do not guess units, device classes, or enum semantics.
+NATIVE_MAIN_SENSORS += tuple(
+    NativeHardwareSensorDescription(
+        key=key, name=key, measurement_key=key,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ) for key in RAW_MAIN_DIAGNOSTICS
+    if key not in {
+        "smartMode",
+        "wifiState",
+        "remainOutTime",
+        *_DOCUMENTED_ZENDURE_STATUS_KEYS,
+        *_MPPT_POWER_PROPERTIES,
+    }
+)
+
+NATIVE_PACK_SENSORS = (
+    NativeHardwareSensorDescription(
+        key="status", translation_key="native_hardware_pack_status", measurement_key="status",
+        device_class=SensorDeviceClass.ENUM, options=["idle", "charge", "discharge"],
+    ),
+    NativeHardwareSensorDescription(
+        key="cell_delta_v", translation_key="native_hardware_cell_delta_v", measurement_key="cell_delta_v",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE, state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+    ),
+    *tuple(description for description in NATIVE_MAIN_SENSORS if description.key in {"capacity_kwh", "power_w", "heating_active"}),
+    NativeHardwareSensorDescription(
+        key="soc_pct", translation_key="native_hardware_soc_pct",
+        measurement_key="soc_pct", native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="charge_power_w", translation_key="native_hardware_charge_power_w",
+        measurement_key="charge_power_w", native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="discharge_power_w", translation_key="native_hardware_discharge_power_w",
+        measurement_key="discharge_power_w", native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="voltage_v", translation_key="native_hardware_voltage_v",
+        measurement_key="voltage_v",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+    ),
+    NativeHardwareSensorDescription(
+        key="current_a", translation_key="native_hardware_current_a",
+        measurement_key="current_a",
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        device_class=SensorDeviceClass.CURRENT,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+    ),
+    NativeHardwareSensorDescription(
+        key="cell_min_v", translation_key="native_hardware_cell_min_v",
+        measurement_key="cell_min_v",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+    ),
+    NativeHardwareSensorDescription(
+        key="cell_max_v", translation_key="native_hardware_cell_max_v",
+        measurement_key="cell_max_v",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+    ),
+    NativeHardwareSensorDescription(
+        key="temperature_c", translation_key="native_hardware_cell_temperature_c",
+        measurement_key="temperature_c",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    NativeHardwareSensorDescription(
+        key="state_code", translation_key="native_hardware_state_code",
+        measurement_key="state_code", entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    NativeHardwareSensorDescription(
+        key="pack_type", translation_key="native_hardware_pack_type",
+        measurement_key="pack_type", entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    NativeHardwareSensorDescription(
+        key="fault_code", translation_key="native_hardware_fault_code",
+        measurement_key="fault_code", entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    NativeHardwareSensorDescription(
+        key="protection_active",
+        translation_key="native_hardware_protection_active",
+        measurement_key="protection_active",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    NativeHardwareSensorDescription(
+        key="firmware", translation_key="native_hardware_firmware",
+        source="firmware", entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    NativeHardwareSensorDescription(
+        key="last_message", translation_key="native_hardware_last_message",
+        source="last_message", device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+)
 
 
 _SENSOR_DESCRIPTIONS: tuple[ZendureSensorEntityDescription, ...] = (
@@ -265,7 +686,7 @@ _SENSOR_DESCRIPTIONS: tuple[ZendureSensorEntityDescription, ...] = (
         translation_key="strategic_reason",
         runtime_key="strategic_reason",
         device_class=SensorDeviceClass.ENUM,
-        options=STRATEGY_REASON_ENUMS,
+        options=STRATEGIC_REASON_ENUMS,
         icon="mdi:head-question-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
@@ -490,6 +911,34 @@ _SENSOR_DESCRIPTIONS: tuple[ZendureSensorEntityDescription, ...] = (
         key="forecast_next_6h_kwh",
         translation_key="forecast_next_6h_kwh",
         runtime_key="forecast_next_6h_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:clock-outline",
+    ),
+    ZendureSensorEntityDescription(
+        key="forecast_gross_remaining_today_kwh",
+        translation_key="forecast_gross_remaining_today_kwh",
+        runtime_key="forecast_gross_remaining_today_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:solar-power",
+    ),
+    ZendureSensorEntityDescription(
+        key="forecast_gross_tomorrow_kwh",
+        translation_key="forecast_gross_tomorrow_kwh",
+        runtime_key="forecast_gross_tomorrow_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:weather-sunny",
+    ),
+    ZendureSensorEntityDescription(
+        key="forecast_gross_next_3h_kwh",
+        translation_key="forecast_gross_next_3h_kwh",
+        runtime_key="forecast_gross_next_3h_kwh",
+        native_unit_of_measurement="kWh",
+        icon="mdi:clock-fast",
+    ),
+    ZendureSensorEntityDescription(
+        key="forecast_gross_next_6h_kwh",
+        translation_key="forecast_gross_next_6h_kwh",
+        runtime_key="forecast_gross_next_6h_kwh",
         native_unit_of_measurement="kWh",
         icon="mdi:clock-outline",
     ),
@@ -885,6 +1334,15 @@ _SENSOR_DESCRIPTIONS: tuple[ZendureSensorEntityDescription, ...] = (
         economics_device=True,
     ),
     ZendureSensorEntityDescription(
+        key="economics_daily_native_pv_self_consumption_value",
+        translation_key="economics_daily_native_pv_self_consumption_value",
+        runtime_key="economics_daily_native_pv_self_consumption_value",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        icon="mdi:home-lightning-bolt-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
         key="economics_total_grid_charge_cost",
         translation_key="economics_total_grid_charge_cost",
         runtime_key="economics_total_grid_charge_cost",
@@ -927,6 +1385,15 @@ _SENSOR_DESCRIPTIONS: tuple[ZendureSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         icon="mdi:battery-check-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_total_native_pv_self_consumption_value",
+        translation_key="economics_total_native_pv_self_consumption_value",
+        runtime_key="economics_total_native_pv_self_consumption_value",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        icon="mdi:home-lightning-bolt-outline",
         economics_device=True,
     ),
     ZendureSensorEntityDescription(
@@ -990,6 +1457,16 @@ _SENSOR_DESCRIPTIONS: tuple[ZendureSensorEntityDescription, ...] = (
         economics_device=True,
     ),
     ZendureSensorEntityDescription(
+        key="economics_daily_native_pv_to_home_kwh",
+        translation_key="economics_daily_native_pv_to_home_kwh",
+        runtime_key="economics_daily_native_pv_to_home_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:solar-power-variant",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
         key="economics_total_grid_to_battery_kwh",
         translation_key="economics_total_grid_to_battery_kwh",
         runtime_key="economics_total_grid_to_battery_kwh",
@@ -1040,6 +1517,16 @@ _SENSOR_DESCRIPTIONS: tuple[ZendureSensorEntityDescription, ...] = (
         economics_device=True,
     ),
     ZendureSensorEntityDescription(
+        key="economics_total_native_pv_to_home_kwh",
+        translation_key="economics_total_native_pv_to_home_kwh",
+        runtime_key="economics_total_native_pv_to_home_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:solar-power-variant",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
         key="economics_average_grid_charge_price",
         translation_key="economics_average_grid_charge_price",
         runtime_key="economics_average_grid_charge_price",
@@ -1056,6 +1543,14 @@ _SENSOR_DESCRIPTIONS: tuple[ZendureSensorEntityDescription, ...] = (
         economics_device=True,
     ),
     ZendureSensorEntityDescription(
+        key="economics_average_battery_charge_price",
+        translation_key="economics_average_battery_charge_price",
+        runtime_key="economics_average_battery_charge_price",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:battery-charging-100",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
         key="economics_average_export_price",
         translation_key="economics_average_export_price",
         runtime_key="economics_average_export_price",
@@ -1069,6 +1564,14 @@ _SENSOR_DESCRIPTIONS: tuple[ZendureSensorEntityDescription, ...] = (
         runtime_key="economics_average_battery_discharge_value",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:battery-arrow-down-outline",
+        economics_device=True,
+    ),
+    ZendureSensorEntityDescription(
+        key="economics_average_native_pv_to_home_return",
+        translation_key="economics_average_native_pv_to_home_return",
+        runtime_key="economics_average_native_pv_to_home_return",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:solar-power-variant",
         economics_device=True,
     ),
 
@@ -1243,28 +1746,575 @@ SENSORS: tuple[ZendureSensorEntityDescription, ...] = tuple(
     if description.key not in RETIRED_DIAGNOSTIC_SENSOR_KEYS
 )
 
+# V5-only full-charge maintenance entities stay outside the frozen V4.6
+# description tuple so existing entity identity remains provably unchanged.
+SENSORS += (
+    ZendureSensorEntityDescription(
+        key="grid_power",
+        translation_key="grid_power",
+        runtime_key="grid_power_w",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:transmission-tower",
+        suggested_display_precision=0,
+    ),
+    ZendureSensorEntityDescription(
+        key="full_charge_maintenance_state",
+        translation_key="full_charge_maintenance_state",
+        runtime_key="full_charge_maintenance_state",
+        device_class=SensorDeviceClass.ENUM,
+        options=[item.value for item in MaintenanceState],
+        icon="mdi:battery-sync-outline",
+    ),
+    ZendureSensorEntityDescription(
+        key="full_charge_maintenance_active",
+        translation_key="full_charge_maintenance_active",
+        runtime_key="full_charge_maintenance_active",
+        device_class=SensorDeviceClass.ENUM,
+        options=BOOLEAN_STATE_ENUMS,
+        icon="mdi:battery-arrow-up-outline",
+    ),
+    ZendureSensorEntityDescription(
+        key="full_charge_maintenance_next_recommended",
+        translation_key="full_charge_maintenance_next_recommended",
+        runtime_key="full_charge_maintenance_next_recommended",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:calendar-clock-outline",
+    ),
+    ZendureSensorEntityDescription(
+        key="full_charge_maintenance_last_confirmed",
+        translation_key="full_charge_maintenance_last_confirmed",
+        runtime_key="full_charge_maintenance_last_confirmed",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:battery-check-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="full_charge_maintenance_window",
+        translation_key="full_charge_maintenance_window",
+        runtime_key="full_charge_maintenance_window",
+        device_class=SensorDeviceClass.ENUM,
+        options=[item.value for item in MaintenanceWindow],
+        icon="mdi:weather-sunset-up",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="full_charge_maintenance_block_reason",
+        translation_key="full_charge_maintenance_block_reason",
+        runtime_key="full_charge_maintenance_block_reason",
+        device_class=SensorDeviceClass.ENUM,
+        options=[item.value for item in MaintenanceBlockReason],
+        icon="mdi:battery-alert-variant-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+)
+
+NATIVE_ZENDURE_SENSOR_KEYS = frozenset(
+    {
+        "native_zendure_status",
+        "native_zendure_control",
+        "native_zendure_device_count",
+        "native_zendure_message_count",
+        "native_zendure_last_message",
+        "native_zendure_last_capture",
+        "native_zendure_error",
+    }
+)
+
+SENSORS += (
+    ZendureSensorEntityDescription(
+        key="native_zendure_status",
+        translation_key="native_zendure_status",
+        runtime_key="native_zendure_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=["disabled", "discovering", "connecting", "capturing", "observing", "error"],
+        icon="mdi:cloud-search-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="native_zendure_control",
+        translation_key="native_zendure_control",
+        runtime_key="native_zendure_control",
+        device_class=SensorDeviceClass.ENUM,
+        options=[
+            "disabled_zha_active",
+            "native_transport_not_ready",
+            "native_local_handover_cloud_active",
+            "native_cloud_mqtt_active",
+            "native_zensdk_active",
+            "native_local_mqtt_active",
+            "native_local_unsupported",
+        ],
+        icon="mdi:shield-lock-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="native_zendure_device_count",
+        translation_key="native_zendure_device_count",
+        runtime_key="native_zendure_device_count",
+        icon="mdi:battery-multiple",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="native_zendure_message_count",
+        translation_key="native_zendure_message_count",
+        runtime_key="native_zendure_message_count",
+        icon="mdi:message-processing-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="native_zendure_last_message",
+        translation_key="native_zendure_last_message",
+        runtime_key="native_zendure_last_message",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:clock-check-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    ZendureSensorEntityDescription(
+        key="native_zendure_last_capture",
+        translation_key="native_zendure_last_capture",
+        runtime_key="native_zendure_last_capture",
+        icon="mdi:file-download-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    ZendureSensorEntityDescription(
+        key="native_zendure_error",
+        translation_key="native_zendure_error",
+        runtime_key="native_zendure_error",
+        icon="mdi:alert-circle-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
     add_entities: AddEntitiesCallback,
 ) -> None:
-    registry = er.async_get(hass)
+    entity_registry = er.async_get(hass)
     for key in RETIRED_DIAGNOSTIC_SENSOR_KEYS:
         unique_id = f"{DOMAIN}_{entry.entry_id}_{key}"
-        entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+        entity_id = entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
         if entity_id is not None:
-            registry.async_remove(entity_id)
+            entity_registry.async_remove(entity_id)
 
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [ZendureSmartFlowSensor(entry, coordinator, d) for d in SENSORS]
+    device_registry = dr.async_get(hass)
+    integration_device = device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, entry.entry_id)},
+    )
+    entities = [
+        ZendureSmartFlowSensor(
+            entry,
+            coordinator,
+            description,
+        )
+        for description in SENSORS
+    ]
     add_entities(entities)
+
+    known_native_entities: set[tuple[str, str, str]] = set()
+    entity_registry = er.async_get(hass)
+    optional_registry_initialized = False
+
+    def add_discovered_native_entities() -> None:
+        nonlocal optional_registry_initialized
+        discovered = []
+        for system in coordinator.native_zendure.hardware_overview():
+            firmware = _measured_value(getattr(system, "firmware", None))
+            device_registry.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={native_main_device_identifier(system.public_id)},
+                name=native_device_name(system.display_name, system.model),
+                manufacturer="Zendure",
+                model=system.model or "Unknown Zendure system",
+                serial_number=system.serial_number,
+                sw_version=str(firmware) if firmware is not None else None,
+                via_device_id=integration_device.id,
+            )
+            for description in NATIVE_MAIN_SENSORS:
+                available = optional_native_main_sensor_available(
+                    system, description.key
+                )
+                if description.key in OPTIONAL_NATIVE_MAIN_SENSOR_KEYS:
+                    unique_id = native_hardware_unique_id(
+                        entry.entry_id,
+                        "main",
+                        system.public_id,
+                        description.key,
+                    )
+                    entity_id = entity_registry.async_get_entity_id(
+                        "sensor", DOMAIN, unique_id
+                    )
+                    if entity_id is not None:
+                        registered = entity_registry.async_get(entity_id)
+                        action = optional_native_sensor_registry_action(
+                            available=available,
+                            disabled_by_integration=(
+                                registered is not None
+                                and registered.disabled_by
+                                is er.RegistryEntryDisabler.INTEGRATION
+                            ),
+                            enabled=(
+                                registered is not None
+                                and registered.disabled_by is None
+                            ),
+                            initializing=not optional_registry_initialized,
+                        )
+                        if action == "enable":
+                            entity_registry.async_update_entity(
+                                entity_id, disabled_by=None
+                            )
+                        elif action == "disable":
+                            entity_registry.async_update_entity(
+                                entity_id,
+                                disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+                            )
+                key = ("main", system.public_id, description.key)
+                if key not in known_native_entities:
+                    known_native_entities.add(key)
+                    effective_description = (
+                        replace(
+                            description,
+                            entity_registry_enabled_default=available,
+                        )
+                        if description.key in OPTIONAL_NATIVE_MAIN_SENSOR_KEYS
+                        else description
+                    )
+                    discovered.append(NativeZendureHardwareSensor(
+                        entry,
+                        coordinator,
+                        kind="main",
+                        public_id=system.public_id,
+                        parent_public_id=None,
+                        description=effective_description,
+                    ))
+            for pack in system.packs:
+                for description in NATIVE_PACK_SENSORS:
+                    key = ("pack", pack.public_id, description.key)
+                    if key not in known_native_entities:
+                        known_native_entities.add(key)
+                        discovered.append(NativeZendureHardwareSensor(
+                            entry,
+                            coordinator,
+                            kind="pack",
+                            public_id=pack.public_id,
+                            parent_public_id=system.public_id,
+                            description=description,
+                        ))
+        if discovered:
+            add_entities(discovered)
+        optional_registry_initialized = True
+
+    add_discovered_native_entities()
+    unsubscribe = coordinator.async_add_listener(add_discovered_native_entities)
+    if hasattr(entry, "async_on_unload"):
+        entry.async_on_unload(unsubscribe)
+
+
+class NativeZendureHardwareSensor(CoordinatorEntity, SensorEntity):
+    """One native value attached to its physical Zendure HA device."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        entry,
+        coordinator,
+        *,
+        kind: str,
+        public_id: str,
+        parent_public_id: str | None,
+        description: NativeHardwareSensorDescription,
+    ) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._entry = entry
+        self._kind = kind
+        self._public_id = public_id
+        self._parent_public_id = parent_public_id
+        self._remaining_output_time = RemainingOutputTime()
+        self._attr_unique_id = native_hardware_unique_id(
+            entry.entry_id,
+            kind,
+            public_id,
+            description.key,
+        )
+        item = self._item()
+        if kind == "main":
+            firmware = _measured_value(getattr(item, "firmware", None))
+            self._attr_device_info = DeviceInfo(
+                identifiers={native_main_device_identifier(public_id)},
+                name=(
+                    native_device_name(item.display_name, item.model)
+                    if item else "Zendure system"
+                ),
+                manufacturer="Zendure",
+                model=(item.model or "Unknown Zendure system") if item else None,
+                serial_number=item.serial_number if item else None,
+                sw_version=str(firmware) if firmware is not None else None,
+                via_device_id=_device_id_for_identifiers(
+                    coordinator.hass,
+                    {(DOMAIN, entry.entry_id)},
+                    entry.entry_id,
+                ),
+            )
+        else:
+            firmware = _measured_value(getattr(item, "firmware", None))
+            parent = self._parent_system()
+            pack_number = (
+                next(
+                    (
+                        index
+                        for index, pack in enumerate(parent.packs, start=1)
+                        if pack.public_id == public_id
+                    ),
+                    1,
+                )
+                if parent is not None
+                else 1
+            )
+            parent_name = (
+                native_device_name(parent.display_name, parent.model)
+                if parent is not None else "Zendure"
+            )
+            self._attr_device_info = DeviceInfo(
+                identifiers={native_pack_device_identifier(public_id)},
+                name=f"{parent_name} {_battery_pack_label(coordinator.hass.config.language)} {pack_number}",
+                manufacturer="Zendure",
+                model=(item.pack_model or "Unknown battery pack") if item else None,
+                serial_number=item.serial_number if item else None,
+                sw_version=str(firmware) if firmware is not None else None,
+                via_device_id=_device_id_for_identifiers(
+                    coordinator.hass,
+                    native_main_device_identifier(parent_public_id),
+                    entry.entry_id,
+                ),
+            )
+
+    def _parent_system(self):
+        for system in self.coordinator.native_zendure.hardware_overview():
+            if system.public_id == self._parent_public_id:
+                return system
+        return None
+
+    def _measurement_available_for_display(self, measured) -> bool:
+        parent = self._parent_system() if self._kind == "pack" else self._item()
+        return bool(
+            measured is not None
+            and (
+                measured.valid
+                or legacy_display_retains_stale_value(parent, measured)
+            )
+        )
+
+    def _measurement_value_for_display(self, measured):
+        return (
+            measured.value
+            if self._measurement_available_for_display(measured)
+            else None
+        )
+
+    def _item(self):
+        for system in self.coordinator.native_zendure.hardware_overview():
+            if self._kind == "main" and system.public_id == self._public_id:
+                return system
+            if self._kind == "pack":
+                for pack in system.packs:
+                    if pack.public_id == self._public_id:
+                        return pack
+        return None
+
+    @property
+    def extra_state_attributes(self):
+        item = self._item()
+        if self._kind != "main" or item is None:
+            return None
+        attributes = {
+            "v4_migration_binding": (
+                "confirmed" if item.migration_bound else "not_bound"
+            )
+        }
+        if self.entity_description.key == "switching_count":
+            estimate = item.measurements.get("switching_count_is_estimate")
+            attributes["estimated"] = bool(
+                estimate is not None and estimate.valid and estimate.value
+            )
+        if self.entity_description.key == "smartMode":
+            measured = item.measurements.get("smartMode")
+            raw_value = _measured_value(measured)
+            state = smart_mode_state(raw_value)
+            attributes.update(
+                {
+                    "raw_value": raw_value,
+                    "writes_to_flash": (
+                        True if state == "persistent_storage"
+                        else False if state == "temporary_control"
+                        else None
+                    ),
+                    "restored_after_device_restart": (
+                        True if state == "temporary_control"
+                        else False if state == "persistent_storage"
+                        else None
+                    ),
+                }
+            )
+        return attributes
+
+    def _remaining_output_minutes(self, item, measured) -> int | None:
+        """Return the device's remaining discharge minutes, only while discharging.
+
+        The value is meaningful only during discharge. When charging, idle, or
+        reported as zero/invalid, the estimate carries no usable meaning, so the
+        entity stays unavailable rather than pointing at ``now``.
+        """
+
+        discharge = item.measurements.get("discharge_power_w")
+        return self._remaining_output_time.remaining_minutes(
+            _measured_value(measured),
+            _measured_value(discharge),
+            estimate_available=self._measurement_available_for_display(measured),
+            discharge_available=(
+                discharge is not None and discharge.valid
+            ),
+        )
+
+    def _remaining_output_timestamp(self, item, measured):
+        """Absolute "battery empty at" time, stepping only when minutes change."""
+
+        minutes = self._remaining_output_minutes(item, measured)
+        return self._remaining_output_time.timestamp(
+            minutes,
+            now=dt_util.utcnow(),
+        )
+
+    @property
+    def available(self) -> bool:
+        item = self._item()
+        if item is None:
+            return False
+        description = self.entity_description
+        if description.source == "measurement":
+            measured = item.measurements.get(description.measurement_key)
+            if (
+                description.measurement_key == "localAPIEnable"
+                and (measured is None or not measured.valid)
+                and item.selected_transport.value == "zensdk"
+            ):
+                return True
+            if description.measurement_key == "remainOutTime":
+                return self._remaining_output_minutes(item, measured) is not None
+            return self._measurement_available_for_display(measured)
+        if description.source == "firmware":
+            return self._measurement_available_for_display(item.firmware)
+        if description.source == "product_id":
+            return item.product_id is not None
+        if description.source == "profile":
+            return item.profile_key is not None
+        if description.source == "last_message":
+            return item.last_message_at is not None
+        return True
+
+    @property
+    def native_value(self):
+        item = self._item()
+        if item is None:
+            return None
+        source = self.entity_description.source
+        if source == "measurement":
+            measured = item.measurements.get(self.entity_description.measurement_key)
+            if self.entity_description.measurement_key == "smartMode":
+                return smart_mode_state(_measured_value(measured))
+            if self.entity_description.measurement_key == "wifiState":
+                raw_value = _measured_value(measured)
+                if raw_value == 1:
+                    return "connected"
+                if raw_value == 0:
+                    return "disconnected"
+                return "unknown"
+            if self.entity_description.measurement_key == "remainOutTime":
+                return self._remaining_output_timestamp(item, measured)
+            if (
+                self.entity_description.measurement_key
+                in _DOCUMENTED_ZENDURE_STATUS_KEYS
+            ):
+                return zendure_documented_status_state(
+                    self.entity_description.measurement_key,
+                    _measured_value(measured),
+                )
+            if (
+                self.entity_description.measurement_key == "localAPIEnable"
+                and (measured is None or not measured.valid)
+                and item.selected_transport.value == "zensdk"
+            ):
+                return 1
+            return self._measurement_value_for_display(measured)
+        if source == "firmware":
+            return self._measurement_value_for_display(item.firmware)
+        if source == "product_id":
+            return item.product_id
+        if source == "profile":
+            return item.profile_key
+        if source == "online":
+            return "online" if item.online else "offline"
+        if source == "transport":
+            return item.selected_transport.value
+        if source == "control_state":
+            return item.control_state.value
+        if source == "hems":
+            return item.hems_status.value
+        if source == "last_message":
+            return (
+                dt_util.as_utc(item.last_message_at)
+                if item.last_message_at is not None
+                else None
+            )
+        return None
+
+
+def _measured_value(value):
+    return value.value if value is not None and value.valid else None
+
+
+def _battery_pack_label(language: str | None) -> str:
+    return {
+        "de": "Batterie-Pack",
+        "fr": "Bloc-batterie",
+        "nl": "Accupakket",
+    }.get(language, "Battery Pack")
+
+
+def _device_id_for_identifiers(
+    hass: HomeAssistant,
+    identifiers,
+    config_entry_id: str,
+):
+    """Resolve a registered parent device for Home Assistant's current API."""
+
+    identifier = next(iter(identifiers), None)
+    device = (
+        dr.async_get(hass).async_get_device_by_identifier(
+            identifier,
+            config_entry_id,
+        )
+        if identifier is not None
+        else None
+    )
+    return device.id if device is not None else None
 
 
 class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
 
-    def __init__(self, entry, coordinator, description):
+    def __init__(
+        self,
+        entry,
+        coordinator,
+        description,
+    ):
         super().__init__(coordinator)
         self.entity_description = description
         self._entry = entry
@@ -1290,7 +2340,11 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
                 manufacturer=INTEGRATION_MANUFACTURER,
                 model=virtual_device_model(coordinator.hass.config.language),
                 sw_version=INTEGRATION_VERSION,
-                via_device=(DOMAIN, entry.entry_id),
+                via_device_id=_device_id_for_identifiers(
+                    coordinator.hass,
+                    {(DOMAIN, entry.entry_id)},
+                    entry.entry_id,
+                ),
             )
         else:
             self._attr_device_info = DeviceInfo(
@@ -1307,9 +2361,15 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
+        key = self.entity_description.runtime_key
+        if key in NATIVE_ZENDURE_SENSOR_KEYS:
+            val = self.coordinator.native_zendure.sensor_data().get(key)
+            if self.device_class == SensorDeviceClass.TIMESTAMP:
+                return dt_util.as_utc(val) if val is not None else None
+            return val
+
         data = self.coordinator.data or {}
         details = data.get("details") or {}
-        key = self.entity_description.runtime_key
 
         if key == "price_forecast":
             val = details.get("price_now")
@@ -1386,8 +2446,10 @@ class ZendureSmartFlowSensor(CoordinatorEntity, SensorEntity):
                     {"start": p["start"], "price": p["price"]} for p in forecast
                 ]
             }
-            super()._handle_coordinator_update()
-            return
-
-        self._attr_extra_state_attributes = None
+        elif self.entity_description.runtime_key == "native_zendure_device_count":
+            self._attr_extra_state_attributes = (
+                self.coordinator.native_zendure.overview_attributes()
+            )
+        else:
+            self._attr_extra_state_attributes = None
         super()._handle_coordinator_update()

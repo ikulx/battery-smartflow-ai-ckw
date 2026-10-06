@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from .core.models import DeviceProfile
 
 
@@ -349,6 +351,34 @@ SF800PRO_PROFILE = {
     "OFFGRID_LOAD_ACTIVE_W": 50.0,
     "OFFGRID_LOAD_BLOCKS_AC_CHARGE": False,
     "OFFGRID_INPUT_AFFECTS_ENERGY_BALANCE": False,
+}
+
+
+# The original SolarFlow 800 is distinct from its Plus and Pro variants.
+# Reuse conservative 800 W-class tuning, but keep Pro-specific passthrough
+# behavior disabled until model-specific field evidence confirms it. Zendure
+# specifies up to 1,200 W charge input depending on the connected battery and
+# 800 W maximum discharge output.
+SF800_PROFILE = {
+    **SF800PRO_PROFILE,
+    **PASSTHROUGH_DISABLED_DEFAULTS,
+    "label": "Zendure SF800",
+    "LOW_SOC_PROTECTION_STRICT": False,
+    "LOW_SOC_PV_CHARGE_REQUIRES_EXPORT": False,
+    "LOW_SOC_DISCHARGE_REQUIRES_CELL_RESUME": False,
+    "SUPPORTS_PASSTHROUGH": False,
+    "MPPT_CLIPS_WITHOUT_OUTPUT": False,
+    "MAX_INPUT_W": 1200.0,
+    "MAX_OUTPUT_W": 800.0,
+}
+
+
+# SolarFlow 800 Plus is a ZenSDK device with the same confirmed AC limits as
+# the SF800Pro (1,000 W input / 800 W output). Reuse the conservative 800 W
+# controller tuning until model-specific field evidence calls for divergence.
+SF800PLUS_PROFILE = {
+    **SF800PRO_PROFILE,
+    "label": "Zendure SF800Plus",
 }
 
 
@@ -795,6 +825,8 @@ HUB2000_PROFILE = {
 
 
 DEVICE_PROFILES = {
+    "SF800": SF800_PROFILE,
+    "SF800Plus": SF800PLUS_PROFILE,
     "SF800Pro": SF800PRO_PROFILE,
     "SF800Pro2": SF800PRO2_PROFILE,
     "SF2400AC": SF2400AC_PROFILE,
@@ -807,6 +839,24 @@ DEVICE_PROFILES = {
     "Hyper 2000": HYPER2000_PROFILE,
     "HUB 2000": HUB2000_PROFILE,
 }
+
+# Keep the AC input rating separate from battery-side charging caps where PV
+# can feed the battery in parallel with controlled AC charging. Both 800 Pro
+# generations share 1,000 W AC input / 1,440 W battery charging, increasing to
+# 2,000 W with expansion batteries. The 2400 models have a 2,400 W combined
+# battery charging ceiling; for 2400 Pro, native DC PV consumes part of it.
+for _profile_key in ("SF800Pro", "SF800Pro2"):
+    DEVICE_PROFILES[_profile_key] = {
+        **DEVICE_PROFILES[_profile_key],
+        "MAX_BATTERY_CHARGE_W": 1440.0,
+        "MAX_BATTERY_CHARGE_W_WITH_EXPANSION": 2000.0,
+    }
+
+for _profile_key in ("SF2400AC+", "SF2400Pro"):
+    DEVICE_PROFILES[_profile_key] = {
+        **DEVICE_PROFILES[_profile_key],
+        "MAX_BATTERY_CHARGE_W": 2400.0,
+    }
 
 
 # Canonical V4.7 view. ``DEVICE_PROFILES`` remains the stable V4.6 mapping
@@ -828,6 +878,59 @@ def get_device_profile(profile_key: str) -> DeviceProfile:
 
 def get_profile_config(profile_key: str) -> dict:
     return get_device_profile(profile_key).as_legacy_mapping()
+
+
+def resolve_charge_limits(
+    profile: Mapping[str, object],
+    *,
+    configured_charge_w: float,
+    battery_packs: int = 1,
+    native_pv_w: float = 0.0,
+    native_pv_valid: bool = False,
+) -> tuple[float, float, float]:
+    """Return (physical total cap, AC input cap, current charge target cap).
+
+    For profiles with a known battery-side limit, the configured charge power
+    is an AC-input cap. Valid native PV can add to that AC allowance, up to
+    the battery-side limit. Profiles without a separate battery-side limit
+    retain their conservative legacy behavior.
+    """
+    configured = max(0.0, float(configured_charge_w or 0.0))
+    ac_limit = max(
+        0.0,
+        float(profile.get("MAX_INPUT_W", configured) or 0.0),
+    )
+    battery_limit = profile.get("MAX_BATTERY_CHARGE_W")
+
+    if battery_limit is None:
+        total_limit = min(configured, ac_limit)
+        return total_limit, total_limit, total_limit
+
+    try:
+        has_expansion = int(battery_packs or 1) > 1
+    except (TypeError, ValueError):
+        has_expansion = False
+    if has_expansion:
+        battery_limit = profile.get(
+            "MAX_BATTERY_CHARGE_W_WITH_EXPANSION",
+            battery_limit,
+        )
+    total_limit = max(0.0, float(battery_limit))
+    native_pv = (
+        max(0.0, float(native_pv_w or 0.0))
+        if native_pv_valid
+        else 0.0
+    )
+    ac_input_limit = min(
+        configured,
+        ac_limit,
+        max(0.0, total_limit - native_pv),
+    )
+    current_charge_limit = min(
+        total_limit,
+        ac_input_limit + native_pv,
+    )
+    return total_limit, ac_input_limit, current_charge_limit
 
 
 def merge_profile_with_overrides(profile_key: str, overrides: dict | None) -> dict:

@@ -1,11 +1,13 @@
 {
   "domain": "battery_smartflow_ai_ckw",
   "name": "Battery SmartFlow AI CKW",
+  "after_dependencies": ["energy"],
   "codeowners": ["@ikulx"],
   "config_flow": true,
+  "dependencies": ["bluetooth", "frontend", "http", "panel_custom"],
   "documentation": "https://github.com/ikulx/battery-smartflow-ai-ckw",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/ikulx/battery-smartflow-ai-ckw/issues",
-  "requirements": [],
-  "version": "4.7.4"
+  "requirements": ["bleak-retry-connector>=3.9.0", "paho-mqtt>=2.1.0"],
+  "version": "5.1.16"
 }

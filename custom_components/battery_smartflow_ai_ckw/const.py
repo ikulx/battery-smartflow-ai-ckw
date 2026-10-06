@@ -19,6 +19,7 @@ except ModuleNotFoundError as err:
 # Integration meta
 # ==================================================
 DOMAIN = "battery_smartflow_ai_ckw"
+CONF_HEMS_DASHBOARD_ENABLED = "hems_dashboard_enabled"
 
 INTEGRATION_NAME = "Battery SmartFlow AI"
 
@@ -38,7 +39,24 @@ def virtual_device_model(language: str | None) -> str:
 
 INTEGRATION_MANUFACTURER = "PalmManiac"
 INTEGRATION_MODEL = "Home Assistant Integration"
-INTEGRATION_VERSION = "4.7.4"
+INTEGRATION_VERSION = "5.1.16"
+
+# V5 native Zendure discovery is observation-only in the first development
+# build. The App Token is account discovery material and must never be copied
+# to entity states, logs or diagnostics.
+CONF_NATIVE_ZENDURE_APP_TOKEN = "native_zendure_app_token"
+CONF_NATIVE_ZENDURE_SELECTED_DEVICE = "native_zendure_selected_device"
+CONF_NATIVE_ZENDURE_CONTROL_ENABLED = "native_zendure_control_enabled"
+CONF_NATIVE_ZENDURE_LOCAL_MQTT_SERVER = "native_zendure_local_mqtt_server"
+CONF_NATIVE_ZENDURE_LOCAL_MQTT_PORT = "native_zendure_local_mqtt_port"
+CONF_NATIVE_ZENDURE_LOCAL_MQTT_USERNAME = "native_zendure_local_mqtt_username"
+CONF_NATIVE_ZENDURE_LOCAL_MQTT_PASSWORD = "native_zendure_local_mqtt_password"
+CONF_NATIVE_ZENDURE_LEGACY_WIFI_SSID = "native_zendure_legacy_wifi_ssid"
+CONF_NATIVE_ZENDURE_LEGACY_WIFI_PASSWORD = "native_zendure_legacy_wifi_password"
+CONF_NATIVE_ZENDURE_LEGACY_PROVISION = "native_zendure_legacy_provision"
+# Explicit per-device communication path. New setups start with Cloud; entries
+# created before RC10 retain the formerly automatic verified local path.
+CONF_NATIVE_ZENDURE_CONTROL_TRANSPORT = "native_zendure_control_transport"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -72,6 +90,7 @@ CONF_ADDITIONAL_BATTERY_DISCHARGE_ENTITY = "additional_battery_discharge_entity"
 # V4.0.0 optionale PV-Forecast-Sensoren (zuerst Solcast)
 CONF_PV_FORECAST_TODAY_ENTITY = "pv_forecast_today_entity"
 CONF_PV_FORECAST_TOMORROW_ENTITY = "pv_forecast_tomorrow_entity"
+CONF_PV_FORECAST_CONFIG_ENTRIES = "pv_forecast_config_entries"
 
 # Zendure Steuer-Entitäten
 CONF_AC_MODE_ENTITY = "ac_mode_entity"            # select input/output
@@ -83,6 +102,10 @@ CONF_GRID_MODE = "grid_mode"
 CONF_GRID_POWER_ENTITY = "grid_power_entity"      # +import / -export
 CONF_GRID_IMPORT_ENTITY = "grid_import_entity"    # import W
 CONF_GRID_EXPORT_ENTITY = "grid_export_entity"    # export W
+CONF_SHELLY_PRO_3EM_HOST = "shelly_pro_3em_host"
+CONF_SHELLY_PRO_3EM_PASSWORD = "shelly_pro_3em_password"
+CONF_SHELLY_3EM_HOST = "shelly_3em_host"
+CONF_SHELLY_3EM_PASSWORD = "shelly_3em_password"
 
 # --- Config entry keys ---
 CONF_PACK_CAPACITY_KWH = "pack_capacity_kwh"
@@ -136,6 +159,8 @@ SETTING_PV_CHARGE_START_EXPORT_W = "pv_charge_start_export_w"
 SETTING_FORECAST_BASE_LOAD = "forecast_base_load"
 
 SETTING_LEARNED_PLANNING_ENABLED = "learned_planning_enabled"
+SETTING_FULL_CHARGE_MAINTENANCE_ENABLED = "full_charge_maintenance_enabled"
+SETTING_FULL_CHARGE_MAINTENANCE_INTERVAL_DAYS = "full_charge_maintenance_interval_days"
 
 # Default
 DEFAULT_PACK_CAPACITY_KWH = 2.88
@@ -159,6 +184,8 @@ DEFAULT_PV_CHARGE_START_EXPORT_W = 80.0
 DEFAULT_FORECAST_BASE_LOAD = 300.0
 
 DEFAULT_LEARNED_PLANNING_ENABLED = True
+DEFAULT_FULL_CHARGE_MAINTENANCE_ENABLED = False
+DEFAULT_FULL_CHARGE_MAINTENANCE_INTERVAL_DAYS = 30
 
 DEFAULT_OFFGRID_LOAD_ACTIVE_W = 50.0
 
@@ -172,6 +199,7 @@ CONF_DEVICE_PROFILE = "device_profile"
 
 DEVICE_PROFILE_SF2400AC = "SF2400AC"
 DEVICE_PROFILE_SF2400PRO = "SF2400Pro"
+DEVICE_PROFILE_SF800 = "SF800"
 DEVICE_PROFILE_SF800PRO = "SF800Pro"
 DEVICE_PROFILE_SF1600AC = "SF1600AC"
 DEVICE_PROFILE_SF3000MIXACPLUS = "SF3000MixAC+"
@@ -185,6 +213,8 @@ DEFAULT_DEVICE_PROFILE = DEVICE_PROFILE_SF2400AC
 GRID_MODE_NONE = "none"
 GRID_MODE_SINGLE = "single"
 GRID_MODE_SPLIT = "split"
+GRID_MODE_SHELLY_PRO_3EM = "shelly_pro_3em"
+GRID_MODE_SHELLY_3EM = "shelly_3em"
 
 # ==================================================
 # Runtime select modes (internal values remain EN)
@@ -211,12 +241,14 @@ def normalize_ai_mode(mode: str | None) -> str:
 
 MANUAL_STANDBY = "standby"
 MANUAL_CHARGE = "charge"
+MANUAL_PV_SURPLUS = "pv_surplus"
 MANUAL_DISCHARGE = "discharge"
 MANUAL_CONST_DISCHARGE = "constant_discharge"
 
 MANUAL_ACTIONS = [
     MANUAL_STANDBY,
     MANUAL_CHARGE,
+    MANUAL_PV_SURPLUS,
     MANUAL_DISCHARGE,
     MANUAL_CONST_DISCHARGE,
 ]
@@ -507,6 +539,8 @@ STRATEGY_REASON_ENUMS = [
     "price_based_discharge",
 ]
 
+STRATEGIC_REASON_ENUMS = [*STRATEGY_REASON_ENUMS, "native_capacity_unavailable"]
+
 DECISION_REASON_ENUMS = [
     "standby",
     "state_idle",
@@ -557,6 +591,7 @@ DECISION_REASON_ENUMS = [
     "pv_charge_blocked_by_discharge_protection",
     "learned_charge_window_deadline_too_close_start_now",
     "soc_invalid",
+    "native_capacity_unavailable",
     "grid_sensor_invalid",
     "soc_limits_invalid",
     "power_limits_invalid",
